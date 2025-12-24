@@ -243,15 +243,59 @@ A1. Stretch | 1x30s per side
 18. Workout history
 19. Consistency tracking
 
-### Phase 5 - Lifestyle
+### Phase 5 - Lifestyle & Nutrition
 20. Habit tracker (enhanced)
 21. Streak tracking
 22. Daily progress summary
+23. Macro calculator
+24. Nutrition tracking (with photo upload)
 
 ### Phase 6 - Settings & Polish
-23. Settings page (appearance, units, profile)
-24. Announcements system
-25. PDF export
+25. Settings page (appearance, units, profile)
+26. Announcements system
+27. PDF export
+
+---
+
+## Nutrition Hub
+
+### MVP (Build Now)
+
+**1. Macro Calculator**
+- Inputs: weight, height, age, sex, activity level, goal (lose/maintain/gain)
+- Formula: Mifflin-St Jeor TDEE + activity multiplier
+- Output: Daily calories, protein, carbs, fat targets
+- Save to profile, regenerate anytime
+
+**2. Meal Split View**
+- Client selects preferred # of meals (3, 4, 5, 6)
+- Shows macro distribution across meals
+- Hand portion equivalent per meal:
+  - Palm = protein (~25g)
+  - Fist = carbs (~25g)
+  - Thumb = fats (~10g)
+  - Cupped hand = snacks/fruit
+- Example: "Lunch: 1 palm protein, 2 fists carbs, 1 thumb fat"
+
+**3. Daily Nutrition Tracking**
+- Two input modes:
+  - **Grams/calories** - Traditional macro entry
+  - **Hand portions** - "2 palms protein, 1 fist carbs" (system estimates macros)
+- Progress bars against daily goals
+- **Photo upload** - Snap meal pics for accountability/reference
+- Optional habit integration for consistency tracking
+
+### Database Additions
+- `nutrition_profiles` - user_id, tdee, calories, protein, carbs, fat, meals_per_day, goal, calculated_at
+- `nutrition_logs` - user_id, date, meal_number, calories, protein, carbs, fat, portions_protein, portions_carbs, portions_fat, photo_url, notes
+
+### Future (Planned, Not Built Now)
+- Curated meal library with dietary tags (vegetarian, vegan, gluten-free, etc.)
+- Full day templates + mix-and-match meal generator
+- Healthy swaps library (craving-based suggestions)
+- Food combos inspiration browser
+- Contextual suggestions based on tracking gaps
+- Coach-assigned meal plans
 
 ---
 
