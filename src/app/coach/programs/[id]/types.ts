@@ -6,6 +6,7 @@ export interface Exercise {
   type: 'strength' | 'mobility' | 'cardio'
   primary_muscle: string | null
   focus_area: string | null
+  video_url: string | null
 }
 
 export interface WorkoutExercise {
@@ -15,11 +16,22 @@ export interface WorkoutExercise {
   exercise?: Exercise
   section: 'warmup' | 'strength' | 'cooldown' | 'cardio'
   label: string | null
+  // Strength fields
   sets: string | null
   reps: string | null
   weight: string | null
+  weight_unit: 'lbs' | 'kg' | null
   rest_seconds: number | null
   rpe: number | null
+  // Cardio fields
+  duration_seconds: number | null
+  distance: number | null
+  distance_unit: 'miles' | 'km' | 'meters' | 'yards' | null
+  target_pace: string | null
+  hr_zone: number | null
+  intervals: number | null
+  interval_rest_seconds: number | null
+  // Common
   notes: string | null
   sort_order: number
 }
@@ -32,6 +44,7 @@ export interface WorkoutDay {
   subtitle: string | null
   is_rest_day: boolean
   rest_day_notes: string | null
+  cardio_notes: string | null
   warmup_template_id: string | null
   cooldown_template_id: string | null
   workout_exercises: WorkoutExercise[]
@@ -54,6 +67,8 @@ export interface Program {
   is_archived: boolean
   created_by: string
   program_weeks: ProgramWeek[]
+  pdf_schedule: string[] | null
+  pdf_tips: string[] | null
 }
 
 export interface Template {
@@ -62,4 +77,50 @@ export interface Template {
   type: 'warmup' | 'cooldown'
   description: string | null
   duration_minutes: number | null
+}
+
+export interface RoutineTemplateExercise {
+  id: string
+  template_id: string
+  exercise_id: string
+  exercise?: Exercise
+  sets: string | null
+  reps: string | null
+  notes: string | null
+  sort_order: number
+}
+
+export interface RoutineTemplate {
+  id: string
+  name: string
+  type: 'warmup' | 'cooldown'
+  description: string | null
+  duration_minutes: number | null
+  is_archived: boolean
+  routine_template_exercises?: RoutineTemplateExercise[]
+}
+
+export interface ExerciseBlockItem {
+  id: string
+  block_id: string
+  exercise_id: string
+  exercise?: Exercise
+  label: string | null
+  sets: string | null
+  reps: string | null
+  weight: string | null
+  weight_unit: 'lbs' | 'kg' | null
+  rest_seconds: number | null
+  rpe: number | null
+  notes: string | null
+  sort_order: number
+}
+
+export interface ExerciseBlock {
+  id: string
+  name: string
+  description: string | null
+  created_by: string
+  is_shared: boolean
+  exercise_block_items?: ExerciseBlockItem[]
 }
