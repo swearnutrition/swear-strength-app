@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { ImportProgramModal } from './ImportProgramModal'
 
 interface Program {
   id: string
@@ -30,29 +31,46 @@ const typeColors = {
 export function ProgramsClient({ programs: initialPrograms }: ProgramsClientProps) {
   const [programs, setPrograms] = useState(initialPrograms)
   const [searchQuery, setSearchQuery] = useState('')
+  const [typeFilter, setTypeFilter] = useState<'all' | 'strength' | 'mobility' | 'cardio'>('all')
   const [creating, setCreating] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
   const filteredPrograms = programs.filter((p) =>
-    p.name.toLowerCase().includes(searchQuery.toLowerCase())
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+    (typeFilter === 'all' || p.type === typeFilter)
   )
 
-  const handleCreate = async () => {
+  const handleCreate = async (type: 'strength' | 'mobility' | 'cardio' = 'strength') => {
     setCreating(true)
     const { data: userData } = await supabase.auth.getUser()
+
+    if (!userData.user?.id) {
+      console.error('No user ID found')
+      setCreating(false)
+      return
+    }
 
     const { data, error } = await supabase
       .from('programs')
       .insert({
-        name: 'Untitled Program',
-        type: 'strength',
-        created_by: userData.user?.id,
+        name: `Untitled ${type.charAt(0).toUpperCase() + type.slice(1)} Program`,
+        type,
+        created_by: userData.user.id,
       })
       .select()
       .single()
 
-    if (data && !error) {
+    if (error) {
+      console.error('Error creating program:', error)
+      alert('Failed to create program: ' + error.message)
+      setCreating(false)
+      return
+    }
+
+    if (data) {
+      router.refresh()
       router.push(`/coach/programs/${data.id}`)
     }
     setCreating(false)
@@ -102,22 +120,33 @@ export function ProgramsClient({ programs: initialPrograms }: ProgramsClientProp
               </Link>
               <h1 className="text-xl font-bold text-slate-900 dark:text-white">Programs</h1>
             </div>
-            <button
-              onClick={handleCreate}
-              disabled={creating}
-              className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-medium py-2 px-4 rounded-xl transition-all disabled:opacity-50"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              New Program
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium py-2 px-4 rounded-xl transition-all"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Import
+              </button>
+              <button
+                onClick={() => handleCreate(typeFilter === 'all' ? 'strength' : typeFilter)}
+                disabled={creating}
+                className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-medium py-2 px-4 rounded-xl transition-all disabled:opacity-50"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                New {typeFilter !== 'all' ? typeFilter.charAt(0).toUpperCase() + typeFilter.slice(1) + ' ' : ''}Program
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="relative mb-6">
+        <div className="relative mb-4">
           <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
             <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -130,6 +159,35 @@ export function ProgramsClient({ programs: initialPrograms }: ProgramsClientProp
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl pl-12 pr-4 py-3 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all"
           />
+        </div>
+
+        {/* Type filter tabs */}
+        <div className="flex gap-2 mb-6">
+          {(['all', 'strength', 'mobility', 'cardio'] as const).map((type) => {
+            const counts = {
+              all: programs.length,
+              strength: programs.filter(p => p.type === 'strength').length,
+              mobility: programs.filter(p => p.type === 'mobility').length,
+              cardio: programs.filter(p => p.type === 'cardio').length,
+            }
+            const isActive = typeFilter === type
+            const colors = {
+              all: isActive ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700',
+              strength: isActive ? 'bg-purple-600 text-white' : 'bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-500/30',
+              mobility: isActive ? 'bg-blue-600 text-white' : 'bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-500/30',
+              cardio: isActive ? 'bg-orange-600 text-white' : 'bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-500/30',
+            }
+            return (
+              <button
+                key={type}
+                onClick={() => setTypeFilter(type)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${colors[type]}`}
+              >
+                {type.charAt(0).toUpperCase() + type.slice(1)}
+                <span className="ml-1.5 opacity-70">({counts[type]})</span>
+              </button>
+            )
+          })}
         </div>
 
         <p className="text-slate-500 text-sm mb-4">
@@ -145,7 +203,7 @@ export function ProgramsClient({ programs: initialPrograms }: ProgramsClientProp
             </div>
             <p className="text-slate-500">No programs found</p>
             <button
-              onClick={handleCreate}
+              onClick={() => handleCreate()}
               className="mt-4 text-purple-600 hover:text-purple-500 font-medium"
             >
               Create your first program
@@ -164,6 +222,15 @@ export function ProgramsClient({ programs: initialPrograms }: ProgramsClientProp
           </div>
         )}
       </main>
+
+      <ImportProgramModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onSuccess={(programId) => {
+          setShowImportModal(false)
+          router.push(`/coach/programs/${programId}`)
+        }}
+      />
     </div>
   )
 }

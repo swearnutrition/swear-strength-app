@@ -64,6 +64,7 @@ const mockExercise: Exercise = {
   type: 'strength',
   primary_muscle: 'quadriceps',
   focus_area: 'lower',
+  video_url: null,
 }
 
 const mockWorkoutExercise: WorkoutExercise = {
@@ -79,6 +80,13 @@ const mockWorkoutExercise: WorkoutExercise = {
   weight_unit: 'lbs',
   rest_seconds: 90,
   rpe: 8,
+  duration_seconds: null,
+  distance: null,
+  distance_unit: null,
+  target_pace: null,
+  hr_zone: null,
+  intervals: null,
+  interval_rest_seconds: null,
   notes: null,
   sort_order: 0,
 }
@@ -91,6 +99,8 @@ const createMockProgram = (exercises: WorkoutExercise[] = [mockWorkoutExercise])
   is_indefinite: false,
   is_archived: false,
   created_by: 'user-1',
+  pdf_schedule: null,
+  pdf_tips: null,
   program_weeks: [{
     id: 'week-1',
     program_id: 'prog-1',
@@ -104,6 +114,7 @@ const createMockProgram = (exercises: WorkoutExercise[] = [mockWorkoutExercise])
       subtitle: null,
       is_rest_day: false,
       rest_day_notes: null,
+      cardio_notes: null,
       warmup_template_id: null,
       cooldown_template_id: null,
       workout_exercises: exercises,
@@ -340,6 +351,7 @@ describe('useExerciseOperations', () => {
               subtitle: null,
               is_rest_day: false,
               rest_day_notes: null,
+              cardio_notes: null,
               warmup_template_id: null,
               cooldown_template_id: null,
               workout_exercises: [mockWorkoutExercise],
@@ -352,6 +364,7 @@ describe('useExerciseOperations', () => {
               subtitle: null,
               is_rest_day: false,
               rest_day_notes: null,
+              cardio_notes: null,
               warmup_template_id: null,
               cooldown_template_id: null,
               workout_exercises: [],

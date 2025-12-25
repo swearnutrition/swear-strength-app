@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import { ProgramBuilderClient } from './ProgramBuilderClient'
-import type { Program, Exercise } from './types'
+import type { Program, Exercise, RoutineTemplate } from './types'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -28,7 +28,7 @@ export default async function ProgramBuilderPage({ params }: PageProps) {
           *,
           workout_exercises (
             *,
-            exercise:exercises (*)
+            exercise:exercises!workout_exercises_exercise_id_fkey (*)
           )
         )
       )
@@ -37,6 +37,7 @@ export default async function ProgramBuilderPage({ params }: PageProps) {
     .single()
 
   if (error || !program) {
+    console.error('Error fetching program:', error)
     notFound()
   }
 
@@ -60,14 +61,17 @@ export default async function ProgramBuilderPage({ params }: PageProps) {
   // Fetch all exercises for the exercise picker
   const { data: exercises } = await supabase
     .from('exercises')
-    .select('id, name, equipment, muscle_groups, type, primary_muscle, focus_area')
+    .select('id, name, equipment, muscle_groups, type, primary_muscle, focus_area, video_url')
     .eq('is_approved', true)
     .order('name')
 
-  // Fetch warmup/cooldown templates
+  // Fetch warmup/cooldown templates with their exercises
   const { data: templates } = await supabase
     .from('routine_templates')
-    .select('id, name, type, description, duration_minutes')
+    .select(`
+      id, name, type, description, duration_minutes, is_archived,
+      routine_template_exercises(id, template_id, exercise_id, sets, reps, notes, sort_order, exercise:exercises(*))
+    `)
     .eq('is_archived', false)
     .order('name')
 
@@ -75,7 +79,7 @@ export default async function ProgramBuilderPage({ params }: PageProps) {
     <ProgramBuilderClient
       program={sortedProgram}
       exercises={(exercises || []) as Exercise[]}
-      templates={templates || []}
+      templates={(templates || []) as unknown as RoutineTemplate[]}
     />
   )
 }

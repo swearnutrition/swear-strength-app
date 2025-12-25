@@ -34,19 +34,41 @@
   --shadow-purple: 271 81% 56%;
 }
 
-/* Light Theme */
+/* Light Theme (Default) */
 .light {
-  --background: #ffffff;
-  --background-secondary: #f8fafc;
+  --background: #f8fafc;
+  --background-secondary: #ffffff;
   --background-tertiary: #f1f5f9;
-  --foreground: #0f172a;
+  --foreground: #1e293b;
   --foreground-secondary: #475569;
   --foreground-muted: #94a3b8;
+
+  /* Brand Colors - Lighter purple for light mode */
+  --primary: #8b5cf6;
+  --primary-hover: #7c3aed;
 
   --border: #e2e8f0;
   --border-hover: #cbd5e1;
 
   --shadow-color: 215 28% 17%;
+}
+
+/* Dark Theme */
+.dark {
+  --background: #0a0a0a;
+  --background-secondary: #0f0f0f;
+  --background-tertiary: #171717;
+  --foreground: #fafafa;
+  --foreground-secondary: #a1a1aa;
+  --foreground-muted: #71717a;
+
+  --primary: #a855f7;
+  --primary-hover: #9333ea;
+
+  --border: #27272a;
+  --border-hover: #3f3f46;
+
+  --shadow-color: 0 0% 0%;
 }
 
 /* ============================================
@@ -322,4 +344,14 @@ input[type="number"] {
 
 .glow-purple-sm {
   box-shadow: 0 0 20px rgba(168, 85, 247, 0.1);
+}
+
+/* Hide scrollbar but keep functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari and Opera */
 }

@@ -3,13 +3,15 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import type { Program, WorkoutDay, Exercise, ExerciseBlock } from './types'
+import type { Program, WorkoutDay, Exercise, ExerciseBlock, RoutineTemplate } from './types'
 import { parseRestInput, formatRestTime } from './utils/parseRest'
+import { WorkoutCard } from './components/WorkoutCard'
+import { ProgramPDFExport } from './components/ProgramPDFExport'
 
 interface Props {
   program: Program
   exercises: Exercise[]
-  templates: unknown[]
+  templates: RoutineTemplate[]
 }
 
 interface ProgramSettings {
@@ -29,7 +31,7 @@ interface SaveBlockModalState {
   dayExercises: WorkoutDay['workout_exercises']
 }
 
-export function ProgramBuilderClient({ program: initialProgram, exercises }: Props) {
+export function ProgramBuilderClient({ program: initialProgram, exercises, templates }: Props) {
   const [program, setProgram] = useState(initialProgram)
   const [saving, setSaving] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -52,6 +54,7 @@ export function ProgramBuilderClient({ program: initialProgram, exercises }: Pro
   const [blocks, setBlocks] = useState<ExerciseBlock[]>([])
   const [copiedDay, setCopiedDay] = useState<WorkoutDay | null>(null)
   const [showBlocks, setShowBlocks] = useState(false)
+  const [showPDFExport, setShowPDFExport] = useState(false)
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null)
   const [editingBlockName, setEditingBlockName] = useState('')
   const [expandedBlockId, setExpandedBlockId] = useState<string | null>(null)
@@ -695,6 +698,15 @@ export function ProgramBuilderClient({ program: initialProgram, exercises }: Pro
             </span>
           )}
           <button
+            onClick={() => setShowPDFExport(true)}
+            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600"
+            title="Export PDF"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </button>
+          <button
             onClick={() => setShowBlocks(true)}
             className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600"
             title="Saved Blocks"
@@ -824,6 +836,69 @@ export function ProgramBuilderClient({ program: initialProgram, exercises }: Pro
                       <div className={`w-4 h-4 rounded-full bg-white shadow-sm transform transition-transform mx-1 ${settings.showRest ? 'translate-x-4' : 'translate-x-0'}`} />
                     </button>
                   </div>
+                </div>
+              </div>
+
+              {/* PDF Export Settings */}
+              <div className="border-t border-slate-200 dark:border-slate-700 pt-6">
+                <label className="font-medium text-slate-900 dark:text-white mb-3 block">PDF Export Settings</label>
+
+                {/* Weekly Schedule */}
+                <div className="mb-4">
+                  <label className="text-sm text-slate-600 dark:text-slate-400 mb-2 block">Weekly Schedule</label>
+                  <div className="grid grid-cols-7 gap-1">
+                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayName, idx) => {
+                      const schedule = program.pdf_schedule || []
+                      const value = schedule[idx] || ''
+                      return (
+                        <div key={dayName} className="text-center">
+                          <div className="text-xs text-slate-500 mb-1">{dayName}</div>
+                          <select
+                            value={value}
+                            onChange={(e) => {
+                              const newSchedule = [...(program.pdf_schedule || Array(7).fill(''))]
+                              newSchedule[idx] = e.target.value
+                              setProgram(p => ({ ...p, pdf_schedule: newSchedule }))
+                              // Auto-save
+                              supabase.from('programs').update({ pdf_schedule: newSchedule }).eq('id', program.id)
+                            }}
+                            className="w-full text-xs p-1 border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-800"
+                          >
+                            <option value="">Rest</option>
+                            {/* Get unique workout names */}
+                            {Array.from(new Set(
+                              program.program_weeks.flatMap(w =>
+                                w.workout_days.filter(d => !d.is_rest_day).map(d => d.name)
+                              )
+                            )).map(name => (
+                              <option key={name} value={name}>{name.length > 8 ? name.slice(0, 8) + '...' : name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Custom Tips */}
+                <div>
+                  <label className="text-sm text-slate-600 dark:text-slate-400 mb-2 block">Custom Tips (one per line)</label>
+                  <textarea
+                    value={(program.pdf_tips || []).join('\n')}
+                    onChange={(e) => {
+                      // Keep empty lines to allow typing new lines
+                      const tips = e.target.value.split('\n')
+                      setProgram(p => ({ ...p, pdf_tips: tips }))
+                    }}
+                    onBlur={(e) => {
+                      // On blur, clean up empty lines and save
+                      const tips = e.target.value.split('\n').filter(t => t.trim())
+                      setProgram(p => ({ ...p, pdf_tips: tips.length > 0 ? tips : null }))
+                      supabase.from('programs').update({ pdf_tips: tips.length > 0 ? tips : null }).eq('id', program.id)
+                    }}
+                    placeholder={"Rest 60-90 seconds between sets\nFocus on controlled movements\nTrack your weights weekly"}
+                    className="w-full text-sm p-2 border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-800 h-24 resize-none"
+                  />
                 </div>
               </div>
             </div>
@@ -1127,6 +1202,7 @@ export function ProgramBuilderClient({ program: initialProgram, exercises }: Pro
                   day={day}
                   exercises={exercises}
                   blocks={blocks}
+                  templates={templates}
                   onUpdate={updateDay}
                   onDelete={() => deleteDay(day.id)}
                   onCopy={() => copyDayToClipboard(day)}
@@ -1227,776 +1303,14 @@ export function ProgramBuilderClient({ program: initialProgram, exercises }: Pro
         </div>
       </div>
     )}
+
+    {/* PDF Export Modal */}
+    {showPDFExport && (
+      <ProgramPDFExport
+        program={program}
+        onClose={() => setShowPDFExport(false)}
+      />
+    )}
     </>
-  )
-}
-
-function WorkoutCard({ day, exercises, blocks, onUpdate, onDelete, onCopy, isCopied, onSaveAsBlock, supabase, settings, globalDragExercise, onGlobalDragStart, onGlobalDragEnd, onDropFromOtherDay }: {
-  day: WorkoutDay
-  exercises: Exercise[]
-  blocks: ExerciseBlock[]
-  onUpdate: (d: WorkoutDay) => void
-  onDelete: () => void
-  onCopy: () => void
-  isCopied: boolean
-  onSaveAsBlock: (exerciseId: string, exerciseName: string, dayExercises: WorkoutDay['workout_exercises']) => void
-  supabase: ReturnType<typeof createClient>
-  settings: ProgramSettings
-  globalDragExercise: { exerciseId: string; fromDayId: string } | null
-  onGlobalDragStart: (exerciseId: string, fromDayId: string) => void
-  onGlobalDragEnd: () => void
-  onDropFromOtherDay: (exerciseId: string, fromDayId: string, toDayId: string) => void
-}) {
-  const [search, setSearch] = useState('')
-  const [focused, setFocused] = useState(false)
-  const [menuRowId, setMenuRowId] = useState<string | null>(null)
-  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
-  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null)
-  const [showAddRow, setShowAddRow] = useState(false)
-  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null)
-  const [draggedId, setDraggedId] = useState<string | null>(null)
-  const [dragOverId, setDragOverId] = useState<string | null>(null)
-  const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
-  const [editingRestId, setEditingRestId] = useState<string | null>(null)
-  const [restInputValue, setRestInputValue] = useState('')
-
-  const insertBlock = async (block: ExerciseBlock) => {
-    if (!block.exercise_block_items?.length) {
-      console.log('No block items to insert')
-      return
-    }
-
-    // Use max sort_order + 1 to ensure correct ordering even if exercises were deleted
-    const maxSortOrder = day.workout_exercises.reduce((max, e) => Math.max(max, e.sort_order ?? 0), -1)
-    const startOrder = maxSortOrder + 1
-    const newExercises = []
-
-    for (let i = 0; i < block.exercise_block_items.length; i++) {
-      const item = block.exercise_block_items[i]
-      const { data, error } = await supabase.from('workout_exercises').insert({
-        day_id: day.id,
-        exercise_id: item.exercise_id,
-        section: 'strength',
-        sort_order: startOrder + i,
-        label: item.label,
-        sets: item.sets || '3',
-        reps: item.reps || '10',
-        weight: item.weight,
-        rest_seconds: item.rest_seconds,
-        rpe: item.rpe,
-        notes: item.notes,
-      }).select(`*, exercise:exercises!workout_exercises_exercise_id_fkey (*)`).single()
-
-      if (error) {
-        console.error('Error inserting block item:', error)
-        alert('Error inserting block: ' + error.message)
-        return
-      }
-      if (data) newExercises.push(data)
-    }
-
-    if (newExercises.length > 0) {
-      onUpdate({ ...day, workout_exercises: [...day.workout_exercises, ...newExercises] })
-    }
-    setSearch('')
-    setFocused(false)
-  }
-
-  const addExercise = async (ex: Exercise) => {
-    // Get values from the last exercise to auto-fill
-    const lastExercise = day.workout_exercises[day.workout_exercises.length - 1]
-    const defaultSets = lastExercise?.sets ?? '3'
-    const defaultReps = lastExercise?.reps ?? '10'
-    const defaultRpe = lastExercise?.rpe ?? null
-    const defaultRest = lastExercise?.rest_seconds ?? null
-    const defaultWeight = lastExercise?.weight ?? null
-
-    // Use max sort_order + 1 to ensure correct ordering even if exercises were deleted
-    const maxSortOrder = day.workout_exercises.reduce((max, e) => Math.max(max, e.sort_order ?? 0), -1)
-    const newSortOrder = maxSortOrder + 1
-
-    const { data, error } = await supabase.from('workout_exercises')
-      .insert({
-        day_id: day.id,
-        exercise_id: ex.id,
-        section: 'strength',
-        sort_order: newSortOrder,
-        sets: defaultSets,
-        reps: defaultReps,
-        rpe: defaultRpe,
-        rest_seconds: defaultRest,
-        weight: defaultWeight,
-      })
-      .select(`*, exercise:exercises!workout_exercises_exercise_id_fkey (*)`)
-      .single()
-
-    if (error) {
-      console.error('Add exercise error:', error)
-      alert('Error: ' + error.message)
-      return
-    }
-    if (data) onUpdate({ ...day, workout_exercises: [...day.workout_exercises, data] })
-    setSearch('')
-    setFocused(false)
-  }
-
-  // Debounce timers for auto-save
-  const saveTimers = useRef<Record<string, NodeJS.Timeout>>({})
-
-  const saveEx = useCallback(async (id: string, field: string, value: unknown) => {
-    console.log('Saving to DB:', { id, field, value })
-    const { error } = await supabase.from('workout_exercises').update({ [field]: value }).eq('id', id)
-    if (error) {
-      console.error('Error saving exercise field:', field, error)
-    } else {
-      console.log('Saved successfully:', field, value)
-    }
-  }, [supabase])
-
-  const updateEx = useCallback((id: string, field: string, value: unknown) => {
-    // Update local state immediately
-    onUpdate({ ...day, workout_exercises: day.workout_exercises.map(e => e.id === id ? { ...e, [field]: value } : e) })
-
-    // Debounced save to database (500ms delay)
-    const timerKey = `${id}-${field}`
-    if (saveTimers.current[timerKey]) {
-      clearTimeout(saveTimers.current[timerKey])
-    }
-    saveTimers.current[timerKey] = setTimeout(() => {
-      saveEx(id, field, value)
-      delete saveTimers.current[timerKey]
-    }, 500)
-  }, [day, onUpdate, saveEx])
-
-  // Cleanup timers on unmount
-  useEffect(() => {
-    return () => {
-      Object.values(saveTimers.current).forEach(clearTimeout)
-    }
-  }, [])
-
-  const deleteEx = async (id: string) => {
-    if (!confirm('Delete this exercise?')) return
-    await supabase.from('workout_exercises').delete().eq('id', id)
-    onUpdate({ ...day, workout_exercises: day.workout_exercises.filter(e => e.id !== id) })
-    setMenuRowId(null)
-  }
-
-  const moveEx = async (id: string, direction: 'up' | 'down') => {
-    const idx = day.workout_exercises.findIndex(e => e.id === id)
-    if (idx === -1) return
-    if (direction === 'up' && idx === 0) return
-    if (direction === 'down' && idx === day.workout_exercises.length - 1) return
-
-    const newIdx = direction === 'up' ? idx - 1 : idx + 1
-    const newExercises = [...day.workout_exercises]
-    const [moved] = newExercises.splice(idx, 1)
-    newExercises.splice(newIdx, 0, moved)
-
-    // Update sort_order in DB
-    const updates = newExercises.map((e, i) =>
-      supabase.from('workout_exercises').update({ sort_order: i }).eq('id', e.id)
-    )
-    await Promise.all(updates)
-
-    onUpdate({ ...day, workout_exercises: newExercises })
-  }
-
-  const addEmptyRow = () => {
-    setShowAddRow(true)
-  }
-
-  const handleDragStart = (id: string) => {
-    setDraggedId(id)
-    onGlobalDragStart(id, day.id)
-  }
-
-  const handleDragOver = (e: React.DragEvent, id: string) => {
-    e.preventDefault()
-    if (draggedId && draggedId !== id) {
-      setDragOverId(id)
-    }
-  }
-
-  const handleDragEnd = async () => {
-    // Handle within-day reordering
-    if (draggedId && dragOverId && draggedId !== dragOverId) {
-      const fromIdx = day.workout_exercises.findIndex(e => e.id === draggedId)
-      const toIdx = day.workout_exercises.findIndex(e => e.id === dragOverId)
-
-      if (fromIdx !== -1 && toIdx !== -1) {
-        const newExercises = [...day.workout_exercises]
-        const [moved] = newExercises.splice(fromIdx, 1)
-        newExercises.splice(toIdx, 0, moved)
-
-        // Update sort_order in DB
-        const updates = newExercises.map((e, i) =>
-          supabase.from('workout_exercises').update({ sort_order: i }).eq('id', e.id)
-        )
-        await Promise.all(updates)
-        onUpdate({ ...day, workout_exercises: newExercises })
-      }
-    }
-    setDraggedId(null)
-    setDragOverId(null)
-    onGlobalDragEnd()
-  }
-
-  // Handle drops from other days
-  const handleCardDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    // Only accept if dragging from a different day
-    if (globalDragExercise && globalDragExercise.fromDayId !== day.id) {
-      e.dataTransfer.dropEffect = 'move'
-    }
-  }
-
-  const handleCardDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    if (globalDragExercise && globalDragExercise.fromDayId !== day.id) {
-      onDropFromOtherDay(globalDragExercise.exerciseId, globalDragExercise.fromDayId, day.id)
-    }
-  }
-
-  // Group exercises by label prefix (A, B, C, etc.)
-  const getGroupLetter = (label: string | null) => {
-    if (!label) return null
-    const match = label.match(/^([A-Z])\d*$/i)
-    return match ? match[1].toUpperCase() : null
-  }
-
-  const groupExercise = async (id: string) => {
-    const exercise = day.workout_exercises.find(e => e.id === id)
-    if (!exercise) return
-
-    // Find the next available group letter
-    const usedLetters = new Set(
-      day.workout_exercises
-        .map(e => getGroupLetter(e.label))
-        .filter(Boolean)
-    )
-
-    let newLetter = 'A'
-    if (exercise.label) {
-      // Already grouped, increment the number in group
-      const currentLetter = getGroupLetter(exercise.label)
-      if (currentLetter) {
-        const groupCount = day.workout_exercises.filter(
-          e => getGroupLetter(e.label) === currentLetter
-        ).length
-        // Just update to next number in same group
-        return
-      }
-    }
-
-    // Find next available letter
-    while (usedLetters.has(newLetter) && newLetter <= 'Z') {
-      newLetter = String.fromCharCode(newLetter.charCodeAt(0) + 1)
-    }
-
-    const newLabel = `${newLetter}1`
-    await supabase.from('workout_exercises').update({ label: newLabel }).eq('id', id)
-    onUpdate({ ...day, workout_exercises: day.workout_exercises.map(e => e.id === id ? { ...e, label: newLabel } : e) })
-    setMenuRowId(null)
-    setMenuPosition(null)
-  }
-
-  const addToGroup = async (id: string, groupLetter: string) => {
-    const groupExercises = day.workout_exercises.filter(
-      e => getGroupLetter(e.label) === groupLetter
-    )
-    const nextNum = groupExercises.length + 1
-    const newLabel = `${groupLetter}${nextNum}`
-
-    await supabase.from('workout_exercises').update({ label: newLabel }).eq('id', id)
-    onUpdate({ ...day, workout_exercises: day.workout_exercises.map(e => e.id === id ? { ...e, label: newLabel } : e) })
-    setMenuRowId(null)
-    setMenuPosition(null)
-  }
-
-  const ungroupExercise = async (id: string) => {
-    await supabase.from('workout_exercises').update({ label: null }).eq('id', id)
-    onUpdate({ ...day, workout_exercises: day.workout_exercises.map(e => e.id === id ? { ...e, label: null } : e) })
-    setMenuRowId(null)
-    setMenuPosition(null)
-  }
-
-  // Get unique group letters for the "Add to group" submenu
-  const existingGroups = [...new Set(
-    day.workout_exercises
-      .map(e => getGroupLetter(e.label))
-      .filter(Boolean)
-  )] as string[]
-
-  const filtered = search ? exercises.filter(e => e.name.toLowerCase().includes(search.toLowerCase())).slice(0, 8) : []
-  const filteredBlocks = search ? blocks.filter(b => b.name.toLowerCase().includes(search.toLowerCase())).slice(0, 4) : []
-
-  // Check if exercise is first or last in its group for border styling
-  const isLastInGroup = (exercise: typeof day.workout_exercises[0], index: number) => {
-    const currentGroup = getGroupLetter(exercise.label)
-    if (!currentGroup) return true
-    const nextExercise = day.workout_exercises[index + 1]
-    if (!nextExercise) return true
-    return getGroupLetter(nextExercise.label) !== currentGroup
-  }
-
-  const toggleRestDay = async () => {
-    const newValue = !day.is_rest_day
-    onUpdate({ ...day, is_rest_day: newValue })
-    await supabase.from('workout_days').update({ is_rest_day: newValue }).eq('id', day.id)
-  }
-
-  // Check if this card should show drop indicator
-  const isDropTarget = globalDragExercise && globalDragExercise.fromDayId !== day.id
-
-  return (
-    <div
-      className={`bg-white dark:bg-slate-900 rounded-lg border shadow-sm overflow-hidden transition-all ${day.is_rest_day ? 'border-emerald-200 dark:border-emerald-800' : isDropTarget ? 'border-purple-400 border-2 ring-2 ring-purple-200 dark:ring-purple-800' : 'border-slate-200 dark:border-slate-800'}`}
-      style={{ width: '100%' }}
-      onDragOver={handleCardDragOver}
-      onDrop={handleCardDrop}
-    >
-      {/* Card Header */}
-      <div className={`px-3 py-2 border-b flex items-center justify-between ${day.is_rest_day ? 'border-emerald-100 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/20' : 'border-slate-100 dark:border-slate-800'}`}>
-        <div>
-          <input
-            value={day.name}
-            onChange={e => onUpdate({ ...day, name: e.target.value })}
-            onBlur={e => supabase.from('workout_days').update({ name: e.target.value }).eq('id', day.id)}
-            className="text-sm font-semibold bg-transparent border-b border-dashed border-transparent hover:border-slate-300 focus:border-purple-400 focus:outline-none text-slate-900 dark:text-white"
-          />
-          <div className="text-xs text-slate-400">Day {day.day_number}</div>
-        </div>
-        <div className="flex items-center gap-1">
-          {/* Rest Day Toggle */}
-          <button
-            onClick={toggleRestDay}
-            className={`px-2 py-1 text-xs rounded-full transition-colors ${day.is_rest_day ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-800 dark:text-emerald-200' : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30'}`}
-            title={day.is_rest_day ? 'Click to make workout day' : 'Click to make rest day'}
-          >
-            {day.is_rest_day ? 'Rest Day' : 'Rest'}
-          </button>
-          <button onClick={onCopy} className={`p-1.5 rounded transition-colors ${isCopied ? 'text-purple-600 bg-purple-100 dark:bg-purple-500/20' : 'text-slate-500 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-500/10'}`} title={isCopied ? 'Copied!' : 'Copy Day'}>
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-          </button>
-          <button onClick={onDelete} className="p-1.5 text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors" title="Delete Day">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-          </button>
-        </div>
-      </div>
-
-      {/* Rest Day View */}
-      {day.is_rest_day ? (
-        <div className="px-4 py-8 text-center">
-          <div className="text-3xl mb-2">😴</div>
-          <div className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Rest Day</div>
-          <input
-            value={day.rest_day_notes || ''}
-            onChange={e => onUpdate({ ...day, rest_day_notes: e.target.value })}
-            onBlur={e => supabase.from('workout_days').update({ rest_day_notes: e.target.value }).eq('id', day.id)}
-            placeholder="Add rest day notes (recovery tips, stretching, etc.)"
-            className="mt-3 w-full text-center text-xs bg-transparent focus:outline-none text-slate-400 placeholder-slate-300"
-          />
-        </div>
-      ) : (
-      <>
-      {/* Exercise Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs" style={{ tableLayout: 'fixed', minWidth: settings.showEffort || settings.showRest ? '480px' : '400px' }}>
-          <colgroup>
-            <col style={{ width: '70px' }} />
-            <col />
-            <col style={{ width: '40px' }} />
-            <col style={{ width: '44px' }} />
-            {settings.showWeight && <col style={{ width: '48px' }} />}
-            {settings.showEffort && <col style={{ width: '44px' }} />}
-            {settings.showRest && <col style={{ width: '48px' }} />}
-            <col style={{ width: '28px' }} />
-          </colgroup>
-          <thead>
-            <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-slate-500">
-              <th className="pl-2 pr-3 py-1.5 text-right font-medium">#</th>
-              <th className="pl-4 pr-1 py-1.5 text-left font-medium">Exercise</th>
-              <th className="px-1 py-1.5 text-center font-medium">Sets</th>
-              <th className="px-1 py-1.5 text-center font-medium">Reps</th>
-              {settings.showWeight && <th className="px-1 py-1.5 text-center font-medium">Wt</th>}
-              {settings.showEffort && <th className="px-1 py-1.5 text-center font-medium">{settings.effortUnit === 'rpe' ? 'RPE' : 'RIR'}</th>}
-              {settings.showRest && <th className="px-1 py-1.5 text-center font-medium">Rest</th>}
-              <th className="px-1 py-1.5 text-center font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {day.workout_exercises.map((e, i) => {
-              const groupLetter = getGroupLetter(e.label)
-              const isGrouped = !!groupLetter
-              const showSeparator = isLastInGroup(e, i) && i < day.workout_exercises.length - 1
-
-              return (
-              <React.Fragment key={e.id}>
-              <tr
-                draggable
-                onDragStart={() => handleDragStart(e.id)}
-                onDragOver={(ev) => handleDragOver(ev, e.id)}
-                onDragEnd={handleDragEnd}
-                className={`group ${isGrouped ? 'bg-purple-50/30 dark:bg-purple-500/5' : ''} ${dragOverId === e.id ? 'bg-purple-100 dark:bg-purple-500/20' : ''} ${draggedId === e.id ? 'opacity-50' : ''} ${showSeparator ? 'border-b border-slate-200 dark:border-slate-700' : ''}`}
-                onMouseEnter={() => setHoveredRowId(e.id)}
-                onMouseLeave={() => { setHoveredRowId(null); if (menuRowId === e.id) { setMenuRowId(null); setMenuPosition(null) } }}
-              >
-                {/* Row number column with hover controls */}
-                <td className="pl-2 pr-3 py-1 text-right relative">
-                  <div className="flex items-center justify-end gap-1">
-                    {/* Hover controls */}
-                    {hoveredRowId === e.id && (
-                      <>
-                        <button
-                          className="p-0.5 text-slate-300 hover:text-purple-500"
-                          title="Add row below"
-                          onClick={addEmptyRow}
-                        >
-                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                        </button>
-                        <button
-                          className="p-0.5 text-slate-300 hover:text-slate-600"
-                          title="Menu"
-                          onClick={(ev) => {
-                            if (menuRowId === e.id) {
-                              setMenuRowId(null)
-                              setMenuPosition(null)
-                            } else {
-                              const rect = ev.currentTarget.getBoundingClientRect()
-                              setMenuPosition({ top: rect.bottom + 4, left: rect.left })
-                              setMenuRowId(e.id)
-                            }
-                          }}
-                        >
-                          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                            <rect x="4" y="5" width="4" height="4" rx="1"/>
-                            <rect x="4" y="10" width="4" height="4" rx="1"/>
-                            <rect x="4" y="15" width="4" height="4" rx="1"/>
-                            <rect x="10" y="5" width="4" height="4" rx="1"/>
-                            <rect x="10" y="10" width="4" height="4" rx="1"/>
-                            <rect x="10" y="15" width="4" height="4" rx="1"/>
-                          </svg>
-                        </button>
-                        <button
-                          className="p-0.5 text-slate-300 hover:text-red-500"
-                          title="Delete exercise"
-                          onClick={() => deleteEx(e.id)}
-                        >
-                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </>
-                    )}
-                    {/* Row number/label */}
-                    <span className={`min-w-[20px] text-right ${e.label ? 'text-purple-600 font-semibold' : 'text-slate-400'}`}>
-                      {e.label || (i + 1)}
-                    </span>
-                  </div>
-
-                  {/* Context Menu */}
-                  {menuRowId === e.id && menuPosition && (
-                    <div
-                      className="fixed w-52 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl py-1 text-xs"
-                      style={{ zIndex: 9999, top: menuPosition.top, left: menuPosition.left }}
-                    >
-                      {!e.label ? (
-                        <>
-                          <button
-                            onClick={() => groupExercise(e.id)}
-                            className="w-full text-left px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
-                          >
-                            <span className="text-purple-500 font-bold text-[10px]">A1</span> Start new superset
-                            <span className="ml-auto text-slate-400 text-[10px]">⌘+G</span>
-                          </button>
-                          {existingGroups.length > 0 && (
-                            <>
-                              <div className="px-3 py-1 text-[10px] text-slate-400 uppercase tracking-wide">Add to group</div>
-                              {existingGroups.map(letter => (
-                                <button
-                                  key={letter}
-                                  onClick={() => addToGroup(e.id, letter)}
-                                  className="w-full text-left px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
-                                >
-                                  <span className="text-purple-500 font-bold text-[10px]">{letter}</span> Add to Group {letter}
-                                </button>
-                              ))}
-                            </>
-                          )}
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => ungroupExercise(e.id)}
-                          className="w-full text-left px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
-                        >
-                          <span className="text-slate-400">✕</span> Remove from group
-                          <span className="ml-auto text-slate-400 text-[10px]">⇧⌘+G</span>
-                        </button>
-                      )}
-                      <div className="border-t border-slate-100 dark:border-slate-700 my-1" />
-                      <button
-                        onClick={() => { moveEx(e.id, 'up'); setMenuRowId(null) }}
-                        className="w-full text-left px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
-                      >
-                        <svg className="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-                        Move up
-                      </button>
-                      <button
-                        onClick={() => { moveEx(e.id, 'down'); setMenuRowId(null) }}
-                        className="w-full text-left px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
-                      >
-                        <svg className="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                        Move down
-                      </button>
-                      <div className="border-t border-slate-100 dark:border-slate-700 my-1" />
-                      <button
-                        onClick={() => { addEmptyRow(); setMenuRowId(null) }}
-                        className="w-full text-left px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
-                      >
-                        <svg className="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                        Insert row below
-                      </button>
-                      <button
-                        onClick={() => {
-                          onSaveAsBlock(e.id, e.exercise?.name || '', day.workout_exercises)
-                          setMenuRowId(null)
-                          setMenuPosition(null)
-                        }}
-                        className="w-full text-left px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
-                      >
-                        <span className="text-slate-400">⇒</span> Save as block
-                        <span className="ml-auto text-slate-400 text-[10px]">⌘+B</span>
-                      </button>
-                      <button className="w-full text-left px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
-                        <span className="text-slate-400">T</span> Insert text box
-                      </button>
-                      <div className="border-t border-slate-100 dark:border-slate-700 my-1" />
-                      <button
-                        onClick={() => deleteEx(e.id)}
-                        className="w-full text-left px-3 py-1.5 hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500 flex items-center gap-2"
-                      >
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        Delete 1 row
-                        <span className="ml-auto text-[10px]">⌘+⌫</span>
-                      </button>
-                    </div>
-                  )}
-                </td>
-                <td className="pl-4 pr-1 py-1.5 text-slate-800 dark:text-slate-200 font-medium">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="truncate">{e.exercise?.name}</span>
-                    {e.notes && (
-                      <button
-                        onClick={() => setExpandedRowId(expandedRowId === e.id ? null : e.id)}
-                        className="flex-shrink-0 text-slate-300 hover:text-purple-500"
-                        title={e.notes}
-                      >
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                </td>
-                <td className="px-0.5 py-0.5">
-                  <input
-                    value={e.sets || ''}
-                    onChange={ev => updateEx(e.id, 'sets', ev.target.value)}
-                    className="w-full text-center bg-transparent focus:outline-none py-0.5 text-slate-700 dark:text-slate-300"
-                  />
-                </td>
-                <td className="px-0.5 py-0.5">
-                  <input
-                    value={e.reps || ''}
-                    onChange={ev => updateEx(e.id, 'reps', ev.target.value)}
-                    className="w-full text-center bg-transparent focus:outline-none py-0.5 text-slate-700 dark:text-slate-300"
-                  />
-                </td>
-                {settings.showWeight && (
-                  <td className="px-0.5 py-0.5">
-                    <input
-                      value={e.weight || ''}
-                      onChange={ev => updateEx(e.id, 'weight', ev.target.value)}
-                      className="w-full text-center bg-transparent focus:outline-none py-0.5 text-slate-700 dark:text-slate-300"
-                    />
-                  </td>
-                )}
-                {settings.showEffort && (
-                  <td className="px-0.5 py-0.5">
-                    <input
-                      value={e.rpe || ''}
-                      onChange={ev => updateEx(e.id, 'rpe', ev.target.value ? Number(ev.target.value) : null)}
-                      className="w-full text-center bg-transparent focus:outline-none py-0.5 text-slate-700 dark:text-slate-300"
-                      placeholder="-"
-                    />
-                  </td>
-                )}
-                {settings.showRest && (
-                  <td className="px-0.5 py-0.5">
-                    <input
-                      value={editingRestId === e.id ? restInputValue : formatRestTime(e.rest_seconds)}
-                      onFocus={() => {
-                        setEditingRestId(e.id)
-                        setRestInputValue(formatRestTime(e.rest_seconds))
-                      }}
-                      onChange={ev => setRestInputValue(ev.target.value)}
-                      onBlur={() => {
-                        const seconds = parseRestInput(restInputValue)
-                        updateEx(e.id, 'rest_seconds', seconds)
-                        setEditingRestId(null)
-                        setRestInputValue('')
-                      }}
-                      className="w-full text-center bg-transparent focus:outline-none py-0.5 text-slate-700 dark:text-slate-300"
-                      placeholder="-"
-                    />
-                  </td>
-                )}
-                <td className="px-0.5 py-0.5 text-center">
-                  <button
-                    onClick={() => setExpandedRowId(expandedRowId === e.id ? null : e.id)}
-                    className="p-0.5 text-slate-300 hover:text-slate-500"
-                    title="Notes"
-                  >
-                    <svg className={`w-3.5 h-3.5 transition-transform ${expandedRowId === e.id ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                </td>
-              </tr>
-              {/* Expanded details row - Notes only */}
-              {expandedRowId === e.id && (
-                <tr className={`${isGrouped ? 'bg-purple-50/30 dark:bg-purple-500/5' : 'bg-slate-50/50 dark:bg-slate-800/30'}`}>
-                  <td colSpan={4 + (settings.showWeight ? 1 : 0) + (settings.showEffort ? 1 : 0) + (settings.showRest ? 1 : 0) + 1} className="px-3 py-2">
-                    <div className="text-xs">
-                      <label className="text-slate-400 text-[10px] uppercase tracking-wide block mb-0.5">Notes</label>
-                      <input
-                        value={e.notes || ''}
-                        onChange={ev => updateEx(e.id, 'notes', ev.target.value)}
-                        className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-slate-700 dark:text-slate-300 focus:outline-none focus:border-purple-400"
-                        placeholder="Add exercise notes..."
-                      />
-                    </div>
-                  </td>
-                </tr>
-              )}
-              </React.Fragment>
-            )})}
-            {/* Add Exercise Row - always visible when showAddRow, has search text, or no exercises */}
-            {(showAddRow || search || day.workout_exercises.length === 0) && (
-              <tr>
-                <td className="pl-2 pr-3 py-1.5 text-right text-slate-300">{day.workout_exercises.length + 1}</td>
-                <td colSpan={3 + (settings.showWeight ? 1 : 0) + (settings.showEffort ? 1 : 0) + (settings.showRest ? 1 : 0) + 1} className="px-1 py-1.5 relative">
-                  <input
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    onFocus={(ev) => {
-                      setFocused(true)
-                      const rect = ev.currentTarget.getBoundingClientRect()
-                      setDropdownPosition({ top: rect.bottom + 4, left: rect.left })
-                    }}
-                    onBlur={() => {
-                      setTimeout(() => {
-                        setFocused(false)
-                        setDropdownPosition(null)
-                        // Only hide the add row if there's no search text
-                        if (!search) setShowAddRow(false)
-                      }, 200)
-                    }}
-                    placeholder="Type to search exercises..."
-                    className="w-full bg-transparent focus:outline-none text-slate-400 placeholder-slate-300"
-                    autoFocus={showAddRow}
-                  />
-                  {focused && search && dropdownPosition && (
-                    <div className="fixed w-72 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-h-64 overflow-y-auto" style={{ zIndex: 9999, top: dropdownPosition.top, left: dropdownPosition.left }}>
-                      {/* Saved Blocks Section */}
-                      {filteredBlocks.length > 0 && (
-                        <>
-                          <div className="px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-400 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-700 sticky top-0">
-                            Saved Blocks
-                          </div>
-                          {filteredBlocks.map(block => (
-                            <button
-                              key={block.id}
-                              onMouseDown={ev => {
-                                ev.preventDefault()
-                                insertBlock(block)
-                                setShowAddRow(false)
-                              }}
-                              className="w-full text-left px-3 py-2 hover:bg-purple-50 dark:hover:bg-purple-500/20 flex justify-between items-center border-b border-slate-100 dark:border-slate-700 text-sm"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="text-purple-500 text-xs">⊞</span>
-                                <span className="text-slate-800 dark:text-slate-200 truncate">{block.name}</span>
-                              </div>
-                              <span className="text-slate-400 text-xs ml-1 flex-shrink-0">
-                                {block.exercise_block_items?.length || 0} ex
-                              </span>
-                            </button>
-                          ))}
-                        </>
-                      )}
-                      {/* Exercises Section */}
-                      {filtered.length > 0 && (
-                        <>
-                          {filteredBlocks.length > 0 && (
-                            <div className="px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-400 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-700 sticky top-0">
-                              Exercises
-                            </div>
-                          )}
-                          {filtered.map(ex => (
-                            <button
-                              key={ex.id}
-                              onMouseDown={ev => {
-                                ev.preventDefault()
-                                addExercise(ex)
-                                setShowAddRow(false)
-                              }}
-                              className="w-full text-left px-3 py-2 hover:bg-purple-50 dark:hover:bg-purple-500/20 flex justify-between items-center border-b border-slate-100 dark:border-slate-700 last:border-0 text-sm"
-                            >
-                              <span className="text-slate-800 dark:text-slate-200 truncate">{ex.name}</span>
-                              <span className="text-slate-400 text-xs ml-1">{ex.equipment || 'BW'}</span>
-                            </button>
-                          ))}
-                        </>
-                      )}
-                      {/* No results */}
-                      {filtered.length === 0 && filteredBlocks.length === 0 && (
-                        <div className="px-3 py-2 text-slate-400 text-sm">
-                          No exercises or blocks found
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Add Exercise Button - always visible when exercises exist and no add row showing */}
-      {day.workout_exercises.length > 0 && !showAddRow && !search && (
-        <div className="px-3 py-2 border-t border-slate-100 dark:border-slate-800">
-          <button
-            onClick={() => setShowAddRow(true)}
-            className="w-full py-1.5 text-xs text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-500/10 rounded transition-colors flex items-center justify-center gap-1"
-          >
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-            Add Exercise
-          </button>
-        </div>
-      )}
-      </>
-      )}
-
-      {/* Card Footer - Notes */}
-      <div className="px-3 py-2 border-t border-slate-100 dark:border-slate-800">
-        <input
-          placeholder="Type to add workout notes..."
-          className="w-full text-xs bg-transparent focus:outline-none text-slate-400 placeholder-slate-300"
-        />
-      </div>
-    </div>
   )
 }

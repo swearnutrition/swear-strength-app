@@ -28,11 +28,11 @@ interface ThemeProviderProps {
 
 export function ThemeProvider({
   children,
-  defaultTheme = 'dark',
+  defaultTheme = 'light',
   storageKey = 'swear-strength-theme',
 }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<Theme>(defaultTheme)
-  const [resolvedTheme, setResolvedTheme] = useState<'dark' | 'light'>('dark')
+  const [resolvedTheme, setResolvedTheme] = useState<'dark' | 'light'>('light')
   const [mounted, setMounted] = useState(false)
 
   // Load theme from localStorage on mount
@@ -51,7 +51,7 @@ export function ThemeProvider({
     const root = document.documentElement
 
     const updateResolvedTheme = () => {
-      let resolved: 'dark' | 'light' = 'dark'
+      let resolved: 'dark' | 'light' = 'light'
 
       if (theme === 'system') {
         resolved = window.matchMedia('(prefers-color-scheme: dark)').matches
