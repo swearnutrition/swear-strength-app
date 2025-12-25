@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import { TemplateModal } from './TemplateModal'
+import { BlockModal } from './BlockModal'
 import type { ExerciseBlock } from '../programs/[id]/types'
 
 type TabType = 'warmup' | 'cooldown' | 'blocks'
@@ -28,6 +29,8 @@ export default function TemplatesPage() {
   const [editingTemplate, setEditingTemplate] = useState<RoutineTemplate | null>(null)
   const [blocks, setBlocks] = useState<ExerciseBlock[]>([])
   const [loadingBlocks, setLoadingBlocks] = useState(false)
+  const [blockModalOpen, setBlockModalOpen] = useState(false)
+  const [editingBlock, setEditingBlock] = useState<ExerciseBlock | null>(null)
 
   const supabase = createClient()
 
@@ -141,6 +144,30 @@ export default function TemplatesPage() {
     }
   }
 
+  const handleEditBlock = async (block: ExerciseBlock) => {
+    // Fetch block with items
+    const { data } = await supabase
+      .from('exercise_blocks')
+      .select(`*, exercise_block_items(*, exercise:exercises(*))`)
+      .eq('id', block.id)
+      .single()
+
+    if (data) {
+      setEditingBlock(data)
+      setBlockModalOpen(true)
+    }
+  }
+
+  const handleBlockModalClose = () => {
+    setBlockModalOpen(false)
+    setEditingBlock(null)
+  }
+
+  const handleBlockModalSave = () => {
+    fetchBlocks()
+    handleBlockModalClose()
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       {/* Header */}
@@ -157,7 +184,17 @@ export default function TemplatesPage() {
                 {activeTab === 'blocks' ? 'Saved Blocks' : 'Warmup & Cooldown Templates'}
               </h1>
             </div>
-            {activeTab !== 'blocks' && (
+            {activeTab === 'blocks' ? (
+              <button
+                onClick={() => { setEditingBlock(null); setBlockModalOpen(true) }}
+                className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-medium py-2 px-4 rounded-xl transition-all"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                New Block
+              </button>
+            ) : (
               <button
                 onClick={handleAdd}
                 className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-medium py-2 px-4 rounded-xl transition-all"
@@ -267,7 +304,7 @@ export default function TemplatesPage() {
                     <BlockCard
                       key={block.id}
                       block={block}
-                      onEdit={() => {/* TODO: open block modal */}}
+                      onEdit={() => handleEditBlock(block)}
                       onDelete={() => handleDeleteBlock(block.id)}
                     />
                   ))}
@@ -347,6 +384,15 @@ export default function TemplatesPage() {
           type={activeTab}
           onClose={handleModalClose}
           onSave={handleModalSave}
+        />
+      )}
+
+      {/* Block Modal */}
+      {blockModalOpen && (
+        <BlockModal
+          block={editingBlock}
+          onClose={handleBlockModalClose}
+          onSave={handleBlockModalSave}
         />
       )}
     </div>
