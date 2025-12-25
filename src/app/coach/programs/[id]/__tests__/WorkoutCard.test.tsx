@@ -180,8 +180,8 @@ describe('WorkoutCard', () => {
     it('renders add exercise row when no exercises', () => {
       const emptyDay = { ...mockDay, workout_exercises: [] }
       renderWorkoutCard({ day: emptyDay })
-      // Empty state shows the add exercise input
-      expect(screen.getByPlaceholderText('Type to search exercises...')).toBeInTheDocument()
+      // Empty state shows the add exercise input in strength section
+      expect(screen.getByPlaceholderText('Search blocks or exercises...')).toBeInTheDocument()
     })
 
     it('shows copied indicator when isCopied is true', () => {
@@ -197,8 +197,8 @@ describe('WorkoutCard', () => {
       const emptyDay = { ...mockDay, workout_exercises: [] }
       renderWorkoutCard({ day: emptyDay })
 
-      // Type in search (search is always visible when no exercises)
-      const searchInput = screen.getByPlaceholderText('Type to search exercises...')
+      // Type in search (search is always visible when no exercises in strength section)
+      const searchInput = screen.getByPlaceholderText('Search blocks or exercises...')
       await user.type(searchInput, 'Bench')
 
       // Should show matching exercise in dropdown
@@ -212,12 +212,12 @@ describe('WorkoutCard', () => {
       const emptyDay = { ...mockDay, workout_exercises: [] }
       renderWorkoutCard({ day: emptyDay })
 
-      const searchInput = screen.getByPlaceholderText('Type to search exercises...')
+      const searchInput = screen.getByPlaceholderText('Search blocks or exercises...')
       await user.type(searchInput, 'xyz')
 
-      // Should show "No exercises or blocks found" message
+      // Should show "No results found" message
       await waitFor(() => {
-        expect(screen.getByText('No exercises or blocks found')).toBeInTheDocument()
+        expect(screen.getByText('No results found')).toBeInTheDocument()
       })
     })
   })
