@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { User } from '@supabase/supabase-js'
-import { CoachHeader } from './CoachHeader'
 
 // Icons
 function UsersIcon({ className }: { className?: string }) {
@@ -119,6 +118,15 @@ function GridIcon({ className }: { className?: string }) {
   )
 }
 
+function CheckCircleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
+    </svg>
+  )
+}
+
 interface Profile {
   id: string
   name: string | null
@@ -180,10 +188,7 @@ export function CoachDashboardClient({ profile, user, stats, recentActivity }: C
   ]
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-      <CoachHeader profile={profile} user={user} />
-
-      <main className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
@@ -218,6 +223,14 @@ export function CoachDashboardClient({ profile, user, stats, recentActivity }: C
             >
               <CalendarIcon className="w-4 h-4" />
               Programs
+            </Link>
+            <Link
+              href="/coach/habits"
+              className="flex items-center gap-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-semibold py-2.5 px-4 rounded-xl transition-all hover:bg-slate-50 dark:hover:bg-slate-700"
+              style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)' }}
+            >
+              <CheckCircleIcon className="w-4 h-4" />
+              Habits
             </Link>
           </div>
         </div>
@@ -421,8 +434,7 @@ export function CoachDashboardClient({ profile, user, stats, recentActivity }: C
             </div>
           </div>
         </div>
-      </main>
-    </div>
+      </div>
   )
 }
 

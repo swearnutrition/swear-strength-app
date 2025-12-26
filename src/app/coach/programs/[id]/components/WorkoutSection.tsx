@@ -29,42 +29,9 @@ interface WorkoutSectionProps {
 }
 
 const sectionConfig = {
-  warmup: {
-    label: 'Warmup',
-    color: 'orange',
-    bgClass: 'bg-orange-50 dark:bg-orange-500/10',
-    textClass: 'text-orange-600 dark:text-orange-400',
-    borderClass: 'border-orange-200 dark:border-orange-800',
-    icon: (
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
-      </svg>
-    ),
-  },
-  strength: {
-    label: 'Strength',
-    color: 'purple',
-    bgClass: 'bg-purple-50 dark:bg-purple-500/10',
-    textClass: 'text-purple-600 dark:text-purple-400',
-    borderClass: 'border-purple-200 dark:border-purple-800',
-    icon: (
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
-      </svg>
-    ),
-  },
-  cooldown: {
-    label: 'Cooldown',
-    color: 'blue',
-    bgClass: 'bg-blue-50 dark:bg-blue-500/10',
-    textClass: 'text-blue-600 dark:text-blue-400',
-    borderClass: 'border-blue-200 dark:border-blue-800',
-    icon: (
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-      </svg>
-    ),
-  },
+  warmup: { label: 'Warmup' },
+  strength: { label: 'Strength' },
+  cooldown: { label: 'Cooldown' },
 }
 
 export function WorkoutSection({
@@ -269,15 +236,14 @@ export function WorkoutSection({
   const isStrength = section === 'strength'
 
   return (
-    <div className={`border-t ${config.borderClass}`}>
+    <div className="border-t border-slate-100 dark:border-slate-800">
       {/* Section Header */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className={`w-full px-3 py-2 flex items-center justify-between ${config.bgClass} hover:opacity-80 transition-opacity`}
+        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
       >
         <div className="flex items-center gap-2">
-          <span className={config.textClass}>{config.icon}</span>
-          <span className={`text-xs font-semibold uppercase tracking-wide ${config.textClass}`}>
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
             {config.label}
           </span>
           <span className="text-xs text-slate-400">
@@ -307,6 +273,7 @@ export function WorkoutSection({
                 {isStrength && settings.showWeight && <col style={{ width: '48px' }} />}
                 {isStrength && settings.showEffort && <col style={{ width: '44px' }} />}
                 {isStrength && settings.showRest && <col style={{ width: '48px' }} />}
+                {settings.showNotes && <col style={{ width: '100px' }} />}
                 <col style={{ width: '24px' }} />
               </colgroup>
               <thead>
@@ -318,6 +285,7 @@ export function WorkoutSection({
                   {isStrength && settings.showWeight && <th className="py-1 text-center">Wt</th>}
                   {isStrength && settings.showEffort && <th className="py-1 text-center">{settings.effortUnit.toUpperCase()}</th>}
                   {isStrength && settings.showRest && <th className="py-1 text-center">Rest</th>}
+                  {settings.showNotes && <th className="py-1 text-left">Notes</th>}
                   <th></th>
                 </tr>
               </thead>
@@ -369,6 +337,16 @@ export function WorkoutSection({
                             updateEx(e.id, 'rest_seconds', seconds)
                           }}
                           className="w-full text-center bg-transparent focus:outline-none text-slate-700 dark:text-slate-300"
+                        />
+                      </td>
+                    )}
+                    {settings.showNotes && (
+                      <td className="py-1">
+                        <input
+                          value={e.notes || ''}
+                          onChange={ev => updateEx(e.id, 'notes', ev.target.value || null)}
+                          placeholder="Notes..."
+                          className="w-full bg-transparent focus:outline-none text-slate-700 dark:text-slate-300 placeholder-slate-400 text-xs"
                         />
                       </td>
                     )}
@@ -435,7 +413,7 @@ export function WorkoutSection({
                           className="w-full text-left px-3 py-2 hover:bg-purple-50 dark:hover:bg-purple-500/20 flex justify-between items-center border-b border-slate-100 dark:border-slate-700 text-sm"
                         >
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className={config.textClass}>⊞</span>
+                            <span className="text-purple-500">⊞</span>
                             <span className="text-slate-800 dark:text-slate-200 truncate">{template.name}</span>
                           </div>
                           <span className="text-slate-400 text-xs ml-1 flex-shrink-0">

@@ -63,6 +63,81 @@ export function ProgramPDFExport({ program, onClose }: ProgramPDFExportProps) {
     })
   })
 
+  // Calculate muscle volume for PDF summary
+  const muscleVolume = (() => {
+    const normalizeMuscle = (muscle: string): string => {
+      const m = muscle.toLowerCase().trim()
+      const mappings: Record<string, string> = {
+        'pectorals': 'Chest', 'pecs': 'Chest', 'chest': 'Chest',
+        'deltoids': 'Shoulders', 'delts': 'Shoulders', 'shoulders': 'Shoulders', 'front delts': 'Shoulders', 'side delts': 'Shoulders',
+        'rear delts': 'Rear Delts', 'posterior deltoids': 'Rear Delts',
+        'lats': 'Lats', 'latissimus': 'Lats',
+        'back': 'Back', 'upper back': 'Back', 'rhomboids': 'Back',
+        'traps': 'Traps', 'trapezius': 'Traps',
+        'quads': 'Quads', 'quadriceps': 'Quads',
+        'hamstrings': 'Hamstrings', 'hams': 'Hamstrings',
+        'glutes': 'Glutes', 'gluteus': 'Glutes',
+        'calves': 'Calves', 'gastrocnemius': 'Calves',
+        'abs': 'Abs', 'abdominals': 'Abs', 'core': 'Abs',
+        'obliques': 'Obliques',
+        'lower back': 'Lower Back', 'erectors': 'Lower Back', 'spinal erectors': 'Lower Back',
+        'biceps': 'Biceps', 'triceps': 'Triceps', 'forearms': 'Forearms', 'grip': 'Forearms',
+      }
+      return mappings[m] || m.charAt(0).toUpperCase() + m.slice(1)
+    }
+
+    const parseSets = (setsStr: string | null): number => {
+      if (!setsStr) return 0
+      const cleaned = setsStr.trim()
+      if (cleaned.includes('-')) {
+        const [min, max] = cleaned.split('-').map(s => parseInt(s.trim()))
+        return (min + max) / 2
+      }
+      return parseInt(cleaned) || 0
+    }
+
+    const muscleMap = new Map<string, { primary: number; secondary: number }>()
+
+    for (const week of program.program_weeks) {
+      for (const day of week.workout_days) {
+        if (day.is_rest_day) continue
+        for (const we of day.workout_exercises) {
+          if (we.section !== 'strength') continue
+          const exercise = we.exercise
+          if (!exercise) continue
+          const sets = parseSets(we.sets)
+          if (sets === 0) continue
+
+          if (exercise.primary_muscle) {
+            const normalized = normalizeMuscle(exercise.primary_muscle)
+            const current = muscleMap.get(normalized) || { primary: 0, secondary: 0 }
+            muscleMap.set(normalized, { primary: current.primary + sets, secondary: current.secondary })
+          }
+
+          if (exercise.muscle_groups) {
+            for (const muscle of exercise.muscle_groups) {
+              if (exercise.primary_muscle && normalizeMuscle(muscle) === normalizeMuscle(exercise.primary_muscle)) continue
+              const normalized = normalizeMuscle(muscle)
+              const current = muscleMap.get(normalized) || { primary: 0, secondary: 0 }
+              muscleMap.set(normalized, { primary: current.primary, secondary: current.secondary + sets })
+            }
+          }
+        }
+      }
+    }
+
+    return Array.from(muscleMap.entries())
+      .map(([muscle, data]) => ({
+        muscle,
+        sets: data.primary + (data.secondary * 0.5),
+        primary: data.primary,
+        secondary: data.secondary,
+      }))
+      .filter(v => v.sets > 0)
+      .sort((a, b) => b.sets - a.sets)
+      .slice(0, 12) // Top 12 muscles
+  })()
+
   // Colors - muted palette
   const colors = {
     darkBg: '#1e1b4b',
@@ -278,6 +353,44 @@ export function ProgramPDFExport({ program, onClose }: ProgramPDFExportProps) {
                   </>
                 )}
 
+                {/* Muscle Volume Summary */}
+                {muscleVolume.length > 0 && (
+                  <>
+                    <h3 style={{ fontSize: '14px', fontWeight: '600', color: colors.gray800, margin: '16px 0 8px 0' }}>Volume Distribution</h3>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {muscleVolume.map((vol, idx) => {
+                        const maxSets = muscleVolume[0]?.sets || 1
+                        const barWidth = Math.max(20, (vol.sets / maxSets) * 100)
+                        return (
+                          <div key={idx} style={{
+                            flex: '0 0 calc(50% - 4px)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '9px',
+                          }}>
+                            <div style={{ width: '60px', color: colors.gray600, fontWeight: '500' }}>{vol.muscle}</div>
+                            <div style={{ flex: 1, height: '8px', backgroundColor: colors.gray100, borderRadius: '4px', overflow: 'hidden' }}>
+                              <div style={{
+                                width: `${barWidth}%`,
+                                height: '100%',
+                                backgroundColor: colors.purple,
+                                borderRadius: '4px',
+                              }} />
+                            </div>
+                            <div style={{ width: '28px', textAlign: 'right', color: colors.gray500, fontSize: '8px' }}>
+                              {vol.sets.toFixed(0)}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <div style={{ marginTop: '6px', fontSize: '8px', color: colors.gray400 }}>
+                      Total sets per muscle group across all {totalWeeks} week{totalWeeks !== 1 ? 's' : ''} (weighted: primary = 1, secondary = 0.5)
+                    </div>
+                  </>
+                )}
+
               </div>
               <div style={{ textAlign: 'center', padding: '12px', color: colors.gray400, fontSize: '10px' }}>2</div>
             </div>
@@ -393,7 +506,7 @@ export function ProgramPDFExport({ program, onClose }: ProgramPDFExportProps) {
                             <div style={{ fontSize: '8px', fontWeight: '700', color: '#EA580C', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
                               Cardio
                             </div>
-                            <div style={{ fontSize: '9px', color: colors.gray700, whiteSpace: 'pre-wrap' }}>
+                            <div style={{ fontSize: '9px', color: colors.gray600, whiteSpace: 'pre-wrap' }}>
                               {day.cardio_notes}
                             </div>
                           </div>

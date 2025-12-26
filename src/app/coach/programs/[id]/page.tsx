@@ -44,6 +44,9 @@ export default async function ProgramBuilderPage({ params }: PageProps) {
   // Sort weeks, days, and exercises
   const sortedProgram: Program = {
     ...program,
+    // Ensure arrays have defaults
+    primary_muscles: program.primary_muscles || [],
+    injury_friendly: program.injury_friendly || [],
     program_weeks: (program.program_weeks || [])
       .sort((a: { week_number: number }, b: { week_number: number }) => a.week_number - b.week_number)
       .map((week: { workout_days?: Array<{ day_number: number; workout_exercises?: Array<{ sort_order: number }> }> }) => ({

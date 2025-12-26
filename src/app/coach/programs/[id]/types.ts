@@ -58,6 +58,10 @@ export interface ProgramWeek {
   workout_days: WorkoutDay[]
 }
 
+export type ProgramDifficulty = 'beginner' | 'intermediate' | 'advanced'
+export type ProgramStyle = 'powerlifting' | 'bodybuilding' | 'general_fitness' | 'athletic' | 'rehab_prehab' | 'crossfit' | 'olympic_weightlifting' | 'strongman' | 'calisthenics' | 'hybrid' | 'sport_specific'
+export type ProgramDelivery = 'pdf' | 'app' | 'in_person' | 'hybrid'
+
 export interface Program {
   id: string
   name: string
@@ -69,6 +73,11 @@ export interface Program {
   program_weeks: ProgramWeek[]
   pdf_schedule: string[] | null
   pdf_tips: string[] | null
+  difficulty: ProgramDifficulty | null
+  style: ProgramStyle | null
+  primary_muscles: string[]
+  delivery_method: ProgramDelivery | null
+  injury_friendly: string[]
 }
 
 export interface Template {

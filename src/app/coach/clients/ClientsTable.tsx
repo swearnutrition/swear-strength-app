@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { InviteClientModal } from './InviteClientModal'
+import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 interface Program {
@@ -41,6 +43,29 @@ interface ClientsTableProps {
 export function ClientsTable({ clients, workoutsByUser, pendingInvites }: ClientsTableProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
+  const [cancellingInvite, setCancellingInvite] = useState<string | null>(null)
+  const router = useRouter()
+  const supabase = createClient()
+
+  const handleCancelInvite = async (inviteId: string) => {
+    if (!confirm('Are you sure you want to cancel this invite?')) return
+
+    setCancellingInvite(inviteId)
+    try {
+      const { error } = await supabase
+        .from('invites')
+        .delete()
+        .eq('id', inviteId)
+
+      if (error) throw error
+      router.refresh()
+    } catch (err) {
+      console.error('Failed to cancel invite:', err)
+      alert('Failed to cancel invite')
+    } finally {
+      setCancellingInvite(null)
+    }
+  }
 
   const filteredClients = clients.filter(
     (client) =>
@@ -113,9 +138,18 @@ export function ClientsTable({ clients, workoutsByUser, pendingInvites }: Client
             {pendingInvites.map((invite) => (
               <div key={invite.id} className="flex items-center justify-between text-sm">
                 <span className="text-slate-700 dark:text-slate-300">{invite.email}</span>
-                <span className="text-slate-500">
-                  Expires {new Date(invite.expires_at).toLocaleDateString()}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-slate-500">
+                    Expires {new Date(invite.expires_at).toLocaleDateString()}
+                  </span>
+                  <button
+                    onClick={() => handleCancelInvite(invite.id)}
+                    disabled={cancellingInvite === invite.id}
+                    className="text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 font-medium disabled:opacity-50"
+                  >
+                    {cancellingInvite === invite.id ? 'Cancelling...' : 'Cancel'}
+                  </button>
+                </div>
               </div>
             ))}
           </div>

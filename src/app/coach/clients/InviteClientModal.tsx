@@ -15,6 +15,8 @@ export function InviteClientModal({ onClose }: InviteClientModalProps) {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [inviteLink, setInviteLink] = useState<string | null>(null)
+  const [sendEmail, setSendEmail] = useState(true)
+  const [emailSent, setEmailSent] = useState(false)
 
   const router = useRouter()
   const supabase = createClient()
@@ -55,8 +57,44 @@ export function InviteClientModal({ onClose }: InviteClientModalProps) {
       const baseUrl = window.location.origin
       const link = `${baseUrl}/invite/${token}`
       setInviteLink(link)
-      setSuccess(true)
 
+      // Get coach name for email
+      const { data: coachProfile } = await supabase
+        .from('profiles')
+        .select('name')
+        .eq('id', user.id)
+        .single()
+
+      const coachName = coachProfile?.name || 'Your Coach'
+
+      // Send invite email if enabled
+      if (sendEmail) {
+        try {
+          const { data: fnData, error: fnError } = await supabase.functions.invoke('send-email', {
+            body: {
+              to: email.toLowerCase().trim(),
+              template: 'client-invite',
+              data: {
+                inviteLink: link,
+                coachName,
+              },
+            },
+          })
+
+          console.log('Email function response:', { fnData, fnError })
+
+          if (fnError) {
+            console.error('Failed to send email:', fnError)
+            // Don't fail the whole process if email fails
+          } else {
+            setEmailSent(true)
+          }
+        } catch (emailErr) {
+          console.error('Email error:', emailErr)
+        }
+      }
+
+      setSuccess(true)
       router.refresh()
     } catch (err) {
       console.error('Error creating invite:', err)
@@ -103,7 +141,11 @@ export function InviteClientModal({ onClose }: InviteClientModalProps) {
               </div>
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Invite Created!</h3>
               <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">
-                Share this link with {email}
+                {emailSent ? (
+                  <>Email sent to <strong className="text-slate-700 dark:text-slate-200">{email}</strong></>
+                ) : (
+                  <>Share this link with {email}</>
+                )}
               </p>
             </div>
 
@@ -176,8 +218,28 @@ export function InviteClientModal({ onClose }: InviteClientModalProps) {
               />
             </div>
 
+            {/* Send Email Toggle */}
+            <label className="flex items-center gap-3 cursor-pointer">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={sendEmail}
+                  onChange={(e) => setSendEmail(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:bg-purple-600 transition-colors"></div>
+                <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
+              </div>
+              <span className="text-sm text-slate-700 dark:text-slate-300">
+                Send email invitation
+              </span>
+            </label>
+
             <p className="text-xs text-slate-500">
-              An invite link will be generated that expires in 7 days. Share this link with your client to give them access.
+              {sendEmail
+                ? 'An email with the invite link will be sent to the client.'
+                : 'An invite link will be generated for you to share manually.'
+              }
             </p>
 
             <div className="flex gap-3 pt-2">

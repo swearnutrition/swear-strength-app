@@ -300,7 +300,7 @@ export function BlockModal({ block, onClose, onSave }: BlockModalProps) {
                           <h4 className="font-medium text-slate-900 dark:text-white text-sm mb-2">
                             {item.exercise?.name || 'Unknown Exercise'}
                           </h4>
-                          <div className="grid grid-cols-5 gap-2">
+                          <div className="grid grid-cols-5 gap-2 mb-2">
                             <div>
                               <label className="block text-xs text-slate-500 mb-1">Label</label>
                               <input
@@ -351,6 +351,16 @@ export function BlockModal({ block, onClose, onSave }: BlockModalProps) {
                                 className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-purple-500"
                               />
                             </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs text-slate-500 mb-1">Notes</label>
+                            <input
+                              type="text"
+                              value={item.notes || ''}
+                              onChange={(e) => updateItem(index, 'notes', e.target.value || null)}
+                              placeholder="Coaching cues, modifications, etc."
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                            />
                           </div>
                         </div>
 

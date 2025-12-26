@@ -39,13 +39,6 @@ export default async function ClientDashboard() {
     .eq('is_active', true)
     .single()
 
-  // Get workout stats
-  const { count: totalWorkouts } = await supabase
-    .from('workout_logs')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', user.id)
-    .not('completed_at', 'is', null)
-
   // Get initials for avatar
   const initials = (profile.name as string)
     .split(' ')
@@ -60,6 +53,40 @@ export default async function ClientDashboard() {
   const today = new Date()
   const startOfWeek = new Date(today)
   startOfWeek.setDate(today.getDate() - today.getDay() + 1) // Monday
+  const endOfWeek = new Date(startOfWeek)
+  endOfWeek.setDate(startOfWeek.getDate() + 6)
+
+  // Get this week's workout logs with their day info
+  const { data: thisWeekLogs } = await supabase
+    .from('workout_logs')
+    .select('id, workout_day_id, started_at, completed_at')
+    .eq('user_id', user.id)
+    .gte('started_at', startOfWeek.toISOString())
+    .lte('started_at', endOfWeek.toISOString())
+
+  // Get completed workout dates
+  const completedDates = new Set(
+    (thisWeekLogs || [])
+      .filter(log => log.completed_at)
+      .map(log => new Date(log.started_at).toDateString())
+  )
+
+  // Get program days per week for target calculation
+  let totalWorkoutsInWeek = 4 // default
+  if (assignment) {
+    const { data: programWeeks } = await supabase
+      .from('program_weeks')
+      .select(`
+        workout_days(id, is_rest_day)
+      `)
+      .eq('program_id', assignment.program_id)
+      .eq('week_number', assignment.current_week)
+      .single()
+
+    if (programWeeks?.workout_days) {
+      totalWorkoutsInWeek = programWeeks.workout_days.filter((d: { is_rest_day: boolean }) => !d.is_rest_day).length
+    }
+  }
 
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const date = new Date(startOfWeek)
@@ -69,12 +96,11 @@ export default async function ClientDashboard() {
       dayNum: date.getDate(),
       isToday: date.toDateString() === today.toDateString(),
       isPast: date < today && date.toDateString() !== today.toDateString(),
-      completed: false, // TODO: Check if workout completed
+      completed: completedDates.has(date.toDateString()),
     }
   })
 
-  const workoutsThisWeek = 0 // TODO: Calculate from actual data
-  const totalWorkoutsInWeek = 4 // TODO: Get from program
+  const workoutsThisWeek = completedDates.size
   const weeklyProgress = totalWorkoutsInWeek > 0 ? Math.round((workoutsThisWeek / totalWorkoutsInWeek) * 100) : 0
 
   return (
@@ -168,6 +194,7 @@ export default async function ClientDashboard() {
           <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Quick Links</h2>
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
             {[
+              { name: 'My Habits', icon: '✅', href: '/habits' },
               { name: 'My Workouts', icon: '💪', href: '/workouts' },
               { name: 'Weekly Check-in', icon: '📊', href: '/check-in' },
               { name: 'Book a Session', icon: '📅', href: '/book' },

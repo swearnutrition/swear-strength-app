@@ -5,6 +5,10 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { ImportProgramModal } from './ImportProgramModal'
+import { AssignProgramModal } from './AssignProgramModal'
+
+type ProgramDifficulty = 'beginner' | 'intermediate' | 'advanced'
+type ProgramStyle = 'powerlifting' | 'bodybuilding' | 'general_fitness' | 'athletic' | 'rehab_prehab' | 'crossfit' | 'olympic_weightlifting' | 'strongman' | 'calisthenics' | 'hybrid' | 'sport_specific'
 
 interface Program {
   id: string
@@ -16,7 +20,13 @@ interface Program {
   created_at: string
   updated_at: string
   week_count: number
+  difficulty: ProgramDifficulty | null
+  style: ProgramStyle | null
+  primary_muscles: string[]
+  injury_friendly: string[]
+  days_per_week?: number
 }
+
 
 interface ProgramsClientProps {
   programs: Program[]
@@ -28,19 +38,56 @@ const typeColors = {
   cardio: 'bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400',
 }
 
+const difficultyColors: Record<ProgramDifficulty, string> = {
+  beginner: 'bg-green-100 dark:bg-green-500/20 text-green-600 dark:text-green-400',
+  intermediate: 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-600 dark:text-yellow-400',
+  advanced: 'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400',
+}
+
+const styleLabels: Record<ProgramStyle, string> = {
+  powerlifting: 'Powerlifting',
+  bodybuilding: 'Bodybuilding',
+  general_fitness: 'General Fitness',
+  athletic: 'Athletic',
+  rehab_prehab: 'Rehab/Prehab',
+  crossfit: 'CrossFit',
+  olympic_weightlifting: 'Olympic Lifting',
+  strongman: 'Strongman',
+  calisthenics: 'Calisthenics',
+  hybrid: 'Hybrid',
+  sport_specific: 'Sport Specific',
+}
+
+function formatMuscle(muscle: string): string {
+  return muscle
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
 export function ProgramsClient({ programs: initialPrograms }: ProgramsClientProps) {
   const [programs, setPrograms] = useState(initialPrograms)
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | 'strength' | 'mobility' | 'cardio'>('all')
+  const [difficultyFilter, setDifficultyFilter] = useState<ProgramDifficulty | null>(null)
+  const [styleFilter, setStyleFilter] = useState<ProgramStyle | null>(null)
+  const [injuryFriendlyOnly, setInjuryFriendlyOnly] = useState(false)
   const [creating, setCreating] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
+  const [assignModalProgram, setAssignModalProgram] = useState<{ id: string; name: string; description: string | null } | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
-  const filteredPrograms = programs.filter((p) =>
-    p.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-    (typeFilter === 'all' || p.type === typeFilter)
-  )
+  const activeFilterCount = [difficultyFilter, styleFilter, injuryFriendlyOnly].filter(Boolean).length
+
+  const filteredPrograms = programs.filter((p) => {
+    if (!p.name.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    if (typeFilter !== 'all' && p.type !== typeFilter) return false
+    if (difficultyFilter && p.difficulty !== difficultyFilter) return false
+    if (styleFilter && p.style !== styleFilter) return false
+    if (injuryFriendlyOnly && (!p.injury_friendly || p.injury_friendly.length === 0)) return false
+    return true
+  })
 
   const handleCreate = async (type: 'strength' | 'mobility' | 'cardio' = 'strength') => {
     setCreating(true)
@@ -161,33 +208,109 @@ export function ProgramsClient({ programs: initialPrograms }: ProgramsClientProp
           />
         </div>
 
-        {/* Type filter tabs */}
-        <div className="flex gap-2 mb-6">
-          {(['all', 'strength', 'mobility', 'cardio'] as const).map((type) => {
-            const counts = {
-              all: programs.length,
-              strength: programs.filter(p => p.type === 'strength').length,
-              mobility: programs.filter(p => p.type === 'mobility').length,
-              cardio: programs.filter(p => p.type === 'cardio').length,
-            }
-            const isActive = typeFilter === type
-            const colors = {
-              all: isActive ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700',
-              strength: isActive ? 'bg-purple-600 text-white' : 'bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-500/30',
-              mobility: isActive ? 'bg-blue-600 text-white' : 'bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-500/30',
-              cardio: isActive ? 'bg-orange-600 text-white' : 'bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-500/30',
-            }
-            return (
+        {/* Filter sections */}
+        <div className="space-y-3 mb-6">
+          {/* Type filters - primary row */}
+          <div className="flex gap-2">
+            {(['all', 'strength', 'mobility', 'cardio'] as const).map((type) => {
+              const isActive = typeFilter === type
+              const colors = {
+                all: isActive ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700',
+                strength: isActive ? 'bg-purple-600 text-white' : 'bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-500/30',
+                mobility: isActive ? 'bg-blue-600 text-white' : 'bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-500/30',
+                cardio: isActive ? 'bg-orange-600 text-white' : 'bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-500/30',
+              }
+              return (
+                <button
+                  key={type}
+                  onClick={() => setTypeFilter(type)}
+                  className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${colors[type]}`}
+                >
+                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Secondary filters row */}
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            {/* Difficulty */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">Level</span>
+              <div className="flex gap-1">
+                {(['beginner', 'intermediate', 'advanced'] as const).map((level) => (
+                  <button
+                    key={level}
+                    onClick={() => setDifficultyFilter(difficultyFilter === level ? null : level)}
+                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                      difficultyFilter === level
+                        ? difficultyColors[level]
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {level.charAt(0).toUpperCase() + level.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Style */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">Style</span>
+              <div className="flex flex-wrap gap-1">
+                {([
+                  { value: 'general_fitness', label: 'General' },
+                  { value: 'bodybuilding', label: 'Bodybuilding' },
+                  { value: 'powerlifting', label: 'Powerlifting' },
+                  { value: 'athletic', label: 'Athletic' },
+                  { value: 'strongman', label: 'Strongman' },
+                  { value: 'calisthenics', label: 'Calisthenics' },
+                  { value: 'rehab_prehab', label: 'Rehab' },
+                ] as const).map(({ value, label }) => (
+                  <button
+                    key={value}
+                    onClick={() => setStyleFilter(styleFilter === value ? null : value)}
+                    className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-all ${
+                      styleFilter === value
+                        ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 border-indigo-300 dark:border-indigo-500/30'
+                        : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Injury-Friendly toggle */}
+            <button
+              onClick={() => setInjuryFriendlyOnly(!injuryFriendlyOnly)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md border transition-all flex items-center gap-1.5 ${
+                injuryFriendlyOnly
+                  ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30'
+                  : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+              }`}
+            >
+              <svg className="w-3.5 h-3.5" fill={injuryFriendlyOnly ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+              </svg>
+              Injury-Friendly
+            </button>
+
+            {/* Clear filters */}
+            {activeFilterCount > 0 && (
               <button
-                key={type}
-                onClick={() => setTypeFilter(type)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${colors[type]}`}
+                onClick={() => {
+                  setDifficultyFilter(null)
+                  setStyleFilter(null)
+                  setInjuryFriendlyOnly(false)
+                }}
+                className="text-xs font-medium text-purple-600 hover:text-purple-500 transition-all"
               >
-                {type.charAt(0).toUpperCase() + type.slice(1)}
-                <span className="ml-1.5 opacity-70">({counts[type]})</span>
+                Clear filters
               </button>
-            )
-          })}
+            )}
+          </div>
         </div>
 
         <p className="text-slate-500 text-sm mb-4">
@@ -217,6 +340,11 @@ export function ProgramsClient({ programs: initialPrograms }: ProgramsClientProp
                 program={program}
                 onDelete={() => handleDelete(program.id)}
                 onDuplicate={() => handleDuplicate(program)}
+                onAssign={() => setAssignModalProgram({ id: program.id, name: program.name, description: program.description })}
+                onFilterType={(t) => setTypeFilter(t)}
+                onFilterDifficulty={(d) => setDifficultyFilter(d)}
+                onFilterStyle={(s) => setStyleFilter(s)}
+                onFilterInjuryFriendly={() => setInjuryFriendlyOnly(true)}
               />
             ))}
           </div>
@@ -231,6 +359,20 @@ export function ProgramsClient({ programs: initialPrograms }: ProgramsClientProp
           router.push(`/coach/programs/${programId}`)
         }}
       />
+
+      {assignModalProgram && (
+        <AssignProgramModal
+          isOpen={true}
+          onClose={() => setAssignModalProgram(null)}
+          programId={assignModalProgram.id}
+          programName={assignModalProgram.name}
+          programDescription={assignModalProgram.description}
+          onSuccess={() => {
+            setAssignModalProgram(null)
+            router.refresh()
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -239,10 +381,20 @@ function ProgramCard({
   program,
   onDelete,
   onDuplicate,
+  onAssign,
+  onFilterType,
+  onFilterDifficulty,
+  onFilterStyle,
+  onFilterInjuryFriendly,
 }: {
   program: Program
   onDelete: () => void
   onDuplicate: () => void
+  onAssign: () => void
+  onFilterType: (type: 'strength' | 'mobility' | 'cardio') => void
+  onFilterDifficulty: (difficulty: ProgramDifficulty) => void
+  onFilterStyle: (style: ProgramStyle) => void
+  onFilterInjuryFriendly: () => void
 }) {
   return (
     <Link
@@ -250,10 +402,66 @@ function ProgramCard({
       className="block bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl p-5 hover:border-slate-300 dark:hover:border-slate-700 transition-all group shadow-sm"
     >
       <div className="flex items-start justify-between mb-3">
-        <span className={`text-xs font-medium px-2 py-1 rounded-lg ${typeColors[program.type]}`}>
-          {program.type.charAt(0).toUpperCase() + program.type.slice(1)}
-        </span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              onFilterType(program.type)
+            }}
+            className={`text-xs font-medium px-2 py-1 rounded-lg hover:ring-2 hover:ring-offset-1 hover:ring-purple-300 dark:hover:ring-purple-600 transition-all ${typeColors[program.type]}`}
+          >
+            {program.type.charAt(0).toUpperCase() + program.type.slice(1)}
+          </button>
+          {program.difficulty && (
+            <button
+              onClick={(e) => {
+                e.preventDefault()
+                onFilterDifficulty(program.difficulty!)
+              }}
+              className={`text-xs font-medium px-2 py-1 rounded-lg hover:ring-2 hover:ring-offset-1 hover:ring-slate-300 dark:hover:ring-slate-600 transition-all ${difficultyColors[program.difficulty]}`}
+            >
+              {program.difficulty.charAt(0).toUpperCase() + program.difficulty.slice(1)}
+            </button>
+          )}
+          {program.style && (
+            <button
+              onClick={(e) => {
+                e.preventDefault()
+                onFilterStyle(program.style!)
+              }}
+              className="text-xs font-medium px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:ring-2 hover:ring-offset-1 hover:ring-slate-300 dark:hover:ring-slate-600 transition-all"
+            >
+              {styleLabels[program.style]}
+            </button>
+          )}
+          {program.injury_friendly && program.injury_friendly.length > 0 && (
+            <button
+              onClick={(e) => {
+                e.preventDefault()
+                onFilterInjuryFriendly()
+              }}
+              className="text-xs font-medium px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:ring-2 hover:ring-offset-1 hover:ring-emerald-300 dark:hover:ring-emerald-600 transition-all flex items-center gap-1"
+              title={`Injury-friendly: ${program.injury_friendly.join(', ')}`}
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+              </svg>
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              onAssign()
+            }}
+            className="p-2 rounded-lg text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-all"
+            title="Assign to Client"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+            </svg>
+          </button>
           <button
             onClick={(e) => {
               e.preventDefault()
@@ -287,8 +495,25 @@ function ProgramCard({
         <p className="text-slate-500 text-sm line-clamp-2 mb-3">{program.description}</p>
       )}
 
+      {/* Primary muscles */}
+      {program.primary_muscles && program.primary_muscles.length > 0 && (
+        <div className="flex items-center gap-1 flex-wrap mb-3">
+          {program.primary_muscles.slice(0, 3).map((muscle) => (
+            <span
+              key={muscle}
+              className="text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
+            >
+              {formatMuscle(muscle)}
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-center gap-4 text-sm text-slate-500">
         <span>{program.week_count} week{program.week_count !== 1 ? 's' : ''}</span>
+        {program.days_per_week && program.days_per_week > 0 && (
+          <span>{program.days_per_week}x/week</span>
+        )}
         {program.is_indefinite && (
           <span className="flex items-center gap-1">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

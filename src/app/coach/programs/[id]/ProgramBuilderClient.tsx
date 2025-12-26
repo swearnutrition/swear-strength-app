@@ -7,6 +7,7 @@ import type { Program, WorkoutDay, Exercise, ExerciseBlock, RoutineTemplate } fr
 import { parseRestInput, formatRestTime } from './utils/parseRest'
 import { WorkoutCard } from './components/WorkoutCard'
 import { ProgramPDFExport } from './components/ProgramPDFExport'
+import { VolumeAnalysis } from './components/VolumeAnalysis'
 
 interface Props {
   program: Program
@@ -55,6 +56,7 @@ export function ProgramBuilderClient({ program: initialProgram, exercises, templ
   const [copiedDay, setCopiedDay] = useState<WorkoutDay | null>(null)
   const [showBlocks, setShowBlocks] = useState(false)
   const [showPDFExport, setShowPDFExport] = useState(false)
+  const [showVolumeAnalysis, setShowVolumeAnalysis] = useState(false)
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null)
   const [editingBlockName, setEditingBlockName] = useState('')
   const [expandedBlockId, setExpandedBlockId] = useState<string | null>(null)
@@ -698,6 +700,15 @@ export function ProgramBuilderClient({ program: initialProgram, exercises, templ
             </span>
           )}
           <button
+            onClick={() => setShowVolumeAnalysis(true)}
+            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600"
+            title="Volume Analysis"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </button>
+          <button
             onClick={() => setShowPDFExport(true)}
             className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600"
             title="Export PDF"
@@ -751,9 +762,117 @@ export function ProgramBuilderClient({ program: initialProgram, exercises, templ
             </div>
 
             <div className="p-4 space-y-6">
+              {/* Difficulty */}
+              <div>
+                <label className="font-medium text-slate-900 dark:text-white mb-2 block">Difficulty</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['beginner', 'intermediate', 'advanced'] as const).map((level) => (
+                    <button
+                      key={level}
+                      onClick={async () => {
+                        const newValue = program.difficulty === level ? null : level
+                        setProgram(p => ({ ...p, difficulty: newValue }))
+                        const { error } = await supabase.from('programs').update({ difficulty: newValue }).eq('id', program.id)
+                        if (error) console.error('Error saving difficulty:', error)
+                      }}
+                      className={`px-3 py-2 text-sm font-medium rounded-lg border transition-all ${
+                        program.difficulty === level
+                          ? level === 'beginner'
+                            ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 border-green-300 dark:border-green-500/30'
+                            : level === 'intermediate'
+                            ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border-yellow-300 dark:border-yellow-500/30'
+                            : 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 border-red-300 dark:border-red-500/30'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                      }`}
+                    >
+                      {level.charAt(0).toUpperCase() + level.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Style */}
+              <div>
+                <label className="font-medium text-slate-900 dark:text-white mb-2 block">Style</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { value: 'general_fitness', label: 'General Fitness' },
+                    { value: 'bodybuilding', label: 'Bodybuilding' },
+                    { value: 'powerlifting', label: 'Powerlifting' },
+                    { value: 'athletic', label: 'Athletic' },
+                    { value: 'strongman', label: 'Strongman' },
+                    { value: 'calisthenics', label: 'Calisthenics' },
+                    { value: 'sport_specific', label: 'Sport Specific' },
+                    { value: 'rehab_prehab', label: 'Rehab/Prehab' },
+                    { value: 'hybrid', label: 'Hybrid' },
+                  ] as const).map(({ value, label }) => (
+                    <button
+                      key={value}
+                      onClick={async () => {
+                        const newValue = program.style === value ? null : value
+                        setProgram(p => ({ ...p, style: newValue }))
+                        const { error } = await supabase.from('programs').update({ style: newValue }).eq('id', program.id)
+                        if (error) console.error('Error saving style:', error)
+                      }}
+                      className={`px-3 py-2 text-sm font-medium rounded-lg border transition-all ${
+                        program.style === value
+                          ? 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 border-purple-300 dark:border-purple-500/30'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Injury-Friendly */}
+              <div>
+                <label className="font-medium text-slate-900 dark:text-white mb-2 block">Injury-Friendly</label>
+                <p className="text-xs text-slate-500 mb-2">Safe for clients with these limitations</p>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    { value: 'knees', label: 'Knees' },
+                    { value: 'shoulders', label: 'Shoulders' },
+                    { value: 'lower_back', label: 'Lower Back' },
+                    { value: 'hips', label: 'Hips' },
+                    { value: 'wrists', label: 'Wrists' },
+                    { value: 'ankles', label: 'Ankles' },
+                    { value: 'neck', label: 'Neck' },
+                  ]).map(({ value, label }) => {
+                    const isSelected = program.injury_friendly?.includes(value)
+                    return (
+                      <button
+                        key={value}
+                        onClick={async () => {
+                          const current = program.injury_friendly || []
+                          const newValue = isSelected
+                            ? current.filter(v => v !== value)
+                            : [...current, value]
+                          setProgram(p => ({ ...p, injury_friendly: newValue }))
+                          const { error } = await supabase.from('programs').update({ injury_friendly: newValue }).eq('id', program.id)
+                          if (error) console.error('Error saving injury_friendly:', error)
+                        }}
+                        className={`px-3 py-1.5 text-sm font-medium rounded-full border transition-all ${
+                          isSelected
+                            ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30'
+                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="border-t border-slate-200 dark:border-slate-700 pt-6">
+                <label className="font-medium text-slate-900 dark:text-white mb-3 block">Display Settings</label>
+              </div>
+
               {/* Weight Unit */}
               <div>
-                <label className="font-medium text-slate-900 dark:text-white">Weight unit</label>
+                <label className="font-medium text-slate-700 dark:text-slate-300">Weight unit</label>
                 <div className="flex gap-4 mt-2">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -855,12 +974,13 @@ export function ProgramBuilderClient({ program: initialProgram, exercises, templ
                           <div className="text-xs text-slate-500 mb-1">{dayName}</div>
                           <select
                             value={value}
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const newSchedule = [...(program.pdf_schedule || Array(7).fill(''))]
                               newSchedule[idx] = e.target.value
                               setProgram(p => ({ ...p, pdf_schedule: newSchedule }))
                               // Auto-save
-                              supabase.from('programs').update({ pdf_schedule: newSchedule }).eq('id', program.id)
+                              const { error } = await supabase.from('programs').update({ pdf_schedule: newSchedule }).eq('id', program.id)
+                              if (error) console.error('Error saving pdf_schedule:', error)
                             }}
                             className="w-full text-xs p-1 border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-800"
                           >
@@ -890,11 +1010,12 @@ export function ProgramBuilderClient({ program: initialProgram, exercises, templ
                       const tips = e.target.value.split('\n')
                       setProgram(p => ({ ...p, pdf_tips: tips }))
                     }}
-                    onBlur={(e) => {
+                    onBlur={async (e) => {
                       // On blur, clean up empty lines and save
                       const tips = e.target.value.split('\n').filter(t => t.trim())
                       setProgram(p => ({ ...p, pdf_tips: tips.length > 0 ? tips : null }))
-                      supabase.from('programs').update({ pdf_tips: tips.length > 0 ? tips : null }).eq('id', program.id)
+                      const { error } = await supabase.from('programs').update({ pdf_tips: tips.length > 0 ? tips : null }).eq('id', program.id)
+                      if (error) console.error('Error saving pdf_tips:', error)
                     }}
                     placeholder={"Rest 60-90 seconds between sets\nFocus on controlled movements\nTrack your weights weekly"}
                     className="w-full text-sm p-2 border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-800 h-24 resize-none"
@@ -1309,6 +1430,14 @@ export function ProgramBuilderClient({ program: initialProgram, exercises, templ
       <ProgramPDFExport
         program={program}
         onClose={() => setShowPDFExport(false)}
+      />
+    )}
+
+    {/* Volume Analysis Modal */}
+    {showVolumeAnalysis && (
+      <VolumeAnalysis
+        program={program}
+        onClose={() => setShowVolumeAnalysis(false)}
       />
     )}
     </>

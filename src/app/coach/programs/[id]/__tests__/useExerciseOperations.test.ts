@@ -101,6 +101,11 @@ const createMockProgram = (exercises: WorkoutExercise[] = [mockWorkoutExercise])
   created_by: 'user-1',
   pdf_schedule: null,
   pdf_tips: null,
+  difficulty: null,
+  style: null,
+  primary_muscles: [],
+  delivery_method: null,
+  injury_friendly: [],
   program_weeks: [{
     id: 'week-1',
     program_id: 'prog-1',

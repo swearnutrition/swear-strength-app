@@ -1,23 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
-import { CoachHeader } from '../CoachHeader'
 import { ClientsTable } from './ClientsTable'
 
 export default async function ClientsPage() {
   const supabase = await createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    redirect('/login')
-  }
-
-  // Get coach profile
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single()
 
   // Get all clients with their program assignments
   const { data: clients } = await supabase
@@ -65,16 +50,12 @@ export default async function ClientsPage() {
     .gt('expires_at', new Date().toISOString())
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-      <CoachHeader profile={profile} user={user} />
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <ClientsTable
-          clients={clients || []}
-          workoutsByUser={workoutsByUser}
-          pendingInvites={pendingInvites || []}
-        />
-      </main>
-    </div>
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <ClientsTable
+        clients={clients || []}
+        workoutsByUser={workoutsByUser}
+        pendingInvites={pendingInvites || []}
+      />
+    </main>
   )
 }
