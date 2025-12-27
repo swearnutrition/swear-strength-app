@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:is(.dark, .dark *));
+
 /* ============================================
    THEME VARIABLES
    ============================================ */
@@ -208,6 +210,37 @@ body {
   }
 }
 
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes celebrate {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes pr-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(139, 92, 246, 0.5);
+  }
+}
+
+@keyframes expand-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Animation Classes */
 .animate-in {
   animation-duration: 200ms;
@@ -354,4 +387,21 @@ input[type="number"] {
 
 .scrollbar-hide::-webkit-scrollbar {
   display: none;  /* Chrome, Safari and Opera */
+}
+
+/* Premium Workout Tracker Animations */
+.animate-float {
+  animation: float 2s ease-in-out infinite;
+}
+
+.animate-celebrate {
+  animation: celebrate 2s ease-in-out infinite;
+}
+
+.animate-pr-glow {
+  animation: pr-glow 2s ease-in-out infinite;
+}
+
+.animate-expand-in {
+  animation: expand-in 0.3s ease-out;
 }
