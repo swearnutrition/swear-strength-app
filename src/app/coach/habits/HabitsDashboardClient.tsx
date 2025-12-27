@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
 
 interface Client {
   id: string
@@ -59,10 +61,90 @@ export function HabitsDashboardClient({
   rivalries,
 }: HabitsDashboardClientProps) {
   const [selectedClient, setSelectedClient] = useState<string | 'all'>('all')
+  const [expandedClient, setExpandedClient] = useState<string | null>(null)
+  const [removingHabit, setRemovingHabit] = useState<string | null>(null)
+  const [localClientHabits, setLocalClientHabits] = useState(clientHabits)
+  const [showArchived, setShowArchived] = useState(false)
+  const supabase = createClient()
+  const router = useRouter()
+
+  const removeHabit = async (clientHabitId: string) => {
+    if (!confirm('Remove this habit from the client? This will also delete all completion history for this habit.')) return
+
+    setRemovingHabit(clientHabitId)
+    try {
+      // First delete completions for this habit
+      await supabase
+        .from('habit_completions')
+        .delete()
+        .eq('client_habit_id', clientHabitId)
+
+      // Then delete the client habit assignment
+      const { error } = await supabase
+        .from('client_habits')
+        .delete()
+        .eq('id', clientHabitId)
+
+      if (error) throw error
+
+      // Update local state
+      setLocalClientHabits(prev => prev.filter(ch => ch.id !== clientHabitId))
+    } catch (err) {
+      console.error('Error removing habit:', err)
+      alert('Failed to remove habit')
+    } finally {
+      setRemovingHabit(null)
+    }
+  }
+
+  const archiveHabit = async (clientHabitId: string) => {
+    setRemovingHabit(clientHabitId)
+    try {
+      const { error } = await supabase
+        .from('client_habits')
+        .update({ is_active: false })
+        .eq('id', clientHabitId)
+
+      if (error) throw error
+
+      // Update local state
+      setLocalClientHabits(prev => prev.map(ch =>
+        ch.id === clientHabitId ? { ...ch, is_active: false } : ch
+      ))
+    } catch (err) {
+      console.error('Error archiving habit:', err)
+      alert('Failed to archive habit')
+    } finally {
+      setRemovingHabit(null)
+    }
+  }
+
+  const reactivateHabit = async (clientHabitId: string) => {
+    setRemovingHabit(clientHabitId)
+    try {
+      const { error } = await supabase
+        .from('client_habits')
+        .update({ is_active: true })
+        .eq('id', clientHabitId)
+
+      if (error) throw error
+
+      // Update local state
+      setLocalClientHabits(prev => prev.map(ch =>
+        ch.id === clientHabitId ? { ...ch, is_active: true } : ch
+      ))
+    } catch (err) {
+      console.error('Error reactivating habit:', err)
+      alert('Failed to reactivate habit')
+    } finally {
+      setRemovingHabit(null)
+    }
+  }
 
   // Calculate stats
-  const totalHabitsAssigned = clientHabits.length
-  const clientsWithHabits = new Set(clientHabits.map((ch) => ch.client_id)).size
+  const totalHabitsAssigned = localClientHabits.filter(ch => ch.is_active).length
+  const archivedHabitsCount = localClientHabits.filter(ch => !ch.is_active).length
+  const clientsWithHabits = new Set(localClientHabits.filter(ch => ch.is_active).map((ch) => ch.client_id)).size
   const activeRivalries = rivalries.length
 
   // Get last 7 days for the chart
@@ -85,7 +167,7 @@ export function HabitsDashboardClient({
   const maxCompletions = Math.max(...completionsByDay.map((d) => d.count), 1)
 
   // Group habits by client
-  const habitsByClient = clientHabits.reduce(
+  const habitsByClient = localClientHabits.reduce(
     (acc, ch) => {
       const clientId = ch.client_id
       if (!acc[clientId]) {
@@ -103,7 +185,7 @@ export function HabitsDashboardClient({
 
   // Count completions per client
   completions.forEach((c) => {
-    const habit = clientHabits.find((ch) => ch.id === c.client_habit_id)
+    const habit = localClientHabits.find((ch) => ch.id === c.client_habit_id)
     if (habit && habitsByClient[habit.client_id]) {
       habitsByClient[habit.client_id].completionCount++
     }
@@ -124,6 +206,24 @@ export function HabitsDashboardClient({
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {archivedHabitsCount > 0 && (
+            <button
+              onClick={() => setShowArchived(!showArchived)}
+              className={`flex items-center gap-2 font-medium py-2.5 px-4 rounded-xl border transition-all ${
+                showArchived
+                  ? 'bg-amber-50 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/30'
+                  : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`}
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+              </svg>
+              {showArchived ? 'Hide Archived' : 'Archived'}
+              <span className="bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-semibold px-2 py-0.5 rounded-full">
+                {archivedHabitsCount}
+              </span>
+            </button>
+          )}
           <Link
             href="/coach/habits/rivalries"
             className="flex items-center gap-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
@@ -314,63 +414,187 @@ export function HabitsDashboardClient({
         {sortedClients.length > 0 ? (
           <div className="space-y-3">
             {sortedClients.map(([clientId, data], index) => {
-              const expectedCompletions = data.habits.length * 7 // Simplified: assume daily habits
+              const activeHabits = data.habits.filter(h => h.is_active)
+              const expectedCompletions = activeHabits.length * 7 // Simplified: assume daily habits
               const completionRate = expectedCompletions > 0
                 ? Math.round((data.completionCount / expectedCompletions) * 100)
                 : 0
+              const isExpanded = expandedClient === clientId
 
               return (
-                <div
-                  key={clientId}
-                  className="flex items-center gap-4 p-4 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                >
-                  <span className="text-lg font-bold text-slate-300 dark:text-slate-600 w-6">
-                    {index + 1}
-                  </span>
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold"
-                    style={{
-                      background: index === 0
-                        ? 'linear-gradient(135deg, #10b981 0%, #34d399 100%)'
-                        : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                    }}
+                <div key={clientId} className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                  <button
+                    onClick={() => setExpandedClient(isExpanded ? null : clientId)}
+                    className="w-full flex items-center gap-4 p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left"
                   >
-                    {data.client?.name?.[0] || 'C'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-slate-900 dark:text-white">
-                      {data.client?.name || 'Unknown'}
-                    </p>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                      {data.habits.length} habit{data.habits.length !== 1 ? 's' : ''} assigned
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                      {data.completionCount}
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">completions</p>
-                  </div>
-                  <div className="w-24">
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${Math.min(completionRate, 100)}%`,
-                            background: completionRate >= 80
-                              ? 'linear-gradient(90deg, #10b981 0%, #34d399 100%)'
-                              : completionRate >= 50
-                                ? 'linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%)'
-                                : 'linear-gradient(90deg, #ef4444 0%, #f87171 100%)',
-                          }}
-                        />
-                      </div>
-                      <span className="text-xs font-medium text-slate-600 dark:text-slate-300 w-8">
-                        {completionRate}%
-                      </span>
+                    <span className="text-lg font-bold text-slate-300 dark:text-slate-600 w-6">
+                      {index + 1}
+                    </span>
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold"
+                      style={{
+                        background: index === 0
+                          ? 'linear-gradient(135deg, #10b981 0%, #34d399 100%)'
+                          : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                      }}
+                    >
+                      {data.client?.name?.[0] || 'C'}
                     </div>
-                  </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-slate-900 dark:text-white">
+                        {data.client?.name || 'Unknown'}
+                      </p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        {activeHabits.length} habit{activeHabits.length !== 1 ? 's' : ''} assigned
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                        {data.completionCount}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">completions</p>
+                    </div>
+                    <div className="w-24">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${Math.min(completionRate, 100)}%`,
+                              background: completionRate >= 80
+                                ? 'linear-gradient(90deg, #10b981 0%, #34d399 100%)'
+                                : completionRate >= 50
+                                  ? 'linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%)'
+                                  : 'linear-gradient(90deg, #ef4444 0%, #f87171 100%)',
+                            }}
+                          />
+                        </div>
+                        <span className="text-xs font-medium text-slate-600 dark:text-slate-300 w-8">
+                          {completionRate}%
+                        </span>
+                      </div>
+                    </div>
+                    <svg
+                      className={`w-5 h-5 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+
+                  {/* Expanded habits list */}
+                  {isExpanded && (
+                    <div className="border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300">Assigned Habits</h4>
+                        <Link
+                          href="/coach/habits/library"
+                          className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                        >
+                          + Assign more
+                        </Link>
+                      </div>
+                      {data.habits.filter(h => showArchived ? true : h.is_active).length === 0 ? (
+                        <p className="text-sm text-slate-500">
+                          {showArchived ? 'No habits assigned' : 'No active habits'}
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {data.habits.filter(h => showArchived ? true : h.is_active).map((habit) => (
+                            <div
+                              key={habit.id}
+                              className={`flex items-center justify-between p-3 rounded-lg ${
+                                habit.is_active
+                                  ? 'bg-white dark:bg-slate-900'
+                                  : 'bg-amber-50 dark:bg-amber-500/10'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                  style={{
+                                    background: habit.is_active
+                                      ? 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)'
+                                      : '#94a3b8',
+                                  }}
+                                >
+                                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                </div>
+                                <div>
+                                  <p className={`font-medium ${habit.is_active ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>
+                                    {habit.habit?.name || 'Unknown habit'}
+                                  </p>
+                                  <div className="flex items-center gap-2">
+                                    {habit.habit?.category && (
+                                      <span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                        {habit.habit.category}
+                                      </span>
+                                    )}
+                                    {!habit.is_active && (
+                                      <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                                        Archived
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {habit.is_active ? (
+                                  <button
+                                    onClick={() => archiveHabit(habit.id)}
+                                    disabled={removingHabit === habit.id}
+                                    className="p-2 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all disabled:opacity-50"
+                                    title="Archive (keeps history)"
+                                  >
+                                    {removingHabit === habit.id ? (
+                                      <div className="w-4 h-4 border-2 border-slate-300 border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                                      </svg>
+                                    )}
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => reactivateHabit(habit.id)}
+                                    disabled={removingHabit === habit.id}
+                                    className="p-2 rounded-lg text-slate-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-500/10 transition-all disabled:opacity-50"
+                                    title="Reactivate habit"
+                                  >
+                                    {removingHabit === habit.id ? (
+                                      <div className="w-4 h-4 border-2 border-slate-300 border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                      </svg>
+                                    )}
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => removeHabit(habit.id)}
+                                  disabled={removingHabit === habit.id}
+                                  className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all disabled:opacity-50"
+                                  title="Remove completely"
+                                >
+                                  {removingHabit === habit.id ? (
+                                    <div className="w-4 h-4 border-2 border-slate-300 border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })}

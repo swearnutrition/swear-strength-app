@@ -1,8 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { HabitsTracker } from './HabitsTracker'
+import { HabitsHistory } from './HabitsHistory'
 
-export default async function ClientHabitsPage() {
+export default async function HabitsHistoryPage() {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -25,15 +25,11 @@ export default async function ClientHabitsPage() {
   const { data: clientHabits } = await supabase
     .from('client_habits')
     .select(`
-      *,
+      id,
+      start_date,
       habit_templates(
         name,
         description,
-        frequency,
-        times_per_week,
-        specific_days,
-        target_value,
-        target_unit,
         category
       )
     `)
@@ -41,22 +37,12 @@ export default async function ClientHabitsPage() {
     .eq('is_active', true)
     .order('created_at')
 
-  // Get today's completions
-  const today = new Date().toISOString().split('T')[0]
-  const { data: todayCompletions } = await supabase
+  // Get ALL completions for this user (for history)
+  const { data: completions } = await supabase
     .from('habit_completions')
-    .select('*')
+    .select('id, client_habit_id, completed_date, value')
     .eq('client_id', user.id)
-    .eq('completed_date', today)
-
-  // Get completions for the last 7 days (for streak calculation)
-  const sevenDaysAgo = new Date()
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-  const { data: recentCompletions } = await supabase
-    .from('habit_completions')
-    .select('*')
-    .eq('client_id', user.id)
-    .gte('completed_date', sevenDaysAgo.toISOString().split('T')[0])
+    .order('completed_date', { ascending: false })
 
   // Get initials for avatar
   const initials = (profile.name as string)
@@ -67,12 +53,10 @@ export default async function ClientHabitsPage() {
     .slice(0, 2)
 
   return (
-    <HabitsTracker
+    <HabitsHistory
       habits={clientHabits || []}
-      todayCompletions={todayCompletions || []}
-      recentCompletions={recentCompletions || []}
+      completions={completions || []}
       initials={initials}
-      userId={user.id}
     />
   )
 }

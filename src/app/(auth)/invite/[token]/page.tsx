@@ -110,7 +110,8 @@ export default function AcceptInvitePage() {
       })
 
       if (authError) {
-        setError(authError.message)
+        console.error('Signup error:', authError)
+        setError(`${authError.message} (Code: ${authError.status || 'unknown'})`)
         return
       }
 

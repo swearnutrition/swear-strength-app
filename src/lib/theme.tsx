@@ -28,11 +28,11 @@ interface ThemeProviderProps {
 
 export function ThemeProvider({
   children,
-  defaultTheme = 'light',
+  defaultTheme = 'dark',
   storageKey = 'swear-strength-theme',
 }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<Theme>(defaultTheme)
-  const [resolvedTheme, setResolvedTheme] = useState<'dark' | 'light'>('light')
+  const [resolvedTheme, setResolvedTheme] = useState<'dark' | 'light'>(defaultTheme === 'system' ? 'dark' : defaultTheme)
   const [mounted, setMounted] = useState(false)
 
   // Load theme from localStorage on mount
@@ -51,7 +51,7 @@ export function ThemeProvider({
     const root = document.documentElement
 
     const updateResolvedTheme = () => {
-      let resolved: 'dark' | 'light' = 'light'
+      let resolved: 'dark' | 'light' = 'dark'
 
       if (theme === 'system') {
         resolved = window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -96,18 +96,13 @@ export function ThemeProvider({
     localStorage.setItem(storageKey, newTheme)
   }
 
-  // Prevent flash of wrong theme
-  if (!mounted) {
-    return (
-      <div style={{ visibility: 'hidden' }}>
-        {children}
-      </div>
-    )
-  }
-
   return (
     <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>
-      {children}
+      {!mounted ? (
+        <div style={{ visibility: 'hidden' }}>{children}</div>
+      ) : (
+        children
+      )}
     </ThemeContext.Provider>
   )
 }

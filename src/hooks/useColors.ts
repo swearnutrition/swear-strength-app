@@ -56,6 +56,12 @@ export interface ThemeColors {
   shadowPurple: string
   shadowGreen: string
   shadowAmber: string
+
+  // Legacy aliases (for backwards compatibility)
+  textPrimary: string
+  card: string
+  cardLight: string
+  cardHover: string
 }
 
 const darkColors: ThemeColors = {
@@ -112,6 +118,12 @@ const darkColors: ThemeColors = {
   shadowPurple: '0 8px 32px rgba(139, 92, 246, 0.3)',
   shadowGreen: '0 4px 16px rgba(52, 211, 153, 0.3)',
   shadowAmber: '0 4px 16px rgba(251, 191, 36, 0.3)',
+
+  // Legacy aliases
+  textPrimary: '#ffffff',
+  card: '#1a1630',
+  cardLight: 'rgba(26, 22, 48, 0.6)',
+  cardHover: 'rgba(36, 30, 66, 0.8)',
 }
 
 const lightColors: ThemeColors = {
@@ -168,6 +180,12 @@ const lightColors: ThemeColors = {
   shadowPurple: '0 8px 32px rgba(124, 58, 237, 0.15)',
   shadowGreen: '0 4px 16px rgba(5, 150, 105, 0.2)',
   shadowAmber: '0 4px 16px rgba(217, 119, 6, 0.2)',
+
+  // Legacy aliases
+  textPrimary: '#1e1b4b',
+  card: '#ffffff',
+  cardLight: 'rgba(255, 255, 255, 0.9)',
+  cardHover: '#ffffff',
 }
 
 export function useColors(): ThemeColors {
