@@ -41,6 +41,7 @@ export default async function WorkoutDayPage({ params }: PageProps) {
           id,
           name,
           equipment,
+          muscle_groups,
           demo_url,
           cues,
           instructions
@@ -98,6 +99,18 @@ export default async function WorkoutDayPage({ params }: PageProps) {
     .eq('workout_log_id', workoutLog?.id || '')
     .order('set_number')
 
+  // Get exercise IDs from workout
+  const exerciseIds = workoutDay.workout_exercises.map(
+    (we: { exercises: { id: string } }) => we.exercises.id
+  )
+
+  // Fetch personal records for all exercises in this workout
+  const { data: personalRecords } = await supabase
+    .from('personal_records')
+    .select('*')
+    .eq('user_id', user.id)
+    .in('exercise_id', exerciseIds)
+
   // Sort exercises by sort_order
   const sortedExercises = workoutDay.workout_exercises.sort(
     (a: { sort_order: number }, b: { sort_order: number }) => a.sort_order - b.sort_order
@@ -111,8 +124,10 @@ export default async function WorkoutDayPage({ params }: PageProps) {
       }}
       workoutLog={workoutLog}
       setLogs={setLogs || []}
+      personalRecords={personalRecords || []}
       programName={workoutDay.program_weeks.programs.name}
       weekNumber={workoutDay.program_weeks.week_number}
+      userId={user.id}
     />
   )
 }
