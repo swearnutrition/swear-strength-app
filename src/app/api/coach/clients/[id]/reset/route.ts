@@ -88,15 +88,15 @@ export async function POST(
     }
 
     if (unassignProgram) {
-      // Mark active program assignments as completed/cancelled
+      // Mark active program assignments as inactive
       await supabase
         .from('user_program_assignments')
         .update({
-          status: 'cancelled',
+          is_active: false,
           completed_at: new Date().toISOString()
         })
         .eq('user_id', clientId)
-        .eq('status', 'active')
+        .eq('is_active', true)
 
       results.push('Unassigned program')
     }

@@ -54,7 +54,7 @@ export default async function ClientDetailPage({ params }: PageProps) {
       )
     `)
     .eq('user_id', id)
-    .eq('status', 'active')
+    .eq('is_active', true)
     .single()
 
   // Get workout logs (last 8 weeks for weekly volume chart)

@@ -269,12 +269,12 @@ export function ClientDetailClient({
     try {
       const supabase = createClient()
 
-      // Mark any existing active assignments as completed
+      // Mark any existing active assignments as inactive
       await supabase
         .from('user_program_assignments')
-        .update({ status: 'completed', completed_at: new Date().toISOString() })
+        .update({ is_active: false, completed_at: new Date().toISOString() })
         .eq('user_id', client.id)
-        .eq('status', 'active')
+        .eq('is_active', true)
 
       // Create new assignment
       const { error } = await supabase
@@ -285,7 +285,7 @@ export function ClientDetailClient({
           started_at: programStartDate,
           current_week: 1,
           current_day: 1,
-          status: 'active',
+          is_active: true,
         })
 
       if (error) throw error
