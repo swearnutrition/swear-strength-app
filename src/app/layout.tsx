@@ -120,7 +120,7 @@ export default function RootLayout({
               if (splash) {
                 splash.classList.add('fade-out');
                 setTimeout(function() {
-                  splash.remove();
+                  splash.style.display = 'none';
                 }, 300);
               }
             }, 500);
