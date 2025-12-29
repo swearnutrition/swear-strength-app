@@ -32,7 +32,7 @@ export async function POST(
     // Verify the client exists and belongs to this coach
     const { data: clientProfile } = await supabase
       .from('profiles')
-      .select('id, coach_id')
+      .select('id, invited_by')
       .eq('id', clientId)
       .single()
 
@@ -40,7 +40,7 @@ export async function POST(
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
-    if (clientProfile.coach_id !== user.id) {
+    if (clientProfile.invited_by !== user.id) {
       return NextResponse.json({ error: 'This client does not belong to you' }, { status: 403 })
     }
 
