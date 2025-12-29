@@ -57,9 +57,75 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        <style dangerouslySetInnerHTML={{ __html: `
+          #splash-screen {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #0a0a0a;
+            transition: opacity 0.3s ease-out;
+          }
+          #splash-screen.fade-out {
+            opacity: 0;
+            pointer-events: none;
+          }
+          #splash-screen img {
+            width: 120px;
+            height: 120px;
+            animation: pulse 1.5s ease-in-out infinite;
+          }
+          #splash-screen .loading-bar {
+            width: 100px;
+            height: 3px;
+            background: #1e1e1e;
+            border-radius: 3px;
+            margin-top: 24px;
+            overflow: hidden;
+          }
+          #splash-screen .loading-bar-inner {
+            height: 100%;
+            width: 30%;
+            background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+            border-radius: 3px;
+            animation: loading 1s ease-in-out infinite;
+          }
+          @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.9; }
+          }
+          @keyframes loading {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(400%); }
+          }
+        `}} />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <div id="splash-screen">
+          <img src="/icon-512x512.png" alt="Swear Strength" />
+          <div className="loading-bar">
+            <div className="loading-bar-inner" />
+          </div>
+        </div>
+        <script dangerouslySetInnerHTML={{ __html: `
+          window.addEventListener('load', function() {
+            setTimeout(function() {
+              var splash = document.getElementById('splash-screen');
+              if (splash) {
+                splash.classList.add('fade-out');
+                setTimeout(function() {
+                  splash.remove();
+                }, 300);
+              }
+            }, 500);
+          });
+        `}} />
         <Providers>{children}</Providers>
       </body>
     </html>
