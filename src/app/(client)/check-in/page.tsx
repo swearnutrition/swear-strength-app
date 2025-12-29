@@ -62,7 +62,6 @@ export default async function CheckInPage() {
   return (
     <CheckInClient
       initials={initials}
-      userId={user.id}
       weekWorkouts={weekWorkouts || []}
     />
   )

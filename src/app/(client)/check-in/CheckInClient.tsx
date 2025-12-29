@@ -24,7 +24,6 @@ interface WeekWorkout {
 
 interface CheckInClientProps {
   initials: string
-  userId: string
   weekWorkouts: WeekWorkout[]
 }
 
@@ -41,7 +40,7 @@ function getWorkoutName(workout: WeekWorkout): string {
   return workout.workout_days.name || 'Workout'
 }
 
-export function CheckInClient({ initials, userId, weekWorkouts }: CheckInClientProps) {
+export function CheckInClient({ initials, weekWorkouts }: CheckInClientProps) {
   const router = useRouter()
   const supabase = createClient()
 

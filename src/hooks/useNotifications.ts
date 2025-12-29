@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 
 export interface Notification {
   id: string
-  type: 'nudge' | 'new_program' | 'new_habit' | 'rivalry_invite' | 'rivalry_comment' | 'system'
+  type: 'nudge' | 'new_program' | 'new_habit' | 'rivalry_invite' | 'rivalry_comment' | 'rivalry_reaction' | 'rivalry_gif' | 'schedule_reminder' | 'system'
   title: string
   message: string | null
   rivalryId: string | null
@@ -78,7 +78,7 @@ export function useNotifications(userId: string): UseNotificationsReturn {
         (payload) => {
           const n = payload.new as {
             id: string
-            type: 'nudge' | 'new_program' | 'new_habit' | 'rivalry_invite' | 'rivalry_comment' | 'system'
+            type: Notification['type']
             title: string
             message: string | null
             rivalry_id: string | null

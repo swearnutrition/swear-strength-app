@@ -405,3 +405,23 @@ input[type="number"] {
 .animate-expand-in {
   animation: expand-in 0.3s ease-out;
 }
+
+/* PR Toast Animation */
+@keyframes slide-down-bounce {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(10%);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-down-bounce {
+  animation: slide-down-bounce 0.4s ease-out forwards;
+}

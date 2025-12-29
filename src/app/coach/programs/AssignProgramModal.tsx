@@ -102,25 +102,37 @@ export function AssignProgramModal({
       })
     }
 
+    // Get coach info for notifications
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: coachProfile } = await supabase
+      .from('profiles')
+      .select('name')
+      .eq('id', user?.id)
+      .single()
+
+    const coachName = coachProfile?.name || 'Your Coach'
+
+    // Create in-app notification for the client
+    await supabase.from('client_notifications').insert({
+      user_id: selectedClientId,
+      type: 'new_program',
+      title: 'New Program Assigned!',
+      message: `${coachName} assigned you "${programName}". Tap to set your workout schedule.`,
+      program_id: programId,
+      data: { coachName, programName }
+    })
+
     // Send notification email if enabled
     if (notifyClient) {
       const client = clients.find(c => c.id === selectedClientId)
       if (client?.email) {
-        // Get coach name
-        const { data: { user } } = await supabase.auth.getUser()
-        const { data: coachProfile } = await supabase
-          .from('profiles')
-          .select('name')
-          .eq('id', user?.id)
-          .single()
-
         try {
           await supabase.functions.invoke('send-email', {
             body: {
               to: client.email,
               template: 'program-assigned',
               data: {
-                coachName: coachProfile?.name || 'Your Coach',
+                coachName,
                 programName,
                 programDescription: programDescription || '',
                 appUrl: window.location.origin,

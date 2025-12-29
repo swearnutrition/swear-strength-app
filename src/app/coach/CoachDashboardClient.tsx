@@ -1,7 +1,9 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { User } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
 
 // Icons
 function UsersIcon({ className }: { className?: string }) {
@@ -140,10 +142,48 @@ interface ActivityItem {
   type: 'completion' | 'pr' | 'note'
   client: string
   avatar: string
-  action: string
+  avatarUrl?: string
+  workoutName: string
+  programName?: string
+  durationMinutes?: number
+  totalVolume: number
+  totalSets: number
+  prExercise?: string
+  time: string
+  timestamp: string
+}
+
+interface AttentionItem {
+  id: string
+  clientId: string
+  name: string
+  avatar: string
+  issue: string
+  severity: 'high' | 'medium'
   detail: string
   time: string
-  extra: string
+}
+
+interface TopPerformer {
+  userId: string
+  name: string
+  avatar: string
+  compliance: number
+  workoutsCompleted: number
+  streak: number
+}
+
+interface WeekScheduleDay {
+  day: string
+  date: number
+  scheduled: number
+  completed: number
+  isToday: boolean
+  isPast: boolean
+  scheduledClients: string[]
+  completedClients: string[]
+  missedClients: string[]
+  unplannedClients: string[]
 }
 
 interface CoachDashboardClientProps {
@@ -159,33 +199,89 @@ interface CoachDashboardClientProps {
     unreadNotes: number
   }
   recentActivity: ActivityItem[]
+  clientsNeedingAttention: AttentionItem[]
+  topPerformers: TopPerformer[]
+  weekScheduleData: WeekScheduleDay[]
 }
 
-export function CoachDashboardClient({ profile, user, stats, recentActivity }: CoachDashboardClientProps) {
+// TEST MODE: Set to true to simulate 150 clients for tooltip testing
+const TEST_LARGE_SCALE = false
+const MOCK_CLIENT_NAMES = [
+  'Emma Johnson', 'Liam Smith', 'Olivia Brown', 'Noah Davis', 'Ava Wilson',
+  'Elijah Garcia', 'Sophia Martinez', 'James Anderson', 'Isabella Thomas', 'Benjamin Taylor',
+  'Mia Moore', 'Lucas Jackson', 'Charlotte White', 'Mason Harris', 'Amelia Martin',
+  'Ethan Thompson', 'Harper Robinson', 'Alexander Clark', 'Evelyn Lewis', 'Henry Walker',
+  'Luna Hall', 'Sebastian Allen', 'Gianna Young', 'Jack King', 'Aria Wright',
+  'Owen Scott', 'Chloe Green', 'Daniel Baker', 'Penelope Adams', 'Matthew Nelson',
+  'Layla Hill', 'Aiden Ramirez', 'Riley Campbell', 'Logan Mitchell', 'Zoey Roberts',
+  'Jackson Carter', 'Nora Phillips', 'Levi Evans', 'Lily Turner', 'Samuel Torres',
+  'Eleanor Parker', 'David Collins', 'Hazel Edwards', 'Joseph Stewart', 'Violet Sanchez',
+  'Wyatt Morris', 'Stella Rogers', 'John Reed', 'Zoe Cook', 'Michael Morgan',
+]
+
+function generateMockClients(count: number): string[] {
+  const clients: string[] = []
+  for (let i = 0; i < count; i++) {
+    const baseName = MOCK_CLIENT_NAMES[i % MOCK_CLIENT_NAMES.length]
+    if (i < MOCK_CLIENT_NAMES.length) {
+      clients.push(baseName)
+    } else {
+      clients.push(`${baseName} ${Math.floor(i / MOCK_CLIENT_NAMES.length) + 1}`)
+    }
+  }
+  return clients
+}
+
+export function CoachDashboardClient({ profile, user, stats, recentActivity, clientsNeedingAttention: initialAttentionItems, topPerformers, weekScheduleData: originalWeekScheduleData }: CoachDashboardClientProps) {
+  // Apply test data if TEST_LARGE_SCALE is enabled
+  const weekScheduleData = TEST_LARGE_SCALE
+    ? originalWeekScheduleData.map((day, i) => {
+        // Only apply mock data to Mon (i=1) and Wed (i=3), preserve real data for other days
+        const hasMockSchedule = i === 1 || i === 3
+        if (!hasMockSchedule) {
+          // Keep real data, just add mock unplanned for testing today
+          const isPastOrToday = day.isPast || day.isToday
+          return {
+            ...day,
+            // Add mock unplanned only if there's real activity or it's today
+            unplannedClients: isPastOrToday && day.unplannedClients.length === 0
+              ? ['Bonus Client 1', 'Bonus Client 2', 'Extra Workout Andy', 'Spontaneous Sarah', 'Wildcard Will']
+              : day.unplannedClients,
+          }
+        }
+        // For mock days (Mon/Wed), use generated clients
+        const mockClients = i === 1 ? generateMockClients(150) : generateMockClients(85)
+        const isPastOrToday = day.isPast || day.isToday
+        const completedCount = isPastOrToday ? Math.floor(mockClients.length * 0.7) : 0
+        const unplannedMock = isPastOrToday ? ['Bonus Client 1', 'Bonus Client 2', 'Extra Workout Andy', 'Spontaneous Sarah', 'Wildcard Will'] : []
+        return {
+          ...day,
+          scheduled: mockClients.length,
+          scheduledClients: mockClients,
+          completedClients: isPastOrToday ? mockClients.slice(0, completedCount) : day.completedClients,
+          missedClients: day.isPast ? mockClients.slice(completedCount) : day.missedClients,
+          unplannedClients: unplannedMock,
+        }
+      })
+    : originalWeekScheduleData
+
+  const [attentionItems, setAttentionItems] = useState(initialAttentionItems)
+  const [hoveredDay, setHoveredDay] = useState<number | null>(null)
+  const supabase = createClient()
   const greeting = getGreeting()
-  const weekSchedule = getWeekScheduleData()
   const weekDateRange = getWeekDateRange()
   const todayFormatted = getTodayFormatted()
 
-  // Clients needing attention (sample data - would come from real data in production)
-  const clientsNeedingAttention: Array<{
-    id: string
-    name: string
-    avatar: string
-    issue: string
-    severity: 'high' | 'medium'
-    program: string
-  }> = [
-    { id: '1', name: 'Jordan Escoto', avatar: 'J', issue: 'No workout in 6 days', severity: 'high', program: 'General Fitness' },
-    { id: '2', name: 'Heather Swear', avatar: 'H', issue: 'Missed 3 sessions this week', severity: 'medium', program: 'Powerlifting Prep' },
-  ]
+  const dismissNotification = async (notificationId: string) => {
+    // Mark as read in database
+    await supabase
+      .from('coach_notifications')
+      .update({ read: true })
+      .eq('id', notificationId)
 
-  // Top performers (placeholder)
-  const topPerformers = [
-    { name: 'Marcus Chen', metric: '100%', label: 'compliance', streak: 21 },
-    { name: 'Alex Ramirez', metric: '95%', label: 'compliance', streak: 14 },
-    { name: 'Anna Nazarian', metric: '92%', label: 'compliance', streak: 8 },
-  ]
+    // Remove from local state
+    setAttentionItems(prev => prev.filter(item => item.id !== notificationId))
+  }
 
   return (
     <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -247,10 +343,10 @@ export function CoachDashboardClient({ profile, user, stats, recentActivity }: C
               <span className="text-sm text-slate-400">{weekDateRange}</span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '10px' }}>
-              {weekSchedule.map((day, i) => (
+              {weekScheduleData.map((day, i) => (
                 <div
                   key={i}
-                  className={`text-center py-4 px-2 rounded-2xl transition-all ${
+                  className={`relative text-center py-4 px-2 rounded-2xl transition-all cursor-pointer ${
                     day.isToday
                       ? 'text-white'
                       : day.completed === day.scheduled && day.scheduled > 0
@@ -261,7 +357,129 @@ export function CoachDashboardClient({ profile, user, stats, recentActivity }: C
                     background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
                     boxShadow: '0 4px 12px rgba(99, 102, 241, 0.35)'
                   } : undefined}
+                  onMouseEnter={() => setHoveredDay(i)}
+                  onMouseLeave={() => setHoveredDay(null)}
                 >
+                  {/* Hover Tooltip - drops DOWN below the cell */}
+                  {hoveredDay === i && (day.scheduledClients.length > 0 || day.unplannedClients.length > 0 || day.completedClients.length > 0) && (
+                    <div
+                      className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 w-56 p-3 rounded-xl bg-slate-900 dark:bg-slate-800 shadow-xl"
+                      style={{ boxShadow: '0 10px 40px rgba(0,0,0,0.3)' }}
+                    >
+                      {/* Arrow pointing up */}
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[6px] border-b-slate-900 dark:border-b-slate-800" />
+
+                      {/* For past days or today with activity, show completed/missed/unplanned sections */}
+                      {(day.isPast || day.isToday) && (day.completedClients.length > 0 || day.missedClients.length > 0 || day.unplannedClients.length > 0) ? (
+                        <div className="space-y-3">
+                          {/* Completed Section (scheduled clients who completed) */}
+                          {day.completedClients.length > 0 && (
+                            <div>
+                              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 mb-2">
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                </svg>
+                                Completed ({day.completedClients.length})
+                              </div>
+                              <div className="space-y-2.5 max-h-24 overflow-y-auto pr-1 custom-scrollbar">
+                                {day.completedClients.map((name, idx) => (
+                                  <div key={idx} className="flex items-center gap-2">
+                                    <div
+                                      className="w-6 h-6 rounded-lg flex-shrink-0 flex items-center justify-center text-white text-[10px] font-semibold"
+                                      style={{ background: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)' }}
+                                    >
+                                      {name[0]?.toUpperCase()}
+                                    </div>
+                                    <span className="text-xs text-white font-medium truncate flex-1">{name}</span>
+                                    <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Unplanned Section (bonus workouts - amber/gold) */}
+                          {day.unplannedClients.length > 0 && (
+                            <div>
+                              <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-400 mb-2">
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                </svg>
+                                Bonus ({day.unplannedClients.length})
+                              </div>
+                              <div className="space-y-2.5 max-h-24 overflow-y-auto pr-1 custom-scrollbar">
+                                {day.unplannedClients.map((name, idx) => (
+                                  <div key={idx} className="flex items-center gap-2">
+                                    <div
+                                      className="w-6 h-6 rounded-lg flex-shrink-0 flex items-center justify-center text-white text-[10px] font-semibold"
+                                      style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)' }}
+                                    >
+                                      {name[0]?.toUpperCase()}
+                                    </div>
+                                    <span className="text-xs text-white font-medium truncate flex-1">{name}</span>
+                                    <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Missed Section (only for past days) */}
+                          {day.isPast && day.missedClients.length > 0 && (
+                            <div>
+                              <div className="flex items-center gap-1.5 text-xs font-semibold text-red-400 mb-2">
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                Missed ({day.missedClients.length})
+                              </div>
+                              <div className="space-y-2.5 max-h-24 overflow-y-auto pr-1 custom-scrollbar">
+                                {day.missedClients.map((name, idx) => (
+                                  <div key={idx} className="flex items-center gap-2">
+                                    <div
+                                      className="w-6 h-6 rounded-lg flex-shrink-0 flex items-center justify-center text-white text-[10px] font-semibold"
+                                      style={{ background: 'linear-gradient(135deg, #ef4444 0%, #f87171 100%)' }}
+                                    >
+                                      {name[0]?.toUpperCase()}
+                                    </div>
+                                    <span className="text-xs text-white font-medium truncate flex-1">{name}</span>
+                                    <svg className="w-4 h-4 text-red-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        /* For future days (or today with no activity yet), show scheduled list */
+                        <>
+                          <div className="text-xs font-semibold text-slate-400 mb-2">Scheduled ({day.scheduled})</div>
+                          <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                            {day.scheduledClients.map((name, idx) => (
+                              <div key={idx} className="flex items-center gap-2">
+                                <div
+                                  className="w-6 h-6 rounded-lg flex-shrink-0 flex items-center justify-center text-white text-[10px] font-semibold"
+                                  style={{ background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)' }}
+                                >
+                                  {name[0]?.toUpperCase()}
+                                </div>
+                                <span className="text-xs text-white font-medium truncate">{name}</span>
+                              </div>
+                            ))}
+                          </div>
+                          {day.scheduledClients.length > 6 && (
+                            <div className="text-[10px] text-slate-500 mt-2 text-center">Scroll for more</div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
                   <div className={`text-[11px] font-semibold uppercase tracking-wide ${
                     day.isToday ? 'text-white/70' : 'text-slate-400'
                   }`}>
@@ -288,36 +506,51 @@ export function CoachDashboardClient({ profile, user, stats, recentActivity }: C
 
           {/* Row 2: Three equal columns */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {/* Needs Attention */}
+            {/* Needs Attention - with glowing red effect when items present */}
             <div
-              className="rounded-[20px] p-6"
-              style={{
-                background: clientsNeedingAttention.length > 0
-                  ? 'linear-gradient(135deg, #fef2f2 0%, #fff7ed 100%)'
-                  : 'white',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)'
+              className={`rounded-[20px] p-6 relative overflow-hidden ${attentionItems.length > 0 ? 'needs-attention-glow' : 'bg-white dark:bg-slate-900'}`}
+              style={attentionItems.length > 0 ? {
+                background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(239, 68, 68, 0.03) 100%)',
+                boxShadow: '0 0 30px rgba(239, 68, 68, 0.2), 0 0 60px rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+              } : {
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)',
               }}
             >
+              {attentionItems.length > 0 && (
+                <style>{`
+                  @keyframes attention-glow {
+                    0%, 100% { box-shadow: 0 0 30px rgba(239, 68, 68, 0.2), 0 0 60px rgba(239, 68, 68, 0.1); }
+                    50% { box-shadow: 0 0 40px rgba(239, 68, 68, 0.35), 0 0 80px rgba(239, 68, 68, 0.15); }
+                  }
+                  .needs-attention-glow {
+                    animation: attention-glow 3s ease-in-out infinite;
+                  }
+                `}</style>
+              )}
               <div className="flex items-center gap-3 mb-5">
-                {clientsNeedingAttention.length > 0 && (
+                {attentionItems.length > 0 && (
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white" style={{ background: 'linear-gradient(135deg, #ef4444 0%, #f87171 100%)' }}>
                     <AlertIcon className="w-4 h-4" />
                   </div>
                 )}
-                <h3 className="text-base font-semibold text-slate-900 dark:text-white flex-1">Needs Attention</h3>
-                {clientsNeedingAttention.length > 0 && (
-                  <span className="text-xs bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 px-2.5 py-1 rounded-full font-semibold">
-                    {clientsNeedingAttention.length}
+                <h3 className={`text-base font-semibold flex-1 ${attentionItems.length > 0 ? 'text-red-900 dark:text-red-100' : 'text-slate-900 dark:text-white'}`}>Needs Attention</h3>
+                {attentionItems.length > 0 && (
+                  <span className="text-xs bg-red-500 text-white px-2.5 py-1 rounded-full font-bold animate-pulse">
+                    {attentionItems.length}
                   </span>
                 )}
               </div>
-              {clientsNeedingAttention.length > 0 ? (
+              {attentionItems.length > 0 ? (
                 <div className="space-y-3">
-                  {clientsNeedingAttention.map((client) => (
+                  {attentionItems.map((client) => (
                     <div
                       key={client.id}
-                      className="bg-white dark:bg-slate-800 rounded-[14px] p-4 cursor-pointer transition-transform duration-150 hover:translate-x-1"
-                      style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
+                      className="rounded-[14px] p-4 transition-all duration-150"
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.08)',
+                        border: '1px solid rgba(239, 68, 68, 0.15)',
+                      }}
                     >
                       <div className="flex items-center gap-3">
                         <div
@@ -331,15 +564,27 @@ export function CoachDashboardClient({ profile, user, stats, recentActivity }: C
                           {client.avatar}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-slate-900 dark:text-white">{client.name}</div>
-                          <span className={`inline-block mt-1 text-xs font-medium px-2 py-0.5 rounded-md ${
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm font-semibold text-white">{client.name}</div>
+                            <span className="text-xs text-red-300/70">{client.time}</span>
+                          </div>
+                          <span className={`inline-block mt-1 text-xs font-semibold px-2 py-0.5 rounded-md ${
                             client.severity === 'high'
-                              ? 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400'
-                              : 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400'
+                              ? 'bg-red-500/20 text-red-300'
+                              : 'bg-amber-500/20 text-amber-300'
                           }`}>
                             {client.issue}
                           </span>
                         </div>
+                        <button
+                          onClick={() => dismissNotification(client.id)}
+                          className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
+                          title="Dismiss"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -365,33 +610,46 @@ export function CoachDashboardClient({ profile, user, stats, recentActivity }: C
                   <TrophyIcon className="w-4 h-4 text-amber-500" />
                 </div>
               </div>
-              <div className="space-y-2.5">
-                {topPerformers.map((client, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
-                  >
+              {topPerformers.length > 0 ? (
+                <div className="space-y-2.5">
+                  {topPerformers.map((client, i) => (
                     <div
-                      className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-semibold"
-                      style={{
-                        background: i === 0
-                          ? 'linear-gradient(135deg, #10b981 0%, #34d399 100%)'
-                          : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)'
-                      }}
+                      key={client.userId}
+                      className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
                     >
-                      {client.name[0]}
+                      <div
+                        className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-semibold"
+                        style={{
+                          background: i === 0
+                            ? 'linear-gradient(135deg, #10b981 0%, #34d399 100%)'
+                            : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)'
+                        }}
+                      >
+                        {client.avatar}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-slate-900 dark:text-white">{client.name}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          {client.compliance}% compliance · {client.workoutsCompleted} workouts
+                        </div>
+                      </div>
+                      {client.streak > 0 && (
+                        <div className="flex items-center gap-1 text-amber-500 text-sm font-semibold">
+                          <FlameIcon className="w-4 h-4" />
+                          <span>{client.streak}</span>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-slate-900 dark:text-white">{client.name}</div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400">{client.metric} {client.label}</div>
-                    </div>
-                    <div className="flex items-center gap-1 text-amber-500 text-sm font-semibold">
-                      <FlameIcon className="w-4 h-4" />
-                      <span>{client.streak}</span>
-                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
+                    <TrophyIcon className="w-5 h-5 text-slate-400" />
                   </div>
-                ))}
-              </div>
+                  <p className="text-slate-500 dark:text-slate-400 text-sm">No activity yet this week</p>
+                </div>
+              )}
             </div>
 
             {/* Recent Activity */}
@@ -404,21 +662,43 @@ export function CoachDashboardClient({ profile, user, stats, recentActivity }: C
                 <button className="text-sm text-indigo-500 hover:text-indigo-600 font-medium">View all</button>
               </div>
               {recentActivity.length > 0 ? (
-                <div className="space-y-2">
-                  {recentActivity.slice(0, 4).map((activity) => (
+                <div className="space-y-3">
+                  {recentActivity.slice(0, 5).map((activity) => (
                     <div
                       key={activity.id}
-                      className="flex items-center gap-3 p-3 -mx-3 rounded-xl transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer"
+                      className="flex items-start gap-3 p-3 -mx-3 rounded-xl transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer"
                     >
-                      <ActivityIcon type={activity.type} />
+                      {/* Client Avatar */}
+                      {activity.avatarUrl ? (
+                        <img
+                          src={activity.avatarUrl}
+                          alt={activity.client}
+                          className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center flex-shrink-0 text-white font-semibold text-sm">
+                          {activity.avatar}
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
                         <div className="text-sm text-slate-900 dark:text-white">
                           <span className="font-semibold">{activity.client}</span>
-                          <span className="text-slate-500 dark:text-slate-400"> {activity.action}</span>
-                          <span className="font-medium"> {activity.detail}</span>
+                          <span className="text-slate-500 dark:text-slate-400">
+                            {' '}has completed a {activity.durationMinutes || '~'}min{' '}
+                          </span>
+                          <span className="font-medium text-indigo-600 dark:text-indigo-400">{activity.workoutName}</span>
+                          <span className="text-slate-500 dark:text-slate-400">
+                            {' '}workout{activity.totalVolume > 0 && ` and lifted ${activity.totalVolume.toLocaleString()} lbs over ${activity.totalSets} sets`}
+                          </span>
                         </div>
+                        {activity.prExercise && (
+                          <div className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-500">
+                            <TrophyIcon className="w-3.5 h-3.5" />
+                            <span className="font-medium">{activity.prExercise}</span>
+                          </div>
+                        )}
                       </div>
-                      <span className="text-xs text-slate-400 whitespace-nowrap">{activity.time}</span>
+                      <span className="text-xs text-slate-400 whitespace-nowrap mt-0.5">{activity.time}</span>
                     </div>
                   ))}
                 </div>
@@ -525,31 +805,6 @@ function ActivityIcon({ type }: { type: 'completion' | 'pr' | 'note' }) {
         </div>
       )
   }
-}
-
-function getWeekScheduleData() {
-  const today = new Date()
-  const dayOfWeek = today.getDay()
-  const startOfWeek = new Date(today)
-  // Start from Sunday (dayOfWeek = 0)
-  startOfWeek.setDate(today.getDate() - dayOfWeek)
-
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-  return days.map((day, index) => {
-    const date = new Date(startOfWeek)
-    date.setDate(startOfWeek.getDate() + index)
-    const isToday = date.toDateString() === today.toDateString()
-    const isPast = date < today && !isToday
-
-    return {
-      day,
-      date: date.getDate(),
-      scheduled: 3, // Placeholder - would come from real data
-      completed: isPast ? 3 : (isToday ? 2 : 0),
-      isToday,
-    }
-  })
 }
 
 function getWeekDateRange() {

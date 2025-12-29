@@ -155,6 +155,31 @@ export default async function RivalryPage({ params }: PageProps) {
     })
   }
 
+  // Build full progress for all days of the rivalry
+  const getFullProgress = (userCompletions: typeof completions) => {
+    const completedDates = new Set((userCompletions || []).map(c => c.completed_date))
+    const rivalryStartStr = rivalry.start_date
+    const rivalryEndStr = rivalry.end_date
+
+    return Array.from({ length: totalDays }, (_, i) => {
+      const date = new Date(startDate)
+      date.setDate(startDate.getDate() + i)
+      const dateStr = date.toLocaleDateString('en-CA')
+      const isFuture = dateStr > todayStr
+      const isBeforeRivalry = dateStr < rivalryStartStr
+      const isAfterRivalry = dateStr > rivalryEndStr
+      return {
+        date: dateStr,
+        dayNumber: i + 1,
+        completed: completedDates.has(dateStr),
+        isFuture,
+        isBeforeRivalry,
+        isAfterRivalry,
+        isToday: dateStr === todayStr,
+      }
+    })
+  }
+
   // Today's completion status (todayStr already defined above)
   const challengerCompletedToday = challengerCompletions.some(c => c.completed_date === todayStr)
   const opponentCompletedToday = opponentCompletions.some(c => c.completed_date === todayStr)
@@ -189,6 +214,7 @@ export default async function RivalryPage({ params }: PageProps) {
       streak: challengerStreak,
       completedToday: challengerCompletedToday,
       weekProgress: getWeekProgress(challengerCompletions),
+      fullProgress: getFullProgress(challengerCompletions),
       totalCompletions: challengerCompletions.length,
     },
     opponent: {
@@ -201,6 +227,7 @@ export default async function RivalryPage({ params }: PageProps) {
       streak: opponentStreak,
       completedToday: opponentCompletedToday,
       weekProgress: getWeekProgress(opponentCompletions),
+      fullProgress: getFullProgress(opponentCompletions),
       totalCompletions: opponentCompletions.length,
     },
     comments: (comments || []).map(c => ({

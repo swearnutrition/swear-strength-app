@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
+import { useColors } from '@/hooks/useColors'
 
 type WeightUnit = 'lbs' | 'kg'
-type Theme = 'dark' | 'light' | 'system'
 
 interface Profile {
   id: string
@@ -17,11 +17,12 @@ interface Profile {
   preferred_weight_unit: WeightUnit
   timezone: string | null
   created_at: string
+  email_nudges: boolean
+  email_weekly_summary: boolean
 }
 
 // Convert HEIC/HEIF to JPEG
 async function convertHeicToJpeg(file: File): Promise<File> {
-  // Dynamic import for heic2any (browser-only)
   const heic2any = (await import('heic2any')).default
 
   const blob = await heic2any({
@@ -45,7 +46,6 @@ async function resizeImage(file: File, maxSize: number = 400): Promise<File> {
     img.onload = () => {
       let { width, height } = img
 
-      // Calculate new dimensions while maintaining aspect ratio
       if (width > height) {
         if (width > maxSize) {
           height = (height * maxSize) / width
@@ -114,30 +114,108 @@ interface SettingsClientProps {
   userEmail: string
 }
 
+// Icons component
+const Icons = {
+  home: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+      <polyline points="9 22 9 12 15 12 15 22"/>
+    </svg>
+  ),
+  calendar: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+      <line x1="16" y1="2" x2="16" y2="6"/>
+      <line x1="8" y1="2" x2="8" y2="6"/>
+      <line x1="3" y1="10" x2="21" y2="10"/>
+    </svg>
+  ),
+  dumbbell: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <path d="M6.5 6.5h11M6.5 17.5h11M3 10v4M21 10v4M5 8v8M19 8v8M7 6v12M17 6v12"/>
+    </svg>
+  ),
+  user: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+      <circle cx="12" cy="7" r="4"/>
+    </svg>
+  ),
+  chevronLeft: ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  ),
+  chevronRight: ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <polyline points="9 18 15 12 9 6"/>
+    </svg>
+  ),
+  camera: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+      <circle cx="12" cy="13" r="4"/>
+    </svg>
+  ),
+  moon: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+  ),
+  sun: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <circle cx="12" cy="12" r="5"/>
+      <line x1="12" y1="1" x2="12" y2="3"/>
+      <line x1="12" y1="21" x2="12" y2="23"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="1" y1="12" x2="3" y2="12"/>
+      <line x1="21" y1="12" x2="23" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+  ),
+  monitor: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+      <line x1="8" y1="21" x2="16" y2="21"/>
+      <line x1="12" y1="17" x2="12" y2="21"/>
+    </svg>
+  ),
+  logOut: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+      <polyline points="16 17 21 12 16 7"/>
+      <line x1="21" y1="12" x2="9" y2="12"/>
+    </svg>
+  ),
+  mail: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+      <polyline points="22,6 12,13 2,6"/>
+    </svg>
+  ),
+}
+
 export function SettingsClient({ profile, coachName, userEmail }: SettingsClientProps) {
   const router = useRouter()
   const supabase = createClient()
-  const { theme, setTheme } = useTheme()
-  const [isDesktop, setIsDesktop] = useState(false)
+  const { theme, setTheme, resolvedTheme } = useTheme()
+  const colors = useColors()
+  const isDark = resolvedTheme === 'dark'
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [name, setName] = useState(profile.name)
   const [weightUnit, setWeightUnit] = useState<WeightUnit>(profile.preferred_weight_unit)
   const [timezone, setTimezone] = useState(profile.timezone || 'America/New_York')
   const [avatarUrl, setAvatarUrl] = useState<string | null>(profile.avatar_url)
+  const [emailNudges, setEmailNudges] = useState(profile.email_nudges ?? true)
+  const [emailWeeklySummary, setEmailWeeklySummary] = useState(profile.email_weekly_summary ?? true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
-
-  // Check for desktop viewport
-  useEffect(() => {
-    const checkDesktop = () => setIsDesktop(window.innerWidth >= 1024)
-    checkDesktop()
-    window.addEventListener('resize', checkDesktop)
-    return () => window.removeEventListener('resize', checkDesktop)
-  }, [])
 
   // Get initials for avatar
   const initials = name
@@ -158,6 +236,8 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
           name,
           preferred_weight_unit: weightUnit,
           timezone,
+          email_nudges: emailNudges,
+          email_weekly_summary: emailWeeklySummary,
           updated_at: new Date().toISOString(),
         })
         .eq('id', profile.id)
@@ -188,7 +268,6 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
     try {
       let processedFile = file
 
-      // Check for HEIC/HEIF/DNG files (common on iPhone)
       const isHeic = /\.(heic|heif|dng)$/i.test(file.name) ||
         file.type === 'image/heic' ||
         file.type === 'image/heif'
@@ -197,14 +276,11 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
         processedFile = await convertHeicToJpeg(file)
       }
 
-      // Resize the image
       processedFile = await resizeImage(processedFile, 400)
 
-      // Generate unique filename
       const fileExt = 'jpg'
       const fileName = `${profile.id}/avatar.${fileExt}`
 
-      // Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(fileName, processedFile, {
@@ -214,15 +290,12 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
 
       if (uploadError) throw uploadError
 
-      // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
         .getPublicUrl(fileName)
 
-      // Add cache-busting timestamp
       const urlWithTimestamp = `${publicUrl}?t=${Date.now()}`
 
-      // Update profile with new avatar URL
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
@@ -240,539 +313,660 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
       setPhotoError(err instanceof Error ? err.message : 'Failed to upload photo')
     } finally {
       setUploadingPhoto(false)
-      // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
     }
   }
 
-  const hasChanges = name !== profile.name || weightUnit !== profile.preferred_weight_unit || timezone !== (profile.timezone || 'America/New_York')
+  const hasChanges = name !== profile.name ||
+    weightUnit !== profile.preferred_weight_unit ||
+    timezone !== (profile.timezone || 'America/New_York') ||
+    emailNudges !== (profile.email_nudges ?? true) ||
+    emailWeeklySummary !== (profile.email_weekly_summary ?? true)
 
   const memberSince = new Date(profile.created_at).toLocaleDateString('en-US', {
     month: 'long',
     year: 'numeric',
   })
 
-  // Desktop Layout
-  if (isDesktop) {
-    return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-        {/* Desktop Header */}
-        <header className="sticky top-0 z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800">
-          <div className="max-w-6xl mx-auto px-8 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/dashboard" className="text-slate-400 hover:text-slate-600 dark:hover:text-white">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </Link>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Profile Settings</h1>
-            </div>
-            <div className="flex items-center gap-4">
-              {hasChanges && (
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="px-6 py-2 bg-purple-600 text-white font-medium rounded-xl hover:bg-purple-500 disabled:opacity-50 transition-colors"
-                >
-                  {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Changes'}
-                </button>
-              )}
-              <Link
-                href="/dashboard"
-                className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                </svg>
-                Dashboard
-              </Link>
-              {avatarUrl ? (
-                <img
-                  src={avatarUrl}
-                  alt={name}
-                  className="w-11 h-11 rounded-full object-cover shadow-lg shadow-purple-500/20"
-                />
-              ) : (
-                <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-bold shadow-lg shadow-purple-500/20">
-                  {initials}
-                </div>
-              )}
-            </div>
-          </div>
-        </header>
-
-        <main className="max-w-6xl mx-auto px-8 py-8">
-          <div className="grid grid-cols-3 gap-8">
-            {/* Left Column - Profile Info */}
-            <div className="space-y-6">
-              {/* Profile Card */}
-              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
-                <div className="flex flex-col items-center text-center mb-6">
-                  <div className="relative mb-4">
-                    {avatarUrl ? (
-                      <img
-                        src={avatarUrl}
-                        alt={name}
-                        className="w-24 h-24 rounded-full object-cover shadow-xl shadow-purple-500/30"
-                      />
-                    ) : (
-                      <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white text-3xl font-bold shadow-xl shadow-purple-500/30">
-                        {initials}
-                      </div>
-                    )}
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploadingPhoto}
-                      className="absolute bottom-0 right-0 w-8 h-8 bg-purple-600 hover:bg-purple-500 rounded-full flex items-center justify-center shadow-lg transition-colors disabled:opacity-50"
-                    >
-                      {uploadingPhoto ? (
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      ) : (
-                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                      )}
-                    </button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*,.heic,.heif,.dng"
-                      onChange={handlePhotoUpload}
-                      className="hidden"
-                    />
-                  </div>
-                  {photoError && (
-                    <p className="text-sm text-rose-500 mb-2">{photoError}</p>
-                  )}
-                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{name}</h2>
-                  <p className="text-slate-500">{userEmail}</p>
-                </div>
-
-                {/* Stats */}
-                <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 text-center">
-                    <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Member Since</p>
-                    <p className="font-semibold text-slate-900 dark:text-white">{memberSince}</p>
-                  </div>
-                  {coachName && (
-                    <div className="bg-purple-50 dark:bg-purple-500/10 rounded-xl p-4 text-center">
-                      <p className="text-xs text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-1">Coach</p>
-                      <p className="font-semibold text-purple-700 dark:text-purple-300">{coachName}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Sign Out */}
-              <button
-                onClick={handleSignOut}
-                disabled={signingOut}
-                className="w-full p-4 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 text-rose-600 dark:text-rose-400 font-medium hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors disabled:opacity-50"
-              >
-                {signingOut ? 'Signing out...' : 'Sign Out'}
-              </button>
-
-              {/* App Version */}
-              <p className="text-center text-sm text-slate-400 dark:text-slate-600">
-                Swear Strength v1.0.0
-              </p>
-            </div>
-
-            {/* Middle Column - Account Settings */}
-            <div className="space-y-6">
-              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Account Settings</h3>
-
-                <div className="space-y-5">
-                  {/* Name Input */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Display Name
-                    </label>
-                    <input
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
-                    />
-                  </div>
-
-                  {/* Weight Unit Toggle */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Preferred Weight Unit
-                    </label>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setWeightUnit('lbs')}
-                        className={`flex-1 py-3 rounded-xl font-medium transition-all ${
-                          weightUnit === 'lbs'
-                            ? 'bg-purple-600 text-white'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                        }`}
-                      >
-                        Pounds (lbs)
-                      </button>
-                      <button
-                        onClick={() => setWeightUnit('kg')}
-                        className={`flex-1 py-3 rounded-xl font-medium transition-all ${
-                          weightUnit === 'kg'
-                            ? 'bg-purple-600 text-white'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                        }`}
-                      >
-                        Kilograms (kg)
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Timezone Picker */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Timezone
-                    </label>
-                    <select
-                      value={timezone}
-                      onChange={(e) => setTimezone(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 appearance-none cursor-pointer"
-                      style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center', backgroundSize: '20px' }}
-                    >
-                      {TIMEZONE_OPTIONS.map((group) => (
-                        <optgroup key={group.group} label={group.group}>
-                          {group.timezones.map((tz) => (
-                            <option key={tz.value} value={tz.value}>
-                              {tz.label}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                      Used for habit tracking deadlines and reminders
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column - Appearance */}
-            <div className="space-y-6">
-              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Appearance</h3>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
-                    Theme
-                  </label>
-                  <div className="grid grid-cols-3 gap-3">
-                    <button
-                      onClick={() => setTheme('dark')}
-                      className={`py-4 rounded-xl font-medium transition-all flex flex-col items-center gap-2 ${
-                        theme === 'dark'
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                      </svg>
-                      Dark
-                    </button>
-                    <button
-                      onClick={() => setTheme('light')}
-                      className={`py-4 rounded-xl font-medium transition-all flex flex-col items-center gap-2 ${
-                        theme === 'light'
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                      </svg>
-                      Light
-                    </button>
-                    <button
-                      onClick={() => setTheme('system')}
-                      className={`py-4 rounded-xl font-medium transition-all flex flex-col items-center gap-2 ${
-                        theme === 'system'
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
-                      Auto
-                    </button>
-                  </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-3">
-                    {theme === 'system' ? 'Follows your device settings' : theme === 'dark' ? 'Always use dark mode' : 'Always use light mode'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Quick Links */}
-              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Quick Links</h3>
-                <div className="space-y-2">
-                  <Link
-                    href="/habits/history"
-                    className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-500/20 flex items-center justify-center">
-                      <svg className="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 20V10M12 20V4M6 20v-6" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="font-medium text-slate-900 dark:text-white">Habit Stats</p>
-                      <p className="text-sm text-slate-500">View your progress history</p>
-                    </div>
-                    <svg className="w-5 h-5 text-slate-400 ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </Link>
-                  <Link
-                    href="/dashboard"
-                    className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center">
-                      <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="font-medium text-slate-900 dark:text-white">Dashboard</p>
-                      <p className="text-sm text-slate-500">Overview of your progress</p>
-                    </div>
-                    <svg className="w-5 h-5 text-slate-400 ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </div>
-        </main>
-      </div>
-    )
-  }
-
-  // Mobile Layout (Original)
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pb-20">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800">
-        <div className="max-w-lg mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/dashboard" className="text-slate-400 hover:text-slate-600 dark:hover:text-white">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
+    <div className="account-container">
+      <style>{`
+        .account-container {
+          min-height: 100vh;
+          background: ${colors.bg};
+          padding-bottom: 100px;
+        }
+
+        .account-content {
+          max-width: 500px;
+          margin: 0 auto;
+          padding: 0 20px;
+        }
+
+        /* Header */
+        .header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 16px 0 24px;
+        }
+
+        .header-left {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+
+        .back-btn {
+          width: 40px;
+          height: 40px;
+          border-radius: 12px;
+          background: ${colors.bgCard};
+          border: ${isDark ? 'none' : `1px solid ${colors.border}`};
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+        }
+
+        .page-title {
+          font-size: 20px;
+          font-weight: 700;
+          color: ${colors.text};
+          margin: 0;
+        }
+
+        .save-btn {
+          padding: 10px 20px;
+          border-radius: 12px;
+          font-size: 14px;
+          font-weight: 600;
+          border: none;
+          cursor: pointer;
+          transition: all 0.2s;
+          background: linear-gradient(135deg, ${colors.purple} 0%, ${colors.purpleLight} 100%);
+          color: white;
+        }
+
+        .save-btn:disabled {
+          opacity: 0.5;
+        }
+
+        .save-btn.saved {
+          background: ${colors.green};
+        }
+
+        /* Profile Card */
+        .profile-card {
+          background: ${colors.bgCard};
+          border-radius: 20px;
+          padding: 24px;
+          margin-bottom: 16px;
+          border: 1px solid ${colors.border};
+          box-shadow: ${isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.05)'};
+        }
+
+        .profile-header {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          margin-bottom: 24px;
+        }
+
+        .avatar-container {
+          position: relative;
+        }
+
+        .avatar {
+          width: 72px;
+          height: 72px;
+          border-radius: 20px;
+          object-fit: cover;
+        }
+
+        .avatar-placeholder {
+          width: 72px;
+          height: 72px;
+          border-radius: 20px;
+          background: linear-gradient(135deg, ${colors.purple} 0%, ${colors.purpleLight} 100%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          font-size: 24px;
+          font-weight: 700;
+        }
+
+        .avatar-edit-btn {
+          position: absolute;
+          bottom: -4px;
+          right: -4px;
+          width: 28px;
+          height: 28px;
+          border-radius: 10px;
+          background: ${colors.purple};
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          border: 2px solid ${colors.bg};
+        }
+
+        .avatar-edit-btn:disabled {
+          opacity: 0.5;
+        }
+
+        .profile-info {
+          flex: 1;
+        }
+
+        .profile-name {
+          font-size: 20px;
+          font-weight: 700;
+          color: ${colors.text};
+          margin-bottom: 4px;
+        }
+
+        .profile-email {
+          font-size: 14px;
+          color: ${colors.textMuted};
+        }
+
+        .photo-error {
+          font-size: 12px;
+          color: ${colors.red};
+          margin-top: 4px;
+        }
+
+        /* Form Section */
+        .form-section {
+          margin-bottom: 20px;
+        }
+
+        .form-label {
+          display: block;
+          font-size: 13px;
+          font-weight: 600;
+          color: ${colors.textSecondary};
+          margin-bottom: 8px;
+        }
+
+        .form-input {
+          width: 100%;
+          padding: 14px 16px;
+          border-radius: 12px;
+          background: ${colors.bgCardSolid};
+          border: 1px solid ${colors.border};
+          color: ${colors.text};
+          font-size: 15px;
+          outline: none;
+          transition: border-color 0.2s;
+        }
+
+        .form-input:focus {
+          border-color: ${colors.purple};
+        }
+
+        /* Toggle Buttons */
+        .toggle-group {
+          display: flex;
+          gap: 8px;
+        }
+
+        .toggle-btn {
+          flex: 1;
+          padding: 12px 16px;
+          border-radius: 12px;
+          font-size: 14px;
+          font-weight: 600;
+          border: none;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .toggle-btn.active {
+          background: linear-gradient(135deg, ${colors.purple} 0%, ${colors.purpleLight} 100%);
+          color: white;
+        }
+
+        .toggle-btn.inactive {
+          background: ${colors.bgCardSolid};
+          color: ${colors.textSecondary};
+          border: 1px solid ${colors.border};
+        }
+
+        /* Select */
+        .form-select {
+          width: 100%;
+          padding: 14px 16px;
+          border-radius: 12px;
+          background: ${colors.bgCardSolid};
+          border: 1px solid ${colors.border};
+          color: ${colors.text};
+          font-size: 15px;
+          outline: none;
+          cursor: pointer;
+          appearance: none;
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23${isDark ? '6b6880' : '8b85ad'}'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+          background-repeat: no-repeat;
+          background-position: right 14px center;
+          background-size: 18px;
+        }
+
+        .form-hint {
+          font-size: 12px;
+          color: ${colors.textMuted};
+          margin-top: 6px;
+        }
+
+        /* Settings Card */
+        .settings-card {
+          background: ${colors.bgCard};
+          border-radius: 16px;
+          margin-bottom: 16px;
+          border: 1px solid ${colors.border};
+          overflow: hidden;
+          box-shadow: ${isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.05)'};
+        }
+
+        .settings-title {
+          font-size: 12px;
+          font-weight: 600;
+          color: ${colors.textMuted};
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          padding: 16px 16px 12px;
+        }
+
+        /* Theme Selector */
+        .theme-selector {
+          display: flex;
+          gap: 8px;
+          padding: 0 16px 16px;
+        }
+
+        .theme-btn {
+          flex: 1;
+          padding: 14px 12px;
+          border-radius: 12px;
+          font-size: 12px;
+          font-weight: 600;
+          border: none;
+          cursor: pointer;
+          transition: all 0.2s;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .theme-btn.active {
+          background: linear-gradient(135deg, ${colors.purple} 0%, ${colors.purpleLight} 100%);
+          color: white;
+        }
+
+        .theme-btn.inactive {
+          background: ${colors.bgCardSolid};
+          color: ${colors.textSecondary};
+          border: 1px solid ${colors.border};
+        }
+
+        /* Info Row */
+        .info-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 14px 16px;
+          border-bottom: 1px solid ${colors.border};
+        }
+
+        .info-row:last-child {
+          border-bottom: none;
+        }
+
+        .info-label {
+          font-size: 13px;
+          color: ${colors.textMuted};
+        }
+
+        .info-value {
+          font-size: 14px;
+          font-weight: 600;
+          color: ${colors.text};
+        }
+
+        /* Toggle Switch */
+        .toggle-switch-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 14px 16px;
+          border-bottom: 1px solid ${colors.border};
+        }
+
+        .toggle-switch-row:last-child {
+          border-bottom: none;
+        }
+
+        .toggle-switch-content {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .toggle-switch-label {
+          font-size: 14px;
+          font-weight: 500;
+          color: ${colors.text};
+        }
+
+        .toggle-switch-desc {
+          font-size: 12px;
+          color: ${colors.textMuted};
+        }
+
+        .toggle-switch {
+          position: relative;
+          width: 48px;
+          height: 28px;
+          background: ${colors.bgCardSolid};
+          border-radius: 14px;
+          cursor: pointer;
+          transition: background 0.2s;
+          border: 1px solid ${colors.border};
+          flex-shrink: 0;
+        }
+
+        .toggle-switch.on {
+          background: ${colors.green};
+          border-color: ${colors.green};
+        }
+
+        .toggle-switch::after {
+          content: '';
+          position: absolute;
+          top: 3px;
+          left: 3px;
+          width: 20px;
+          height: 20px;
+          background: white;
+          border-radius: 50%;
+          transition: transform 0.2s;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        .toggle-switch.on::after {
+          transform: translateX(20px);
+        }
+
+        .coach-badge {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 12px;
+          background: ${isDark ? 'rgba(139, 92, 246, 0.15)' : 'rgba(124, 58, 237, 0.1)'};
+          border-radius: 20px;
+        }
+
+        .coach-badge-text {
+          font-size: 14px;
+          font-weight: 600;
+          color: ${colors.purple};
+        }
+
+        /* Sign Out */
+        .signout-btn {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          padding: 16px;
+          border-radius: 16px;
+          font-size: 15px;
+          font-weight: 600;
+          border: none;
+          cursor: pointer;
+          transition: all 0.2s;
+          background: ${colors.bgCard};
+          color: ${colors.red};
+          border: 1px solid ${colors.border};
+          margin-bottom: 16px;
+        }
+
+        .signout-btn:hover {
+          background: ${isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.05)'};
+        }
+
+        .signout-btn:disabled {
+          opacity: 0.5;
+        }
+
+        /* App Version */
+        .app-version {
+          text-align: center;
+          font-size: 12px;
+          color: ${colors.textMuted};
+          padding: 8px 0;
+        }
+
+        /* Bottom Navigation */
+        .bottom-nav {
+          position: fixed;
+          bottom: 20px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: calc(100% - 32px);
+          max-width: 468px;
+          background: ${colors.bgCard};
+          border-radius: 20px;
+          padding: 12px 20px;
+          display: flex;
+          justify-content: space-around;
+          align-items: center;
+          border: 1px solid ${colors.border};
+          box-shadow: ${isDark ? 'none' : '0 -2px 10px rgba(0,0,0,0.05)'};
+          z-index: 100;
+        }
+
+        .nav-item {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          cursor: pointer;
+          text-decoration: none;
+        }
+
+        .nav-label {
+          font-size: 10px;
+          font-weight: 600;
+        }
+      `}</style>
+
+      <div className="account-content">
+        {/* Header */}
+        <header className="header">
+          <div className="header-left">
+            <Link href="/dashboard" className="back-btn">
+              <Icons.chevronLeft size={20} color={colors.textSecondary} />
             </Link>
-            <h1 className="text-lg font-bold text-slate-900 dark:text-white">Settings</h1>
+            <h1 className="page-title">Account</h1>
           </div>
           {hasChanges && (
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-xl hover:bg-purple-500 disabled:opacity-50 transition-colors"
+              className={`save-btn ${saved ? 'saved' : ''}`}
             >
               {saving ? 'Saving...' : saved ? 'Saved!' : 'Save'}
             </button>
           )}
-        </div>
-      </header>
+        </header>
 
-      <main className="max-w-lg mx-auto px-4 py-6 space-y-6">
         {/* Profile Card */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="relative">
+        <div className="profile-card">
+          <div className="profile-header">
+            <div className="avatar-container">
               {avatarUrl ? (
-                <img
-                  src={avatarUrl}
-                  alt={name}
-                  className="w-16 h-16 rounded-full object-cover shadow-lg shadow-purple-500/20"
-                />
+                <img src={avatarUrl} alt={name} className="avatar" />
               ) : (
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white text-xl font-bold shadow-lg shadow-purple-500/20">
-                  {initials}
-                </div>
+                <div className="avatar-placeholder">{initials}</div>
               )}
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingPhoto}
-                className="absolute -bottom-1 -right-1 w-7 h-7 bg-purple-600 hover:bg-purple-500 rounded-full flex items-center justify-center shadow-lg transition-colors disabled:opacity-50"
+                className="avatar-edit-btn"
               >
                 {uploadingPhoto ? (
-                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <div style={{ width: 12, height: 12, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
                 ) : (
-                  <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
+                  <Icons.camera size={14} color="white" />
                 )}
               </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,.heic,.heif,.dng"
+                onChange={handlePhotoUpload}
+                style={{ display: 'none' }}
+              />
             </div>
-            <div className="flex-1">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">{name}</h2>
-              <p className="text-sm text-slate-500">{userEmail}</p>
-              {photoError && (
-                <p className="text-xs text-rose-500 mt-1">{photoError}</p>
-              )}
+            <div className="profile-info">
+              <div className="profile-name">{name}</div>
+              <div className="profile-email">{userEmail}</div>
+              {photoError && <div className="photo-error">{photoError}</div>}
             </div>
           </div>
 
-          <div className="space-y-4">
-            {/* Name Input */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Display Name
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
-              />
-            </div>
+          {/* Name Input */}
+          <div className="form-section">
+            <label className="form-label">Display Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="form-input"
+            />
+          </div>
 
-            {/* Weight Unit Toggle */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Preferred Weight Unit
-              </label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setWeightUnit('lbs')}
-                  className={`flex-1 py-3 rounded-xl font-medium transition-all ${
-                    weightUnit === 'lbs'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  Pounds (lbs)
-                </button>
-                <button
-                  onClick={() => setWeightUnit('kg')}
-                  className={`flex-1 py-3 rounded-xl font-medium transition-all ${
-                    weightUnit === 'kg'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  Kilograms (kg)
-                </button>
-              </div>
-            </div>
-
-            {/* Timezone Picker */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Timezone
-              </label>
-              <select
-                value={timezone}
-                onChange={(e) => setTimezone(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 appearance-none cursor-pointer"
-                style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center', backgroundSize: '20px' }}
+          {/* Weight Unit */}
+          <div className="form-section">
+            <label className="form-label">Preferred Weight Unit</label>
+            <div className="toggle-group">
+              <button
+                onClick={() => setWeightUnit('lbs')}
+                className={`toggle-btn ${weightUnit === 'lbs' ? 'active' : 'inactive'}`}
               >
-                {TIMEZONE_OPTIONS.map((group) => (
-                  <optgroup key={group.group} label={group.group}>
-                    {group.timezones.map((tz) => (
-                      <option key={tz.value} value={tz.value}>
-                        {tz.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                Used for scheduling reminders at the right time
-              </p>
+                Pounds (lbs)
+              </button>
+              <button
+                onClick={() => setWeightUnit('kg')}
+                className={`toggle-btn ${weightUnit === 'kg' ? 'active' : 'inactive'}`}
+              >
+                Kilograms (kg)
+              </button>
             </div>
+          </div>
+
+          {/* Timezone */}
+          <div className="form-section" style={{ marginBottom: 0 }}>
+            <label className="form-label">Timezone</label>
+            <select
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              className="form-select"
+            >
+              {TIMEZONE_OPTIONS.map((group) => (
+                <optgroup key={group.group} label={group.group}>
+                  {group.timezones.map((tz) => (
+                    <option key={tz.value} value={tz.value}>
+                      {tz.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <p className="form-hint">Used for scheduling reminders at the right time</p>
           </div>
         </div>
 
         {/* Appearance */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
-          <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">
-            Appearance
-          </h3>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Theme
-            </label>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setTheme('dark')}
-                className={`flex-1 py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
-                  theme === 'dark'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                </svg>
-                Dark
-              </button>
-              <button
-                onClick={() => setTheme('light')}
-                className={`flex-1 py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
-                  theme === 'light'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-                Light
-              </button>
-              <button
-                onClick={() => setTheme('system')}
-                className={`flex-1 py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
-                  theme === 'system'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                Auto
-              </button>
+        <div className="settings-card">
+          <div className="settings-title">Appearance</div>
+          <div className="theme-selector">
+            <button
+              onClick={() => setTheme('dark')}
+              className={`theme-btn ${theme === 'dark' ? 'active' : 'inactive'}`}
+            >
+              <Icons.moon size={18} color={theme === 'dark' ? 'white' : colors.textSecondary} />
+              Dark
+            </button>
+            <button
+              onClick={() => setTheme('light')}
+              className={`theme-btn ${theme === 'light' ? 'active' : 'inactive'}`}
+            >
+              <Icons.sun size={18} color={theme === 'light' ? 'white' : colors.textSecondary} />
+              Light
+            </button>
+            <button
+              onClick={() => setTheme('system')}
+              className={`theme-btn ${theme === 'system' ? 'active' : 'inactive'}`}
+            >
+              <Icons.monitor size={18} color={theme === 'system' ? 'white' : colors.textSecondary} />
+              Auto
+            </button>
+          </div>
+        </div>
+
+        {/* Email Notifications */}
+        <div className="settings-card">
+          <div className="settings-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Icons.mail size={14} color={colors.textMuted} />
+            Email Notifications
+          </div>
+          <div className="toggle-switch-row">
+            <div className="toggle-switch-content">
+              <span className="toggle-switch-label">Rivalry Nudges</span>
+              <span className="toggle-switch-desc">When your rival sends a nudge</span>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-              {theme === 'system' ? 'Follows your device settings' : theme === 'dark' ? 'Always use dark mode' : 'Always use light mode'}
+            <div
+              className={`toggle-switch ${emailNudges ? 'on' : ''}`}
+              onClick={() => setEmailNudges(!emailNudges)}
+            />
+          </div>
+          <div className="toggle-switch-row">
+            <div className="toggle-switch-content">
+              <span className="toggle-switch-label">Weekly Summary</span>
+              <span className="toggle-switch-desc">Your weekly stats and progress</span>
+            </div>
+            <div
+              className={`toggle-switch ${emailWeeklySummary ? 'on' : ''}`}
+              onClick={() => setEmailWeeklySummary(!emailWeeklySummary)}
+            />
+          </div>
+          <div style={{ padding: '12px 16px', borderTop: `1px solid ${colors.border}` }}>
+            <p style={{ margin: 0, fontSize: 12, color: colors.textMuted, lineHeight: 1.5 }}>
+              Coaching emails (reminders, check-ins) are always enabled as part of your program.
             </p>
           </div>
         </div>
 
         {/* Account Info */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
-          <div className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Member since</p>
-              <p className="font-medium text-slate-900 dark:text-white">{memberSince}</p>
-            </div>
+        <div className="settings-card">
+          <div className="settings-title">Account Info</div>
+          <div className="info-row">
+            <span className="info-label">Member since</span>
+            <span className="info-value">{memberSince}</span>
           </div>
-
           {coachName && (
-            <div className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Your Coach</p>
-                <p className="font-medium text-slate-900 dark:text-white">{coachName}</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-500/20 flex items-center justify-center">
-                <svg className="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
+            <div className="info-row">
+              <span className="info-label">Your Coach</span>
+              <div className="coach-badge">
+                <Icons.user size={14} color={colors.purple} />
+                <span className="coach-badge-text">{coachName}</span>
               </div>
             </div>
           )}
@@ -782,38 +976,33 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
         <button
           onClick={handleSignOut}
           disabled={signingOut}
-          className="w-full p-4 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 text-rose-600 dark:text-rose-400 font-medium hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors disabled:opacity-50"
+          className="signout-btn"
         >
+          <Icons.logOut size={18} color={colors.red} />
           {signingOut ? 'Signing out...' : 'Sign Out'}
         </button>
 
         {/* App Version */}
-        <p className="text-center text-sm text-slate-400 dark:text-slate-600">
-          Swear Strength v1.0.0
-        </p>
-      </main>
+        <p className="app-version">Swear Strength v1.0.0</p>
+      </div>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800">
-        <div className="max-w-lg mx-auto px-4 py-2 flex items-center justify-around">
-          <Link href="/dashboard" className="flex flex-col items-center py-2 px-4 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-            <span className="text-xs mt-1 font-medium">Home</span>
-          </Link>
-          <Link href="/habits/history" className="flex flex-col items-center py-2 px-4 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18 20V10M12 20V4M6 20v-6" />
-            </svg>
-            <span className="text-xs mt-1 font-medium">Stats</span>
-          </Link>
-          <Link href="/settings" className="flex flex-col items-center py-2 px-4 rounded-xl text-purple-600 dark:text-purple-400">
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-            <span className="text-xs mt-1 font-medium">Profile</span>
-          </Link>
+      <nav className="bottom-nav">
+        <Link href="/dashboard" className="nav-item">
+          <Icons.home size={22} color={colors.textMuted} />
+          <span className="nav-label" style={{ color: colors.textMuted }}>Home</span>
+        </Link>
+        <Link href="/dashboard" className="nav-item">
+          <Icons.calendar size={22} color={colors.textMuted} />
+          <span className="nav-label" style={{ color: colors.textMuted }}>Calendar</span>
+        </Link>
+        <Link href="/workouts" className="nav-item">
+          <Icons.dumbbell size={22} color={colors.textMuted} />
+          <span className="nav-label" style={{ color: colors.textMuted }}>Plans</span>
+        </Link>
+        <div className="nav-item">
+          <Icons.user size={22} color={colors.purple} />
+          <span className="nav-label" style={{ color: colors.purple }}>Account</span>
         </div>
       </nav>
     </div>

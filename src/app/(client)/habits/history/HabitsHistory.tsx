@@ -29,7 +29,6 @@ interface Completion {
 interface HabitsHistoryProps {
   habits: ClientHabit[]
   completions: Completion[]
-  initials: string
 }
 
 // Category colors
@@ -56,7 +55,7 @@ function getHabitTemplate(habit: ClientHabit): HabitTemplate {
 
 type ViewMode = '7D' | '30D' | '90D'
 
-export function HabitsHistory({ habits, completions, initials }: HabitsHistoryProps) {
+export function HabitsHistory({ habits, completions }: HabitsHistoryProps) {
   const colors = useColors()
   const { resolvedTheme } = useTheme()
   const isLight = resolvedTheme === 'light'

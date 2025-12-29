@@ -127,65 +127,65 @@ const darkColors: ThemeColors = {
 }
 
 const lightColors: ThemeColors = {
-  // Backgrounds - warm off-white with subtle purple tint
-  bg: '#faf8ff',
-  bgGradient: 'linear-gradient(180deg, #faf8ff 0%, #f5f3ff 50%, #ffffff 100%)',
-  bgCard: 'rgba(255, 255, 255, 0.9)',
+  // Backgrounds - soft gray-blue (NOT purple-tinted)
+  bg: '#f8f9fc',
+  bgGradient: 'linear-gradient(180deg, #f8f9fc 0%, #f8f9fc 100%)',
+  bgCard: '#ffffff',
   bgCardSolid: '#ffffff',
-  bgCardHover: '#ffffff',
-  bgGlass: 'rgba(255, 255, 255, 0.7)',
-  bgTertiary: '#f5f3ff',
-  bgInput: '#f8fafc',
+  bgCardHover: '#f3f4f8',
+  bgGlass: 'rgba(255, 255, 255, 0.9)',
+  bgTertiary: '#f3f4f6',
+  bgInput: '#ffffff',
 
-  // Text
-  text: '#1e1b4b',
-  textSecondary: '#4c4977',
-  textMuted: '#8b85ad',
+  // Text - dark navy
+  text: '#1a1a2e',
+  textSecondary: '#6b7280',
+  textMuted: '#9ca3af',
 
-  // Borders
-  border: 'rgba(139, 92, 246, 0.12)',
-  borderLight: '#e9e5ff',
-  borderGlow: 'rgba(139, 92, 246, 0.25)',
+  // Borders - solid gray (not purple-tinted)
+  border: '#e5e7eb',
+  borderLight: '#f3f4f6',
+  borderGlow: 'rgba(124, 92, 224, 0.25)',
 
-  // Brand - Purple
-  purple: '#7c3aed',
-  purpleLight: 'rgba(124, 58, 237, 0.08)',
+  // Brand - Purple (slightly muted compared to dark theme)
+  purple: '#7c5ce0',
+  purpleLight: '#ede9fb',
   purpleDark: '#6d28d9',
-  purpleGlow: 'rgba(124, 58, 237, 0.2)',
-  purpleGradient: 'linear-gradient(135deg, #7c3aed 0%, #8b5cf6 50%, #a78bfa 100%)',
+  purpleGlow: 'rgba(124, 92, 224, 0.2)',
+  purpleGradient: 'linear-gradient(135deg, #7c5ce0 0%, #8b5cf6 50%, #a78bfa 100%)',
 
   // Status - Green
-  green: '#059669',
-  greenLight: 'rgba(5, 150, 105, 0.1)',
-  greenGradient: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+  green: '#34d399',
+  greenLight: '#d1fae5',
+  greenGradient: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)',
 
   // Status - Amber
-  amber: '#d97706',
-  amberLight: 'rgba(217, 119, 6, 0.1)',
-  amberGradient: 'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)',
+  amber: '#f59e0b',
+  amberLight: '#fef3c7',
+  amberGradient: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)',
 
   // Status - Red
   red: '#ef4444',
 
   // Status - Blue
-  blue: '#2563eb',
+  blue: '#3b82f6',
 
-  // Card gradient
-  cardGradient: 'linear-gradient(135deg, rgba(124, 58, 237, 0.04) 0%, rgba(59, 130, 246, 0.02) 100%)',
+  // Card gradient - very subtle
+  cardGradient: 'linear-gradient(135deg, rgba(124, 92, 224, 0.02) 0%, rgba(59, 130, 246, 0.01) 100%)',
 
-  // Shadows (purple-tinted, not gray)
-  shadowSm: '0 2px 8px rgba(124, 58, 237, 0.06)',
-  shadowMd: '0 8px 24px rgba(124, 58, 237, 0.08)',
-  shadowLg: '0 16px 48px rgba(124, 58, 237, 0.12)',
-  shadowPurple: '0 8px 32px rgba(124, 58, 237, 0.15)',
-  shadowGreen: '0 4px 16px rgba(5, 150, 105, 0.2)',
-  shadowAmber: '0 4px 16px rgba(217, 119, 6, 0.2)',
+  // Shadows - minimal in light theme
+  shadowSm: '0 1px 2px rgba(0, 0, 0, 0.05)',
+  shadowMd: '0 4px 6px rgba(0, 0, 0, 0.05)',
+  shadowLg: '0 10px 15px rgba(0, 0, 0, 0.05)',
+  shadowPurple: '0 4px 12px rgba(124, 92, 224, 0.1)',
+  shadowGreen: '0 4px 12px rgba(52, 211, 153, 0.15)',
+  shadowAmber: '0 4px 12px rgba(245, 158, 11, 0.15)',
 
   // Legacy aliases
-  textPrimary: '#1e1b4b',
+  textPrimary: '#1a1a2e',
   card: '#ffffff',
-  cardLight: 'rgba(255, 255, 255, 0.9)',
-  cardHover: '#ffffff',
+  cardLight: '#ffffff',
+  cardHover: '#f3f4f8',
 }
 
 export function useColors(): ThemeColors {

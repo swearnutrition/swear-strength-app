@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 interface Client {
   id: string
@@ -58,12 +59,21 @@ const statusColors = {
 }
 
 export function RivalriesClient({
-  rivalries,
+  rivalries: initialRivalries,
   rivalryHabits,
   completions,
   clients,
 }: RivalriesClientProps) {
+  const router = useRouter()
+  const [rivalries, setRivalries] = useState(initialRivalries)
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all')
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [confirmModal, setConfirmModal] = useState<{
+    rivalryId: string
+    action: 'cancel' | 'complete'
+    rivalryName: string
+  } | null>(null)
 
   const filteredRivalries = rivalries.filter((r) => {
     if (filter === 'all') return true
@@ -87,6 +97,42 @@ export function RivalriesClient({
     ).length
 
     return { challengerCompletions, opponentCompletions }
+  }
+
+  const handleAction = async (rivalryId: string, action: 'cancel' | 'complete') => {
+    setActionLoading(rivalryId)
+    try {
+      const res = await fetch(`/api/rivalries/${rivalryId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        // Update local state
+        setRivalries(prev => prev.map(r => {
+          if (r.id === rivalryId) {
+            return {
+              ...r,
+              status: data.status,
+              winner_id: data.winner_id || null
+            }
+          }
+          return r
+        }))
+        router.refresh()
+      }
+    } catch (error) {
+      console.error('Failed to update rivalry:', error)
+    } finally {
+      setActionLoading(null)
+      setConfirmModal(null)
+    }
+  }
+
+  const isExpired = (endDate: string) => {
+    return new Date(endDate) < new Date()
   }
 
   return (
@@ -256,6 +302,97 @@ export function RivalriesClient({
                     {new Date(rivalry.end_date).toLocaleDateString()}
                   </p>
                 </div>
+
+                {/* Actions for active/pending rivalries */}
+                {(rivalry.status === 'active' || rivalry.status === 'pending') && (
+                  <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    {isExpired(rivalry.end_date) ? (
+                      // Rivalry has expired - show "End & Pick Winner" prominently
+                      <button
+                        onClick={() => setConfirmModal({ rivalryId: rivalry.id, action: 'complete', rivalryName: rivalry.name })}
+                        disabled={actionLoading === rivalry.id}
+                        className="w-full flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {actionLoading === rivalry.id ? (
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            End & Pick Winner
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      // Rivalry is still active - show subtle action menu
+                      <div className="relative">
+                        <button
+                          onClick={() => setOpenMenuId(openMenuId === rivalry.id ? null : rivalry.id)}
+                          className="w-full flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 text-xs py-1.5 transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                          </svg>
+                          Manage
+                        </button>
+                        {openMenuId === rivalry.id && (
+                          <div className="absolute bottom-full left-0 right-0 mb-1 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden z-10">
+                            <button
+                              onClick={() => {
+                                setOpenMenuId(null)
+                                setConfirmModal({ rivalryId: rivalry.id, action: 'complete', rivalryName: rivalry.name })
+                              }}
+                              disabled={actionLoading === rivalry.id}
+                              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                              End Early & Pick Winner
+                            </button>
+                            <button
+                              onClick={() => {
+                                setOpenMenuId(null)
+                                setConfirmModal({ rivalryId: rivalry.id, action: 'cancel', rivalryName: rivalry.name })
+                              }}
+                              disabled={actionLoading === rivalry.id}
+                              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                              Cancel Rivalry
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Winner display for completed rivalries */}
+                {rivalry.status === 'completed' && rivalry.winner_id && (
+                  <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 text-center">
+                    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                      <span>🏆</span>
+                      Winner: {rivalry.winner_id === rivalry.challenger_id
+                        ? rivalry.challenger?.name?.split(' ')[0]
+                        : rivalry.opponent?.name?.split(' ')[0]
+                      }
+                    </span>
+                  </div>
+                )}
+
+                {/* Tied display */}
+                {rivalry.status === 'completed' && !rivalry.winner_id && (
+                  <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 text-center">
+                    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500">
+                      <span>🤝</span>
+                      It&apos;s a tie!
+                    </span>
+                  </div>
+                )}
               </div>
             )
           })}
@@ -285,6 +422,48 @@ export function RivalriesClient({
             </svg>
             Create First Rivalry
           </Link>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
+              {confirmModal.action === 'cancel' ? 'Cancel Rivalry?' : 'End Rivalry?'}
+            </h3>
+            <p className="text-slate-600 dark:text-slate-400 mb-6">
+              {confirmModal.action === 'cancel'
+                ? `Are you sure you want to cancel "${confirmModal.rivalryName}"? This cannot be undone.`
+                : `End "${confirmModal.rivalryName}" now and determine the winner based on current scores?`
+              }
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmModal(null)}
+                className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+              >
+                Go Back
+              </button>
+              <button
+                onClick={() => handleAction(confirmModal.rivalryId, confirmModal.action)}
+                disabled={actionLoading === confirmModal.rivalryId}
+                className={`flex-1 py-2.5 px-4 rounded-xl font-medium transition-colors disabled:opacity-50 ${
+                  confirmModal.action === 'cancel'
+                    ? 'bg-red-500 hover:bg-red-400 text-white'
+                    : 'bg-emerald-500 hover:bg-emerald-400 text-white'
+                }`}
+              >
+                {actionLoading === confirmModal.rivalryId ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto" />
+                ) : confirmModal.action === 'cancel' ? (
+                  'Cancel Rivalry'
+                ) : (
+                  'End & Pick Winner'
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

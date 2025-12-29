@@ -18,6 +18,17 @@ interface WorkoutDay {
   workout_exercises: { id: string }[]
 }
 
+interface WeekWorkoutInfo {
+  id: string
+  name: string
+  subtitle: string | null
+  exerciseCount: number
+  estimatedDuration: number
+  week: number
+  dayNumber: number
+  completed: boolean
+}
+
 interface ProgramWeek {
   id: string
   week_number: number
@@ -43,7 +54,7 @@ export default async function ClientDashboard() {
     redirect('/login')
   }
 
-  // Get user's active program assignment
+  // Get user's active program assignment (including scheduled_days)
   const { data: assignment } = await supabase
     .from('user_program_assignments')
     .select(`
@@ -53,6 +64,9 @@ export default async function ClientDashboard() {
     .eq('user_id', user.id)
     .eq('is_active', true)
     .single()
+
+  // Check if schedule needs to be set
+  const needsSchedule = assignment && !assignment.scheduled_days
 
   // Get initials for avatar
   const initials = (profile.name as string)
@@ -90,7 +104,19 @@ export default async function ClientDashboard() {
   // Get program structure for today's workout and scheduled days
   let todayWorkout = null
   let totalWorkoutsInWeek = 4 // default
-  let scheduledDays = new Set<number>()
+  const scheduledDays = new Set<number>()
+  let workoutDaysCount = 0
+  const weekWorkouts: Record<number, WeekWorkoutInfo> = {} // Map day index (0-6) to workout
+  let programWorkoutDays: Array<{
+    id: string
+    name: string
+    subtitle: string | null
+    exerciseCount: number
+    estimatedDuration: number
+    week: number
+    dayNumber: number
+  }> = []
+  let isFlexibleMode = false
 
   if (assignment) {
     const { data: programWeeks } = await supabase
@@ -113,37 +139,124 @@ export default async function ClientDashboard() {
 
     if (programWeeks?.workout_days) {
       const weeks = programWeeks as ProgramWeek
-      const workoutDays = weeks.workout_days.filter(d => !d.is_rest_day)
+      const workoutDays = weeks.workout_days
+        .filter(d => !d.is_rest_day)
+        .sort((a, b) => a.day_number - b.day_number)
+      workoutDaysCount = workoutDays.length
       totalWorkoutsInWeek = workoutDays.length
 
-      // Map day numbers to week days (assumes day_number 1 = Monday)
-      workoutDays.forEach(d => {
-        // Convert day_number (1-7, Mon-Sun) to JS day (0-6, Sun-Sat)
-        // day_number 1 (Monday) = JS day 1
-        // day_number 7 (Sunday) = JS day 0
-        const jsDay = d.day_number === 7 ? 0 : d.day_number
-        scheduledDays.add(jsDay)
-      })
+      // Build programWorkoutDays for client to use for future/past weeks
+      programWorkoutDays = workoutDays.map(d => ({
+        id: d.id,
+        name: d.name,
+        subtitle: d.subtitle,
+        exerciseCount: d.workout_exercises.length,
+        estimatedDuration: Math.round(d.workout_exercises.length * 3.5),
+        week: assignment.current_week,
+        dayNumber: d.day_number,
+      }))
 
-      // Find today's workout
-      const todayDayNumber = dayOfWeek === 0 ? 7 : dayOfWeek // Convert JS day to day_number format
-      const todayWorkoutDay = workoutDays.find(d => d.day_number === todayDayNumber)
+      // Use scheduled_days from assignment if set, otherwise fall back to program day numbers
+      if (assignment.scheduled_days && Array.isArray(assignment.scheduled_days)) {
+        // User has set their schedule - use it
+        assignment.scheduled_days.forEach((d: number) => scheduledDays.add(d))
+        const sortedSchedule = [...assignment.scheduled_days].sort((a: number, b: number) => a - b)
 
-      if (todayWorkoutDay) {
-        // Check if already completed today
-        const alreadyCompleted = (thisWeekLogs || []).some(
-          log => log.workout_day_id === todayWorkoutDay.id && log.completed_at
+        // Build weekWorkouts map for all scheduled days
+        sortedSchedule.forEach((scheduleDay, scheduleIndex) => {
+          const workoutDay = workoutDays[scheduleIndex % workoutDays.length]
+          if (workoutDay) {
+            // Find which week day index (0-6, Monday=0) this schedule day falls on
+            // scheduleDay is JS day (0=Sun, 1=Mon, etc), convert to week index (0=Mon)
+            const weekIndex = scheduleDay === 0 ? 6 : scheduleDay - 1
+            const alreadyCompleted = (thisWeekLogs || []).some(
+              log => log.workout_day_id === workoutDay.id && log.completed_at
+            )
+            weekWorkouts[weekIndex] = {
+              id: workoutDay.id,
+              name: workoutDay.name,
+              subtitle: workoutDay.subtitle,
+              exerciseCount: workoutDay.workout_exercises.length,
+              estimatedDuration: Math.round(workoutDay.workout_exercises.length * 3.5),
+              week: assignment.current_week,
+              dayNumber: workoutDay.day_number,
+              completed: alreadyCompleted,
+            }
+          }
+        })
+
+        // Set todayWorkout if today is a scheduled day
+        if (scheduledDays.has(dayOfWeek)) {
+          const todayIndex = sortedSchedule.indexOf(dayOfWeek)
+          const todayWorkoutDay = workoutDays[todayIndex % workoutDays.length]
+
+          if (todayWorkoutDay) {
+            const alreadyCompleted = (thisWeekLogs || []).some(
+              log => log.workout_day_id === todayWorkoutDay.id && log.completed_at
+            )
+
+            if (!alreadyCompleted) {
+              todayWorkout = {
+                id: todayWorkoutDay.id,
+                name: todayWorkoutDay.name,
+                subtitle: todayWorkoutDay.subtitle,
+                exerciseCount: todayWorkoutDay.workout_exercises.length,
+                estimatedDuration: Math.round(todayWorkoutDay.workout_exercises.length * 3.5),
+                week: assignment.current_week,
+                dayNumber: todayWorkoutDay.day_number,
+              }
+            }
+          }
+        }
+      } else {
+        // Flexible mode - no fixed schedule
+        isFlexibleMode = true;
+
+        // For flexible mode, build weekWorkouts based on ACTUAL completed workout logs
+        // Map completed workouts to the days they were completed on
+        (thisWeekLogs || []).forEach((log: { id: string; workout_day_id: string; started_at: string; completed_at: string | null }) => {
+          if (!log.completed_at) return
+
+          const logDate = new Date(log.started_at)
+          const logJsDay = logDate.getDay()
+          const weekIndex = logJsDay === 0 ? 6 : logJsDay - 1
+
+          // Find which workout this is
+          const workoutDay = workoutDays.find(d => d.id === log.workout_day_id)
+          if (workoutDay) {
+            weekWorkouts[weekIndex] = {
+              id: workoutDay.id,
+              name: workoutDay.name,
+              subtitle: workoutDay.subtitle,
+              exerciseCount: workoutDay.workout_exercises.length,
+              estimatedDuration: Math.round(workoutDay.workout_exercises.length * 3.5),
+              week: assignment.current_week,
+              dayNumber: workoutDay.day_number,
+              completed: true,
+            }
+          }
+        })
+
+        // For today in flexible mode, show the next workout they should do
+        // Find how many workouts they've completed this week
+        const completedWorkoutIds = new Set(
+          (thisWeekLogs || [])
+            .filter(log => log.completed_at)
+            .map(log => log.workout_day_id)
         )
 
-        if (!alreadyCompleted) {
+        // Find the next workout in sequence they haven't done yet
+        const nextWorkoutDay = workoutDays.find(d => !completedWorkoutIds.has(d.id))
+
+        if (nextWorkoutDay) {
           todayWorkout = {
-            id: todayWorkoutDay.id,
-            name: todayWorkoutDay.name,
-            subtitle: todayWorkoutDay.subtitle,
-            exerciseCount: todayWorkoutDay.workout_exercises.length,
-            estimatedDuration: Math.round(todayWorkoutDay.workout_exercises.length * 3.5), // ~3.5 min per exercise
+            id: nextWorkoutDay.id,
+            name: nextWorkoutDay.name,
+            subtitle: nextWorkoutDay.subtitle,
+            exerciseCount: nextWorkoutDay.workout_exercises.length,
+            estimatedDuration: Math.round(nextWorkoutDay.workout_exercises.length * 3.5),
             week: assignment.current_week,
-            dayNumber: todayWorkoutDay.day_number,
+            dayNumber: nextWorkoutDay.day_number,
           }
         }
       }
@@ -154,13 +267,16 @@ export default async function ClientDashboard() {
     const date = new Date(startOfWeek)
     date.setDate(startOfWeek.getDate() + i)
     const jsDay = date.getDay()
+    const weekIndex = jsDay === 0 ? 6 : jsDay - 1
     return {
       dayName: date.toLocaleDateString('en-US', { weekday: 'narrow' }),
       dayNum: date.getDate(),
       isToday: date.toDateString() === today.toDateString(),
       isPast: date < today && date.toDateString() !== today.toDateString(),
       completed: completedDates.has(date.toDateString()),
-      hasWorkout: scheduledDays.has(jsDay),
+      // For flexible mode, hasWorkout is true if there's a completed workout on that day
+      // For scheduled mode, hasWorkout is true if that day is in the schedule
+      hasWorkout: isFlexibleMode ? !!weekWorkouts[weekIndex] : scheduledDays.has(jsDay),
     }
   })
 
@@ -350,6 +466,16 @@ export default async function ClientDashboard() {
     }
   })
 
+  // Build schedule info for the client
+  const scheduleInfo = assignment ? {
+    assignmentId: assignment.id,
+    programName: assignment.programs?.name || 'Your Program',
+    workoutDaysPerWeek: workoutDaysCount,
+    scheduledDays: assignment.scheduled_days as number[] | null,
+    needsSchedule,
+    isFlexibleMode,
+  } : null
+
   return (
     <DashboardClient
       userName={profile.name}
@@ -358,6 +484,7 @@ export default async function ClientDashboard() {
       greeting={greeting}
       todayWorkout={todayWorkout}
       weekDays={weekDays}
+      weekWorkouts={weekWorkouts}
       workoutsThisWeek={workoutsThisWeek}
       totalWorkoutsInWeek={totalWorkoutsInWeek}
       habits={clientHabits || []}
@@ -366,6 +493,8 @@ export default async function ClientDashboard() {
       habitWeekDays={habitWeekDays}
       overallStreak={overallStreak}
       rivalry={rivalry}
+      scheduleInfo={scheduleInfo}
+      programWorkoutDays={programWorkoutDays}
     />
   )
 }

@@ -44,19 +44,10 @@ export default async function HabitsHistoryPage() {
     .eq('client_id', user.id)
     .order('completed_date', { ascending: false })
 
-  // Get initials for avatar
-  const initials = (profile.name as string)
-    .split(' ')
-    .map((n: string) => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2)
-
   return (
     <HabitsHistory
       habits={clientHabits || []}
       completions={completions || []}
-      initials={initials}
     />
   )
 }

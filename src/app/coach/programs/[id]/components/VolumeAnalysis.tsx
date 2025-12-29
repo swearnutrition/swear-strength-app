@@ -41,26 +41,31 @@ function normalizeMuscle(muscle: string): string {
 
 // Get display name for muscle
 function getDisplayName(muscle: string): string {
-  const m = muscle.toLowerCase().trim()
+  // Replace underscores with spaces and normalize
+  const m = muscle.toLowerCase().replace(/_/g, ' ').trim()
   const mappings: Record<string, string> = {
     'pectorals': 'Chest', 'pecs': 'Chest', 'chest': 'Chest',
     'deltoids': 'Shoulders', 'delts': 'Shoulders', 'shoulders': 'Shoulders',
     'front delts': 'Shoulders', 'side delts': 'Shoulders',
     'rear delts': 'Rear Delts', 'posterior deltoids': 'Rear Delts',
+    'lateral delts': 'Lateral Delts',
     'lats': 'Lats', 'latissimus': 'Lats',
     'back': 'Back', 'upper back': 'Upper Back', 'rhomboids': 'Rhomboids',
     'traps': 'Traps', 'trapezius': 'Traps',
     'quads': 'Quads', 'quadriceps': 'Quads',
     'hamstrings': 'Hamstrings', 'hams': 'Hamstrings',
     'glutes': 'Glutes', 'gluteus': 'Glutes',
+    'glute medius': 'Glute Medius',
     'calves': 'Calves', 'gastrocnemius': 'Calves',
     'adductors': 'Adductors', 'abductors': 'Abductors',
     'abs': 'Abdominals', 'abdominals': 'Abdominals', 'core': 'Core',
     'obliques': 'Obliques',
     'lower back': 'Lower Back', 'erectors': 'Lower Back', 'spinal erectors': 'Lower Back',
+    'upper chest': 'Upper Chest',
     'biceps': 'Biceps', 'triceps': 'Triceps', 'forearms': 'Forearms', 'grip': 'Forearms',
   }
-  return mappings[m] || m.charAt(0).toUpperCase() + m.slice(1)
+  // Return mapped name or convert to title case (capitalize each word)
+  return mappings[m] || m.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
 }
 
 // Format focus area names (converts snake_case to Title Case)

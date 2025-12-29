@@ -150,7 +150,6 @@ export default async function HabitDetailPage({ params }: PageProps) {
       }}
       yearData={yearData}
       months={months}
-      todayCompleted={completionDates.has(todayStr)}
     />
   )
 }

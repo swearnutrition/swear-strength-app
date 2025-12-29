@@ -15,6 +15,9 @@ const notificationIcons: Record<Notification['type'], string> = {
   new_habit: '🎯',
   rivalry_invite: '⚔️',
   rivalry_comment: '💬',
+  rivalry_reaction: '🔥',
+  rivalry_gif: '🎬',
+  schedule_reminder: '📅',
   system: '🔔',
 }
 
@@ -61,11 +64,15 @@ export function NotificationBell({ userId }: NotificationBellProps) {
       case 'nudge':
       case 'rivalry_invite':
       case 'rivalry_comment':
+      case 'rivalry_reaction':
+      case 'rivalry_gif':
         return notification.rivalryId ? `/rivalry/${notification.rivalryId}` : '/habits'
       case 'new_program':
         return notification.programId ? `/workouts` : '/dashboard'
       case 'new_habit':
         return '/habits'
+      case 'schedule_reminder':
+        return '/dashboard'
       default:
         return null
     }

@@ -34,7 +34,7 @@ interface WorkoutExercise {
     id: string
     name: string
     equipment: string | null
-    demo_url: string | null
+    video_url: string | null
     cues: string | null
   }
 }
@@ -74,13 +74,14 @@ export default async function WorkoutsPage() {
             </svg>
           </div>
           <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">No Active Program</h2>
-          <p className="text-slate-500 dark:text-slate-400">Your coach hasn't assigned you a program yet.</p>
+          <p className="text-slate-500 dark:text-slate-400">Your coach hasn&apos;t assigned you a program yet.</p>
         </div>
       </div>
     )
   }
 
   // Get program weeks with workout days and exercises
+  // Note: Must specify foreign key (exercise_id) because workout_exercises has two FKs to exercises
   const { data: weeks } = await supabase
     .from('program_weeks')
     .select(`
@@ -105,11 +106,11 @@ export default async function WorkoutsPage() {
           rpe,
           notes,
           sort_order,
-          exercises(
+          exercises:exercise_id(
             id,
             name,
             equipment,
-            demo_url,
+            video_url,
             cues
           )
         )

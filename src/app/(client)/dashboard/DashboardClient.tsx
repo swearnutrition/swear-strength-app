@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { NotificationBell } from '@/components/NotificationBell'
+import { WorkoutScheduleModal } from '@/components/WorkoutScheduleModal'
 import { useColors } from '@/hooks/useColors'
 import { useTheme } from '@/lib/theme'
 
@@ -55,6 +56,17 @@ interface TodayWorkout {
   dayNumber: number
 }
 
+interface WeekWorkoutInfo {
+  id: string
+  name: string
+  subtitle: string | null
+  exerciseCount: number
+  estimatedDuration: number
+  week: number
+  dayNumber: number
+  completed: boolean
+}
+
 interface WeekDay {
   dayName: string
   dayNum: number
@@ -77,6 +89,26 @@ interface Rivalry {
   opponent_avatar_url: string | null
 }
 
+interface ScheduleInfo {
+  assignmentId: string
+  programName: string
+  workoutDaysPerWeek: number
+  scheduledDays: number[] | null
+  needsSchedule: boolean
+  isFlexibleMode?: boolean
+}
+
+// All workout days from the current week's program (to reuse for other weeks)
+interface ProgramWorkoutDay {
+  id: string
+  name: string
+  subtitle: string | null
+  exerciseCount: number
+  estimatedDuration: number
+  week: number
+  dayNumber: number
+}
+
 interface DashboardClientProps {
   userName: string
   initials: string
@@ -84,6 +116,7 @@ interface DashboardClientProps {
   greeting: string
   todayWorkout: TodayWorkout | null
   weekDays: WeekDay[]
+  weekWorkouts: Record<number, WeekWorkoutInfo>
   workoutsThisWeek: number
   totalWorkoutsInWeek: number
   habits: ClientHabit[]
@@ -92,30 +125,88 @@ interface DashboardClientProps {
   habitWeekDays: HabitWeekDay[]
   overallStreak: number
   rivalry?: Rivalry | null
+  scheduleInfo?: ScheduleInfo | null
+  programWorkoutDays?: ProgramWorkoutDay[] // All workout days from current week to reuse
 }
-
 
 // Helper to handle Supabase returning array or single object or null
 function getHabitTemplate(habit: ClientHabit): HabitTemplate {
   const defaultTemplate: HabitTemplate = { name: 'Habit', description: null, target_value: null, target_unit: null, category: null }
-
-  if (!habit.habit_templates) {
-    return defaultTemplate
-  }
-  if (Array.isArray(habit.habit_templates)) {
-    return habit.habit_templates[0] || defaultTemplate
-  }
+  if (!habit.habit_templates) return defaultTemplate
+  if (Array.isArray(habit.habit_templates)) return habit.habit_templates[0] || defaultTemplate
   return habit.habit_templates
 }
 
-// Habit card colors by category (vibrant backgrounds like the reference)
-const habitCardColors: Record<HabitCategory, { bg: string; bgLight: string }> = {
-  nutrition: { bg: '#10b981', bgLight: '#34d399' }, // Green
-  fitness: { bg: '#8b5cf6', bgLight: '#a78bfa' }, // Purple
-  sleep: { bg: '#6366f1', bgLight: '#818cf8' }, // Indigo
-  mindset: { bg: '#f59e0b', bgLight: '#fbbf24' }, // Amber/Orange
-  lifestyle: { bg: '#ec4899', bgLight: '#f472b6' }, // Pink
-  tracking: { bg: '#0ea5e9', bgLight: '#38bdf8' }, // Sky blue
+// Habit icons by category
+const habitIcons: Record<HabitCategory, string> = {
+  nutrition: '🍎',
+  fitness: '🏃',
+  sleep: '😴',
+  mindset: '🧘',
+  lifestyle: '💊',
+  tracking: '📊',
+}
+
+// Icons component
+const Icons = {
+  home: ({ size = 24, color = 'currentColor', filled = false }: { size?: number; color?: string; filled?: boolean }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? color : 'none'} stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+      <polyline points="9 22 9 12 15 12 15 22"/>
+    </svg>
+  ),
+  calendar: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+      <line x1="16" y1="2" x2="16" y2="6"/>
+      <line x1="8" y1="2" x2="8" y2="6"/>
+      <line x1="3" y1="10" x2="21" y2="10"/>
+    </svg>
+  ),
+  dumbbell: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <path d="M6.5 6.5h11M6.5 17.5h11M3 10v4M21 10v4M5 8v8M19 8v8M7 6v12M17 6v12"/>
+    </svg>
+  ),
+  user: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+      <circle cx="12" cy="7" r="4"/>
+    </svg>
+  ),
+  check: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="3" strokeLinecap="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+  ),
+  plus: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <line x1="12" y1="5" x2="12" y2="19"/>
+      <line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+  ),
+  chevronRight: ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <polyline points="9 18 15 12 9 6"/>
+    </svg>
+  ),
+  chevronLeft: ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  ),
+  swords: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/>
+      <line x1="13" y1="19" x2="19" y2="13"/>
+      <line x1="16" y1="16" x2="20" y2="20"/>
+      <line x1="19" y1="21" x2="21" y2="19"/>
+      <polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/>
+      <line x1="5" y1="14" x2="9" y2="18"/>
+      <line x1="7" y1="17" x2="4" y2="20"/>
+      <line x1="3" y1="19" x2="5" y2="21"/>
+    </svg>
+  ),
 }
 
 export function DashboardClient({
@@ -125,6 +216,7 @@ export function DashboardClient({
   greeting,
   todayWorkout,
   weekDays,
+  weekWorkouts,
   workoutsThisWeek,
   totalWorkoutsInWeek,
   habits,
@@ -133,37 +225,273 @@ export function DashboardClient({
   habitWeekDays,
   overallStreak,
   rivalry,
+  scheduleInfo,
+  programWorkoutDays,
 }: DashboardClientProps) {
   const colors = useColors()
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === 'dark'
+
+  const [activeView, setActiveView] = useState<'agenda' | 'calendar'>('agenda')
   const [completions, setCompletions] = useState<HabitCompletion[]>(todayCompletions)
   const [weekCompletions, setWeekCompletions] = useState<WeekHabitCompletion[]>(weekHabitCompletions)
   const [loading, setLoading] = useState<string | null>(null)
-  const [animatingHabit, setAnimatingHabit] = useState<string | null>(null)
-  const [expandedHabit, setExpandedHabit] = useState<string | null>(null)
+  const [showScheduleModal, setShowScheduleModal] = useState(scheduleInfo?.needsSchedule ?? false)
+  const [currentSchedule, setCurrentSchedule] = useState<number[] | null>(scheduleInfo?.scheduledDays ?? null)
+  const [weekOffset, setWeekOffset] = useState(0) // 0 = current week, -1 = last week, 1 = next week
+  const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() => {
+    // Default to today's index in the week (0 = Monday)
+    return habitWeekDays.findIndex(d => d.isToday)
+  })
+  const [showSkipModal, setShowSkipModal] = useState<string | null>(null) // habit id
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false)
+  const [skippingHabit, setSkippingHabit] = useState(false)
+
   const supabase = createClient()
-  const today = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD in local timezone
+  const today = new Date().toLocaleDateString('en-CA')
 
-  const isCompleted = (habitId: string) => {
-    return completions.some(c => c.client_habit_id === habitId)
+  // Get selected day info - this will be updated after displayWeekDays is computed
+  // For now, use habitWeekDays for current week, will be overridden in calendar view
+  const selectedDayFromCurrentWeek = habitWeekDays[selectedDayIndex] || habitWeekDays.find(d => d.isToday) || habitWeekDays[0]
+
+  // Compute workouts for non-current weeks based on scheduled days pattern
+  const getWorkoutsForWeekOffset = (offset: number): Record<number, WeekWorkoutInfo> => {
+    if (offset === 0) return weekWorkouts
+
+    // For flexible mode, we don't show scheduled workouts for other weeks
+    // since there's no fixed schedule - only show completed workouts (handled by server for current week)
+    if (scheduleInfo?.isFlexibleMode) return {}
+
+    if (!scheduleInfo?.scheduledDays || !programWorkoutDays || programWorkoutDays.length === 0) return {}
+
+    const sortedSchedule = [...scheduleInfo.scheduledDays].sort((a, b) => a - b)
+    const result: Record<number, WeekWorkoutInfo> = {}
+
+    sortedSchedule.forEach((jsDay, scheduleIndex) => {
+      const workoutDay = programWorkoutDays[scheduleIndex % programWorkoutDays.length]
+      if (workoutDay) {
+        // Convert JS day (0=Sun, 1=Mon) to week index (0=Mon, 6=Sun)
+        const weekIndex = jsDay === 0 ? 6 : jsDay - 1
+        result[weekIndex] = {
+          ...workoutDay,
+          completed: false, // Future weeks are not completed
+        }
+      }
+    })
+
+    return result
   }
 
-  const isCompletedOnDate = (habitId: string, dateStr: string) => {
-    return weekCompletions.some(c => c.client_habit_id === habitId && c.completed_date === dateStr)
+  const displayWeekWorkouts = getWorkoutsForWeekOffset(weekOffset)
+  const selectedDayWorkout = displayWeekWorkouts[selectedDayIndex] || null
+
+  // Rivalry display logic: show banner only if tied or losing
+  const rivalryStatus = rivalry
+    ? rivalry.my_score > rivalry.opponent_score
+      ? 'winning'
+      : rivalry.my_score < rivalry.opponent_score
+        ? 'losing'
+        : 'tied'
+    : 'none'
+  // Show rivalry banner whenever there's an active rivalry (rivalry object only exists when active)
+  const showRivalryBanner = !!rivalry
+
+  // Build agenda items
+  const agendaItems: Array<{
+    id: string
+    type: 'workout' | 'habit'
+    title: string
+    subtitle: string
+    icon: string
+    color: string
+    completed: boolean
+    rivalryData?: Rivalry | null
+  }> = []
+
+  // Add workout if scheduled for today
+  if (todayWorkout) {
+    agendaItems.push({
+      id: `workout-${todayWorkout.id}`,
+      type: 'workout',
+      title: todayWorkout.name,
+      subtitle: `Week ${todayWorkout.week} · ${todayWorkout.estimatedDuration} min · ${todayWorkout.exerciseCount} exercises`,
+      icon: '🏋️',
+      color: colors.purple,
+      completed: false,
+    })
   }
 
-  const getCompletionForDate = (habitId: string, dateStr: string) => {
-    return weekCompletions.find(c => c.client_habit_id === habitId && c.completed_date === dateStr)
-  }
+  // Add habits
+  habits.forEach(habit => {
+    const template = getHabitTemplate(habit)
+    const isCompleted = completions.some(c => c.client_habit_id === habit.id)
+    const icon = template.category ? habitIcons[template.category] : '✓'
 
-  const toggleHabitForDate = async (habit: ClientHabit, dateStr: string, e: React.MouseEvent) => {
-    e.stopPropagation() // Prevent card collapse
-    setLoading(`${habit.id}-${dateStr}`)
+    // Check if this habit has the rivalry
+    const hasRivalry = rivalry && rivalry.habit_name === template.name
+
+    agendaItems.push({
+      id: habit.id,
+      type: 'habit',
+      title: template.name,
+      subtitle: 'Every day',
+      icon,
+      color: template.category === 'nutrition' ? colors.green :
+        template.category === 'mindset' ? colors.amber :
+          template.category === 'fitness' ? colors.purple : colors.green,
+      completed: isCompleted,
+      rivalryData: hasRivalry ? rivalry : null,
+    })
+  })
+
+  const completedCount = agendaItems.filter(item => item.completed).length
+  const progressPercent = agendaItems.length > 0 ? (completedCount / agendaItems.length) * 100 : 0
+
+  // Handle habit completion
+  const handleHabitComplete = async (habitId: string) => {
+    if (loading) return
+    setLoading(habitId)
+
+    const existingCompletion = completions.find(c => c.client_habit_id === habitId)
 
     try {
-      const existingCompletion = getCompletionForDate(habit.id, dateStr)
+      if (existingCompletion) {
+        // Remove completion
+        await supabase
+          .from('habit_completions')
+          .delete()
+          .eq('id', existingCompletion.id)
 
+        setCompletions(prev => prev.filter(c => c.id !== existingCompletion.id))
+        setWeekCompletions(prev => prev.filter(c => c.id !== existingCompletion.id))
+      } else {
+        // Add completion
+        const { data, error } = await supabase
+          .from('habit_completions')
+          .insert({
+            client_id: userId,
+            client_habit_id: habitId,
+            completed_date: today,
+            value: 1,
+          })
+          .select()
+          .single()
+
+        if (error) throw error
+
+        setCompletions(prev => [...prev, data])
+        setWeekCompletions(prev => [...prev, { ...data, completed_date: today }])
+      }
+    } catch (err) {
+      console.error('Error toggling habit completion:', err)
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  // Get current date info
+  const now = new Date()
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+  const shortDayNames = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  const currentDayName = dayNames[now.getDay()]
+  const currentMonth = monthNames[now.getMonth()]
+  const currentDate = now.getDate()
+
+  // Calculate week days based on offset (for week navigation)
+  const getWeekDaysForOffset = (offset: number) => {
+    const todayDate = new Date()
+    // Get Monday of current week
+    const dayOfWeek = todayDate.getDay()
+    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+    const monday = new Date(todayDate)
+    monday.setDate(todayDate.getDate() - daysFromMonday + (offset * 7))
+    monday.setHours(0, 0, 0, 0)
+
+    const days: Array<{
+      dayName: string
+      dayNum: number
+      dateStr: string
+      isToday: boolean
+      isPast: boolean
+      isFuture: boolean
+      fullDate: Date
+    }> = []
+
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(monday)
+      date.setDate(monday.getDate() + i)
+      const dateStr = date.toLocaleDateString('en-CA')
+      const todayStr = todayDate.toLocaleDateString('en-CA')
+
+      days.push({
+        dayName: shortDayNames[(date.getDay())], // 0=Sun, but we start Mon
+        dayNum: date.getDate(),
+        dateStr,
+        isToday: dateStr === todayStr,
+        isPast: date < new Date(todayStr),
+        isFuture: date > new Date(todayStr),
+        fullDate: date,
+      })
+    }
+    return days
+  }
+
+  const displayWeekDays = weekOffset === 0 ? habitWeekDays.map((d, i) => ({
+    ...d,
+    dayName: ['M', 'T', 'W', 'T', 'F', 'S', 'S'][i],
+    dayNum: weekDays[i]?.dayNum || 0,
+    fullDate: new Date(d.dateStr + 'T12:00:00'),
+  })) : getWeekDaysForOffset(weekOffset)
+
+  // Get the month/year for the displayed week
+  const displayWeekStart = displayWeekDays[0]?.fullDate || now
+  const displayWeekEnd = displayWeekDays[6]?.fullDate || now
+  const displayMonth = displayWeekStart.getMonth() === displayWeekEnd.getMonth()
+    ? monthNames[displayWeekStart.getMonth()]
+    : `${monthNames[displayWeekStart.getMonth()].slice(0, 3)}-${monthNames[displayWeekEnd.getMonth()].slice(0, 3)}`
+  const displayYear = displayWeekStart.getFullYear()
+
+  // Week navigation handlers
+  const goToPrevWeek = () => setWeekOffset(prev => prev - 1)
+  const goToNextWeek = () => setWeekOffset(prev => prev + 1)
+  const goToCurrentWeek = () => {
+    setWeekOffset(0)
+    setSelectedDayIndex(habitWeekDays.findIndex(d => d.isToday))
+  }
+
+  // Get selected day info based on the displayed week
+  const selectedDay = displayWeekDays[selectedDayIndex] || displayWeekDays[0]
+  const isSelectedDayToday = selectedDay?.isToday ?? false
+  const isSelectedDayPast = selectedDay?.isPast ?? false
+  const isSelectedDayFuture = selectedDay?.isFuture ?? false
+
+  // Calculate habits completed for each day (for calendar view)
+  const getHabitsStatusForDay = (dateStr: string) => {
+    const dayCompletions = weekCompletions.filter(c => c.completed_date === dateStr)
+    const total = habits.length
+    const completed = new Set(dayCompletions.map(c => c.client_habit_id)).size
+    return { completed, total }
+  }
+
+  // Get habit completions for the selected day
+  const getHabitCompletionsForSelectedDay = () => {
+    if (!selectedDay) return []
+    return weekCompletions.filter(c => c.completed_date === selectedDay.dateStr)
+  }
+
+  const selectedDayCompletions = getHabitCompletionsForSelectedDay()
+
+  // Handle habit completion for a specific date (for calendar view)
+  const handleHabitCompleteForDate = async (habitId: string, dateStr: string) => {
+    if (loading) return
+    setLoading(habitId)
+
+    const existingCompletion = weekCompletions.find(
+      c => c.client_habit_id === habitId && c.completed_date === dateStr
+    )
+
+    try {
       if (existingCompletion) {
         // Remove completion
         await supabase
@@ -180,1813 +508,897 @@ export function DashboardClient({
         const { data, error } = await supabase
           .from('habit_completions')
           .insert({
-            client_habit_id: habit.id,
             client_id: userId,
+            client_habit_id: habitId,
             completed_date: dateStr,
-            value: null,
+            value: 1,
           })
           .select()
           .single()
 
         if (error) throw error
 
-        setWeekCompletions(prev => [...prev, data])
+        setWeekCompletions(prev => [...prev, { ...data, completed_date: dateStr }])
         if (dateStr === today) {
           setCompletions(prev => [...prev, data])
         }
       }
     } catch (err) {
-      console.error('Error toggling habit:', err)
+      console.error('Error toggling habit completion:', err)
     } finally {
       setLoading(null)
     }
   }
 
-  const toggleHabit = async (habit: ClientHabit) => {
-    setLoading(habit.id)
+  // Skip habit (mark as skipped - we can track this with a special value or separate table)
+  const handleSkipHabit = async (habitId: string) => {
+    if (skippingHabit || !selectedDay) return
+    setSkippingHabit(true)
 
     try {
-      if (isCompleted(habit.id)) {
-        const completion = completions.find(c => c.client_habit_id === habit.id)
-        if (completion) {
-          await supabase
-            .from('habit_completions')
-            .delete()
-            .eq('id', completion.id)
+      // For now, we'll just mark it as complete with value 0 to indicate "skipped"
+      // In future, you might want a separate skipped_habits table
+      const { data, error } = await supabase
+        .from('habit_completions')
+        .insert({
+          client_id: userId,
+          client_habit_id: habitId,
+          completed_date: selectedDay.dateStr,
+          value: 0, // 0 indicates skipped
+        })
+        .select()
+        .single()
 
-          setCompletions(prev => prev.filter(c => c.id !== completion.id))
-        }
-      } else {
-        // Trigger fill-up animation
-        setAnimatingHabit(habit.id)
+      if (error) throw error
 
-        const { data, error } = await supabase
-          .from('habit_completions')
-          .insert({
-            client_habit_id: habit.id,
-            client_id: userId,
-            completed_date: today,
-            value: null,
-          })
-          .select()
-          .single()
-
-        if (error) throw error
-
+      setWeekCompletions(prev => [...prev, { ...data, completed_date: selectedDay.dateStr }])
+      if (selectedDay.dateStr === today) {
         setCompletions(prev => [...prev, data])
-
-        // Clear animation after it completes
-        setTimeout(() => setAnimatingHabit(null), 600)
       }
+      setShowSkipModal(null)
     } catch (err) {
-      console.error('Error toggling habit:', err)
-      setAnimatingHabit(null)
+      console.error('Error skipping habit:', err)
     } finally {
-      setLoading(null)
+      setSkippingHabit(false)
     }
   }
 
-  const completedHabits = habits.filter(h => isCompleted(h.id)).length
+  const getRivalryMessage = () => {
+    if (rivalryStatus === 'losing') return `${rivalry?.opponent_name} is ahead!`
+    if (rivalryStatus === 'tied') return 'Tied! Stay consistent'
+    return ''
+  }
+
+  // Get day name for selected day
+  const selectedDayDate = selectedDay ? new Date(selectedDay.dateStr + 'T12:00:00') : new Date()
+  const selectedDayFullName = dayNames[selectedDayDate.getDay()] || 'Today'
+  const selectedMonthName = monthNames[selectedDayDate.getMonth()] || ''
+  const selectedDateNum = selectedDayDate.getDate()
 
   return (
     <div className="dashboard-container">
-      {/* Header */}
-      <header className="dashboard-header">
-        <div className="header-content">
-          <div>
-            <p className="greeting-text">{greeting}</p>
-            <h1 className="user-name">{userName}</h1>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <NotificationBell userId={userId} />
-            <Link href="/settings" className="avatar-link">
-              <div className="avatar">{initials}</div>
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="dashboard-main">
-        {/* Left Column - Workout */}
-        <div className="left-column">
-          {/* Today's Workout Card */}
-          {todayWorkout ? (
-            <Link href={`/workouts/${todayWorkout.id}`} className="workout-card-link">
-              <div className="workout-card">
-                {/* Decorative circles */}
-                <div className="workout-card-circle-1" />
-                <div className="workout-card-circle-2" />
-
-                <div className="workout-card-content">
-                  <div className="workout-card-header">
-                    <div>
-                      <p className="workout-label">Today's Workout</p>
-                      <h2 className="workout-name">{todayWorkout.name}</h2>
-                      {todayWorkout.subtitle && (
-                        <p className="workout-subtitle">{todayWorkout.subtitle}</p>
-                      )}
-                    </div>
-                    <div className="week-badge">Week {todayWorkout.week}</div>
-                  </div>
-
-                  {/* Stats */}
-                  <div className="workout-stats">
-                    <div className="workout-stat">
-                      <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                      </svg>
-                      <span>{todayWorkout.estimatedDuration} min</span>
-                    </div>
-                    <div className="workout-stat">
-                      <svg width={16} height={16} viewBox="0 0 24 24" fill="rgba(255,255,255,0.7)">
-                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                      </svg>
-                      <span>{todayWorkout.exerciseCount} exercises</span>
-                    </div>
-                  </div>
-
-                  {/* Start Button */}
-                  <button className="start-workout-btn">
-                    Start Workout
-                    <svg width={16} height={16} viewBox="0 0 24 24" fill={colors.purpleDark}>
-                      <polygon points="5 3 19 12 5 21 5 3"/>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </Link>
-          ) : (
-            <div className="rest-day-card">
-              <div className="rest-day-icon">
-                <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={colors.green} strokeWidth="3">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
-              </div>
-              <h3 className="rest-day-title">Rest Day</h3>
-              <p className="rest-day-text">No workout scheduled for today. Recovery is progress!</p>
-            </div>
-          )}
-
-          {/* Week Progress */}
-          <div className="week-progress-card">
-            <div className="week-progress-header">
-              <span className="week-progress-title">This Week</span>
-              <span className="week-progress-count">{workoutsThisWeek} of {totalWorkoutsInWeek} workouts</span>
-            </div>
-
-            <div className="week-days">
-              {weekDays.map((day, i) => (
-                <div key={i} className="week-day">
-                  <div className={`week-day-name ${day.isToday ? 'today' : ''}`}>
-                    {day.dayName}
-                  </div>
-                  <div className={`week-day-num ${day.isToday ? 'today' : ''} ${day.completed ? 'completed' : ''} ${day.hasWorkout && !day.completed && !day.isToday ? 'has-workout' : ''}`}>
-                    {day.completed ? (
-                      <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
-                        <polyline points="20 6 9 17 4 12"/>
-                      </svg>
-                    ) : (
-                      day.dayNum
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column - Habits */}
-        {habits.length > 0 && (
-          <div className="right-column">
-            {/* Rivalry Card */}
-            {rivalry && (() => {
-              const scoreDiff = rivalry.my_score - rivalry.opponent_score
-              const isWinning = scoreDiff > 0
-              const isTied = scoreDiff === 0
-              const isLosing = scoreDiff < 0
-
-              return (
-                <Link href={`/rivalry/${rivalry.id}`} className={`rivalry-card ${isDark ? 'dark' : 'light'}`}>
-                  {/* Top gradient bar */}
-                  <div className="rivalry-gradient-bar" />
-
-                  {/* Red glow overlay (dark mode only) */}
-                  {isDark && <div className="rivalry-glow-overlay" />}
-
-                  {/* Header */}
-                  <div className="rivalry-header">
-                    <div className="rivalry-header-left">
-                      <div className="rivalry-icon-container">
-                        {/* Crossed swords icon */}
-                        <svg width={isDark ? 28 : 26} height={isDark ? 28 : 26} viewBox="0 0 24 24" fill="white">
-                          <path d="M6.92 5H5L3 7l1 1h2l1-1V5.08L6.92 5zM19 3l-6.47 6.47 1 1L20 4V3h-1zM3 20l1 1 6.47-6.47-1-1L3 20zM17.08 19l.92.92V22l2-2-1-1h-2l-1 1v1.92l.08-.92zM20.59 6.42l-1.17-1.17L12 12.67l1.17 1.17 7.42-7.42zM4.58 17.42L12 10l-1.17-1.17-7.42 7.42 1.17 1.17z"/>
-                        </svg>
-                      </div>
-                      <div className="rivalry-header-text">
-                        <span className="rivalry-label">
-                          {isDark ? 'RIVALRY' : 'ACTIVE RIVALRY'}
-                          {isDark && (
-                            <svg width={12} height={12} viewBox="0 0 24 24" fill="#ef4444" style={{ marginLeft: 4 }}>
-                              <path d="M12 23c-3.65 0-7-2.76-7-7.46 0-3.06 1.96-5.63 3.5-7.46.73-.87 1.94-.87 2.67 0 .45.53.93 1.15 1.33 1.79.2-.81.54-1.57.98-2.25.53-.83 1.62-.96 2.31-.29C18.02 9.48 19 12.03 19 15.54 19 20.24 15.65 23 12 23z"/>
-                            </svg>
-                          )}
-                        </span>
-                        <span className="rivalry-name">{rivalry.habit_name}</span>
-                      </div>
-                    </div>
-                    <div className="rivalry-days-badge">
-                      {rivalry.days_left}d left
-                    </div>
-                  </div>
-
-                  {/* Score Display */}
-                  <div className={`rivalry-scores-container ${!isDark ? 'light-bg' : ''}`}>
-                    {/* User Score */}
-                    <div className="rivalry-player">
-                      <div className="rivalry-avatar user">
-                        {rivalry.user_avatar_url ? (
-                          <img src={rivalry.user_avatar_url} alt="You" className="rivalry-avatar-img" />
-                        ) : (
-                          <span>{rivalry.user_initial}</span>
-                        )}
-                        {isWinning && (
-                          <div className="rivalry-crown">
-                            <svg width={isDark ? 16 : 14} height={isDark ? 16 : 14} viewBox="0 0 24 24" fill="white">
-                              <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5z"/>
-                            </svg>
-                          </div>
-                        )}
-                      </div>
-                      <span className="rivalry-player-label">You</span>
-                      <span className={`rivalry-player-score ${isWinning || isTied ? 'winning' : 'losing'}`}>
-                        {rivalry.my_score}%
-                      </span>
-                    </div>
-
-                    {/* VS Badge */}
-                    <div className="rivalry-vs-container">
-                      <div className="rivalry-vs-badge">VS</div>
-                      {scoreDiff !== 0 && (
-                        <div className={`rivalry-diff-pill ${isWinning ? 'positive' : 'negative'}`}>
-                          {isWinning ? '+' : ''}{scoreDiff}%
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Opponent Score */}
-                    <div className="rivalry-player">
-                      <div className="rivalry-avatar opponent">
-                        {rivalry.opponent_avatar_url ? (
-                          <img src={rivalry.opponent_avatar_url} alt={rivalry.opponent_name} className="rivalry-avatar-img" />
-                        ) : (
-                          <span>{rivalry.opponent_initial}</span>
-                        )}
-                        {isLosing && (
-                          <div className="rivalry-crown">
-                            <svg width={isDark ? 16 : 14} height={isDark ? 16 : 14} viewBox="0 0 24 24" fill="white">
-                              <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5z"/>
-                            </svg>
-                          </div>
-                        )}
-                      </div>
-                      <span className="rivalry-player-label">{rivalry.opponent_name.split(' ')[0]}</span>
-                      <span className={`rivalry-player-score ${isLosing ? 'winning' : 'losing'}`}>
-                        {rivalry.opponent_score}%
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Progress Bar */}
-                  <div className="rivalry-progress">
-                    <div
-                      className="rivalry-progress-fill"
-                      style={{ width: `${Math.max(5, rivalry.my_score)}%` }}
-                    />
-                  </div>
-
-                  {/* Footer */}
-                  <div className="rivalry-footer">
-                    <div className="rivalry-status">
-                      {/* Trophy icon */}
-                      <svg width={18} height={18} viewBox="0 0 24 24" fill="#f59e0b">
-                        <path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"/>
-                      </svg>
-                      <span>
-                        {isWinning ? 'Dominating!' : isLosing ? 'Time to catch up!' : 'Tied! Stay consistent'}
-                      </span>
-                    </div>
-                    <div className="rivalry-view-btn">
-                      View Details
-                      <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2.5}>
-                        <path d="M9 18l6-6-6-6"/>
-                      </svg>
-                    </div>
-                  </div>
-                </Link>
-              )
-            })()}
-
-            <div className="habits-header">
-              <div className="habits-title-row">
-                <h3 className="habits-title">Daily Habits</h3>
-                <span className={`habits-count ${completedHabits === habits.length ? 'complete' : ''}`}>
-                  {completedHabits}/{habits.length}
-                </span>
-              </div>
-              {overallStreak > 0 && (
-                <div className="streak-badge">
-                  <svg width={16} height={16} viewBox="0 0 24 24" fill={colors.amber}>
-                    <path d="M12 23c-3.65 0-7-2.76-7-7.46 0-3.06 1.96-5.63 3.5-7.46.73-.87 1.94-.87 2.67 0 .45.53.93 1.15 1.33 1.79.2-.81.54-1.57.98-2.25.53-.83 1.62-.96 2.31-.29C18.02 9.48 19 12.03 19 15.54 19 20.24 15.65 23 12 23z"/>
-                  </svg>
-                  <span>{overallStreak}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="habits-cards">
-              {habits.map((habit) => {
-                const completed = isCompleted(habit.id)
-                const template = getHabitTemplate(habit)
-                const category = template.category || 'tracking'
-                const cardColor = habitCardColors[category]
-                const target = habit.custom_target_value || template.target_value
-                const unit = habit.custom_target_unit || template.target_unit
-                const isAnimating = animatingHabit === habit.id
-                const isExpanded = expandedHabit === habit.id
-                const weekCompletedCount = habitWeekDays.filter(d => isCompletedOnDate(habit.id, d.dateStr)).length
-
-                return (
-                  <div
-                    key={habit.id}
-                    className={`habit-card ${completed ? 'completed' : ''} ${isAnimating ? 'animating' : ''} ${isExpanded ? 'expanded' : ''}`}
-                    style={{
-                      '--card-color': cardColor.bg,
-                      '--card-color-light': cardColor.bgLight,
-                    } as React.CSSProperties}
-                  >
-                    {/* Fill animation overlay */}
-                    <div className="habit-card-fill" />
-
-                    {/* Card main row */}
-                    <div
-                      className="habit-card-main"
-                      onClick={() => setExpandedHabit(isExpanded ? null : habit.id)}
-                    >
-                      {/* Card content */}
-                      <div className="habit-card-content">
-                        {/* Icon */}
-                        <div className="habit-card-icon">
-                          {category === 'nutrition' && (
-                            <svg width={20} height={20} viewBox="0 0 24 24" fill="white">
-                              <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6z"/>
-                            </svg>
-                          )}
-                          {category === 'fitness' && (
-                            <svg width={20} height={20} viewBox="0 0 24 24" fill="white">
-                              <path d="M20.57 14.86L22 13.43 20.57 12 17 15.57 8.43 7 12 3.43 10.57 2 9.14 3.43 7.71 2 5.57 4.14 4.14 2.71 2.71 4.14l1.43 1.43L2 7.71l1.43 1.43L2 10.57 3.43 12 7 8.43 15.57 17 12 20.57 13.43 22l1.43-1.43L16.29 22l2.14-2.14 1.43 1.43 1.43-1.43-1.43-1.43L22 16.29z"/>
-                            </svg>
-                          )}
-                          {category === 'sleep' && (
-                            <svg width={20} height={20} viewBox="0 0 24 24" fill="white">
-                              <path d="M12.34 2.02C6.59 1.82 2 6.42 2 12c0 5.52 4.48 10 10 10 3.71 0 6.93-2.02 8.66-5.02-7.51-.25-12.09-8.43-8.32-14.96z"/>
-                            </svg>
-                          )}
-                          {category === 'mindset' && (
-                            <svg width={20} height={20} viewBox="0 0 24 24" fill="white">
-                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                            </svg>
-                          )}
-                          {category === 'lifestyle' && (
-                            <svg width={20} height={20} viewBox="0 0 24 24" fill="white">
-                              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                            </svg>
-                          )}
-                          {category === 'tracking' && (
-                            <svg width={20} height={20} viewBox="0 0 24 24" fill="white">
-                              <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
-                            </svg>
-                          )}
-                        </div>
-
-                        {/* Text content */}
-                        <div className="habit-card-text">
-                          <span className="habit-card-name">{template.name}</span>
-                          {target && unit && (
-                            <span className="habit-card-target">Every day, {target} {unit}</span>
-                          )}
-                          {!target && <span className="habit-card-target">Every day</span>}
-                        </div>
-                      </div>
-
-                      {/* Week indicator (collapsed view) */}
-                      {!isExpanded && (
-                        <div className="habit-week-dots">
-                          {habitWeekDays.map((day) => (
-                            <div
-                              key={day.dateStr}
-                              className={`habit-week-dot ${isCompletedOnDate(habit.id, day.dateStr) ? 'done' : ''} ${day.isToday ? 'today' : ''} ${day.isFuture ? 'future' : ''}`}
-                            />
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Action button - quick toggle for today */}
-                      <div
-                        className="habit-card-action"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (!loading) toggleHabit(habit)
-                        }}
-                      >
-                        {loading === habit.id ? (
-                          <div className="habit-card-spinner" />
-                        ) : completed ? (
-                          <div className="habit-card-check">
-                            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                              <polyline points="20 6 9 17 4 12"/>
-                            </svg>
-                          </div>
-                        ) : (
-                          <div className="habit-card-add">
-                            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                            </svg>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Expanded week view */}
-                    {isExpanded && (
-                      <div className="habit-week-expanded">
-                        <div className="habit-week-header">
-                          <span className="habit-week-label">This week</span>
-                          <span className="habit-week-count">{weekCompletedCount}/7</span>
-                        </div>
-                        <div className="habit-week-grid">
-                          {habitWeekDays.map((day) => {
-                            const isDone = isCompletedOnDate(habit.id, day.dateStr)
-                            const isLoading = loading === `${habit.id}-${day.dateStr}`
-                            return (
-                              <div
-                                key={day.dateStr}
-                                className={`habit-week-day ${isDone ? 'done' : ''} ${day.isToday ? 'today' : ''} ${day.isFuture ? 'future' : ''}`}
-                                onClick={(e) => !day.isFuture && !isLoading && toggleHabitForDate(habit, day.dateStr, e)}
-                              >
-                                <span className="habit-week-day-name">{day.dayName}</span>
-                                <div className="habit-week-day-circle">
-                                  {isLoading ? (
-                                    <div className="habit-week-spinner" />
-                                  ) : isDone ? (
-                                    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                      <polyline points="20 6 9 17 4 12"/>
-                                    </svg>
-                                  ) : null}
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-
-            <Link href="/habits/history" className="view-all-habits">
-              View habit stats →
-            </Link>
-          </div>
-        )}
-      </main>
-
-      {/* Bottom Navigation */}
-      <nav className="bottom-nav">
-        <div className="bottom-nav-inner">
-          {[
-            { id: 'home', label: 'Home', href: '/dashboard', active: true },
-            { id: 'workouts', label: 'Workouts', href: '/workouts', active: false },
-            { id: 'profile', label: 'Profile', href: '/settings', active: false },
-          ].map(tab => (
-            <Link key={tab.id} href={tab.href} className={`nav-item ${tab.active ? 'active' : ''}`}>
-              {tab.id === 'home' && (
-                <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
-                </svg>
-              )}
-              {tab.id === 'workouts' && (
-                <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M6.5 6.5h11M6.5 17.5h11M6 12h12M3 9v6M6 7v10M18 7v10M21 9v6"/>
-                </svg>
-              )}
-              {tab.id === 'profile' && (
-                <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-                </svg>
-              )}
-              <span>{tab.label}</span>
-            </Link>
-          ))}
-        </div>
-      </nav>
-
       <style>{`
+        @keyframes rivalry-glow {
+          0%, 100% { box-shadow: 0 0 15px rgba(249, 115, 22, 0.25); }
+          50% { box-shadow: 0 0 25px rgba(249, 115, 22, 0.4); }
+        }
+        @keyframes pulse-dot {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+        @keyframes habit-complete-fill {
+          0% {
+            transform: scale(0.8);
+            opacity: 0;
+          }
+          50% {
+            transform: scale(1.15);
+          }
+          100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
+        @keyframes habit-check-pop {
+          0% {
+            transform: scale(0) rotate(-45deg);
+            opacity: 0;
+          }
+          50% {
+            transform: scale(1.3) rotate(0deg);
+          }
+          100% {
+            transform: scale(1) rotate(0deg);
+            opacity: 1;
+          }
+        }
+        .rivalry-card { animation: rivalry-glow 3s ease-in-out infinite; }
+        .rivalry-dot { animation: pulse-dot 2s ease-in-out infinite; }
+
         .dashboard-container {
-          background: ${colors.bg};
           min-height: 100vh;
+          background: ${colors.bg};
           padding-bottom: 100px;
         }
 
-        /* Header */
-        .dashboard-header {
-          padding: 50px 20px 16px;
-          max-width: 1200px;
+        .dashboard-content {
+          max-width: 500px;
           margin: 0 auto;
+          padding: 0 20px;
         }
 
-        @media (min-width: 768px) {
-          .dashboard-header {
-            padding: 40px 40px 24px;
-          }
-        }
-
-        .header-content {
+        /* Header */
+        .header {
           display: flex;
           justify-content: space-between;
           align-items: center;
+          padding: 16px 0 24px;
         }
 
-        .greeting-text {
-          margin: 0;
-          font-size: 13px;
+        .header-left {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .greeting {
+          font-size: 14px;
           color: ${colors.textMuted};
-          font-weight: 500;
-          margin-bottom: 4px;
-        }
-
-        @media (min-width: 768px) {
-          .greeting-text {
-            font-size: 14px;
-          }
         }
 
         .user-name {
-          margin: 0;
-          font-size: 26px;
+          font-size: 28px;
           font-weight: 700;
-          color: ${colors.textPrimary};
-          letter-spacing: -0.5px;
+          color: ${colors.text};
+          margin: 0;
         }
 
-        @media (min-width: 768px) {
-          .user-name {
-            font-size: 32px;
-          }
+        .header-actions {
+          display: flex;
+          gap: 12px;
+          align-items: center;
         }
 
-        .avatar-link {
-          text-decoration: none;
+        .notification-btn {
+          width: 44px;
+          height: 44px;
+          border-radius: 14px;
+          background: ${colors.bgCard};
+          border: ${isDark ? 'none' : `1px solid ${colors.border}`};
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
         }
 
         .avatar {
           width: 44px;
           height: 44px;
           border-radius: 14px;
-          background: linear-gradient(135deg, ${colors.purple} 0%, ${colors.purpleDark} 100%);
+          background: linear-gradient(135deg, ${colors.purple} 0%, ${colors.purpleLight} 100%);
           display: flex;
           align-items: center;
           justify-content: center;
-          color: white;
-          font-size: 16px;
-          font-weight: 600;
-        }
-
-        @media (min-width: 768px) {
-          .avatar {
-            width: 52px;
-            height: 52px;
-            font-size: 18px;
-          }
-        }
-
-        /* Main Content */
-        .dashboard-main {
-          padding: 0 20px;
-          max-width: 1200px;
-          margin: 0 auto;
-        }
-
-        @media (min-width: 768px) {
-          .dashboard-main {
-            padding: 0 40px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 32px;
-            align-items: start;
-          }
-        }
-
-        @media (min-width: 1024px) {
-          .dashboard-main {
-            grid-template-columns: 1.2fr 1fr;
-          }
-        }
-
-        .left-column {
-          display: flex;
-          flex-direction: column;
-          gap: 20px;
-          margin-bottom: 24px;
-        }
-
-        @media (min-width: 768px) {
-          .left-column {
-            margin-bottom: 0;
-            gap: 24px;
-          }
-        }
-
-        .right-column {
-          margin-bottom: 24px;
-        }
-
-        @media (min-width: 768px) {
-          .right-column {
-            margin-bottom: 0;
-          }
-        }
-
-        /* Workout Card */
-        .workout-card-link {
-          text-decoration: none;
-          display: block;
-        }
-
-        .workout-card {
-          background: linear-gradient(135deg, ${colors.purple} 0%, ${colors.purpleDark} 100%);
-          border-radius: 24px;
-          padding: 24px;
-          position: relative;
-          overflow: hidden;
-        }
-
-        @media (min-width: 768px) {
-          .workout-card {
-            padding: 32px;
-          }
-        }
-
-        .workout-card-circle-1 {
-          position: absolute;
-          top: -40px;
-          right: -40px;
-          width: 140px;
-          height: 140px;
-          background: rgba(255,255,255,0.1);
-          border-radius: 50%;
-        }
-
-        .workout-card-circle-2 {
-          position: absolute;
-          bottom: -20px;
-          left: 30%;
-          width: 80px;
-          height: 80px;
-          background: rgba(255,255,255,0.05);
-          border-radius: 50%;
-        }
-
-        .workout-card-content {
-          position: relative;
-          z-index: 1;
-        }
-
-        .workout-card-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          margin-bottom: 20px;
-        }
-
-        .workout-label {
-          margin: 0;
-          font-size: 12px;
-          color: rgba(255,255,255,0.6);
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: 1px;
-          margin-bottom: 6px;
-        }
-
-        .workout-name {
-          margin: 0;
-          font-size: 24px;
-          font-weight: 700;
-          color: white;
-          letter-spacing: -0.3px;
-        }
-
-        @media (min-width: 768px) {
-          .workout-name {
-            font-size: 28px;
-          }
-        }
-
-        .workout-subtitle {
-          margin: 4px 0 0;
-          font-size: 14px;
-          color: rgba(255,255,255,0.7);
-        }
-
-        .week-badge {
-          background: rgba(255,255,255,0.15);
-          padding: 6px 12px;
-          border-radius: 10px;
-          font-size: 12px;
-          font-weight: 600;
-          color: white;
-        }
-
-        .workout-stats {
-          display: flex;
-          gap: 16px;
-          margin-bottom: 20px;
-        }
-
-        .workout-stat {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 14px;
-          color: rgba(255,255,255,0.9);
-          font-weight: 500;
-        }
-
-        .start-workout-btn {
-          width: 100%;
-          padding: 16px;
-          border-radius: 14px;
-          border: none;
-          background: white;
-          color: ${colors.purpleDark};
-          font-size: 15px;
-          font-weight: 700;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-          transition: transform 0.15s ease;
-        }
-
-        .start-workout-btn:hover {
-          transform: scale(1.02);
-        }
-
-        @media (min-width: 768px) {
-          .start-workout-btn {
-            font-size: 16px;
-            padding: 18px;
-          }
-        }
-
-        /* Rest Day Card */
-        .rest-day-card {
-          background: ${colors.card};
-          border-radius: 24px;
-          padding: 24px;
-          border: 1px solid ${colors.border};
-          text-align: center;
-        }
-
-        @media (min-width: 768px) {
-          .rest-day-card {
-            padding: 40px;
-          }
-        }
-
-        .rest-day-icon {
-          width: 48px;
-          height: 48px;
-          border-radius: 50%;
-          background: ${colors.green}20;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin: 0 auto 12px;
-        }
-
-        .rest-day-title {
-          margin: 0;
-          font-size: 18px;
-          font-weight: 600;
-          color: ${colors.textPrimary};
-          margin-bottom: 4px;
-        }
-
-        .rest-day-text {
-          margin: 0;
-          font-size: 14px;
-          color: ${colors.textMuted};
-        }
-
-        /* Week Progress */
-        .week-progress-card {
-          background: ${colors.card};
-          border-radius: 20px;
-          padding: 20px;
-          border: 1px solid ${colors.border};
-        }
-
-        @media (min-width: 768px) {
-          .week-progress-card {
-            padding: 24px;
-          }
-        }
-
-        .week-progress-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 16px;
-        }
-
-        .week-progress-title {
-          font-size: 14px;
-          font-weight: 600;
-          color: ${colors.textPrimary};
-        }
-
-        .week-progress-count {
-          font-size: 13px;
-          color: ${colors.textMuted};
-        }
-
-        .week-days {
-          display: flex;
-          justify-content: space-between;
-        }
-
-        .week-day {
-          text-align: center;
-        }
-
-        .week-day-name {
-          font-size: 11px;
-          font-weight: 600;
-          color: ${colors.textMuted};
-          margin-bottom: 8px;
-        }
-
-        .week-day-name.today {
-          color: ${colors.purple};
-        }
-
-        .week-day-num {
-          width: 40px;
-          height: 40px;
-          border-radius: 12px;
-          background: ${colors.cardHover};
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: ${colors.textMuted};
-          font-size: 14px;
-          font-weight: 600;
-        }
-
-        @media (min-width: 768px) {
-          .week-day-num {
-            width: 48px;
-            height: 48px;
-            font-size: 15px;
-          }
-        }
-
-        .week-day-num.today {
-          background: linear-gradient(135deg, ${colors.purple} 0%, ${colors.purpleDark} 100%);
-          color: white;
-        }
-
-        .week-day-num.completed {
-          background: ${colors.green};
-          color: white;
-        }
-
-        .week-day-num.has-workout {
-          border: 2px solid ${colors.purple}40;
-        }
-
-        /* Habits */
-        .habits-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 14px;
-        }
-
-        .habits-title-row {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .habits-title {
-          margin: 0;
           font-size: 16px;
           font-weight: 700;
-          color: ${colors.textPrimary};
-        }
-
-        @media (min-width: 768px) {
-          .habits-title {
-            font-size: 18px;
-          }
-        }
-
-        .habits-count {
-          background: ${colors.cardHover};
-          color: ${colors.textSecondary};
-          padding: 4px 10px;
-          border-radius: 8px;
-          font-size: 12px;
-          font-weight: 600;
-        }
-
-        .habits-count.complete {
-          background: linear-gradient(135deg, ${colors.green} 0%, ${colors.greenLight} 100%);
           color: white;
         }
 
-        .streak-badge {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          background: ${colors.amber}20;
-          padding: 6px 10px;
-          border-radius: 10px;
-        }
-
-        .streak-badge span {
-          color: ${colors.amber};
-          font-weight: 700;
-          font-size: 13px;
-        }
-
-        /* Colorful Habit Cards */
-        .habits-cards {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-
-        .habit-card {
-          position: relative;
-          display: flex;
-          flex-direction: column;
+        /* Rivalry Banner */
+        .rivalry-banner {
+          background: ${isDark ? colors.bgCard : 'linear-gradient(135deg, #fffaf8 0%, #fff6f2 100%)'};
           border-radius: 16px;
-          background: ${colors.card};
-          border: 2px solid var(--card-color);
-          cursor: pointer;
-          overflow: hidden;
-          transition: all 0.2s ease;
-        }
-
-        .habit-card.completed {
-          background: var(--card-color);
-          border-color: var(--card-color);
-        }
-
-        .habit-card:hover:not(.expanded) {
-          transform: scale(1.02);
-          box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-        }
-
-        .habit-card.expanded {
-          box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-        }
-
-        .habit-card-main {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
           padding: 14px 16px;
+          margin-bottom: 20px;
           position: relative;
-          z-index: 1;
+          overflow: hidden;
         }
 
-        /* Fill animation overlay */
-        .habit-card-fill {
+        .rivalry-banner::before {
+          content: '';
           position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: var(--card-color);
-          transform: scaleX(0);
-          transform-origin: left;
-          transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+          inset: 0;
+          border-radius: 16px;
+          padding: ${isDark ? '1.5px' : '2px'};
+          background: linear-gradient(135deg, #f97316, #fbbf24, #ef4444);
+          -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+          -webkit-mask-composite: xor;
+          mask-composite: exclude;
           pointer-events: none;
         }
 
-        .habit-card.animating .habit-card-fill {
-          transform: scaleX(1);
-        }
-
-        .habit-card.completed .habit-card-fill {
-          display: none;
-        }
-
-        .habit-card-content {
+        .rivalry-banner-content {
           display: flex;
           align-items: center;
           gap: 12px;
           position: relative;
-          z-index: 1;
+        }
+
+        .rivalry-icon {
+          width: 40px;
+          height: 40px;
+          border-radius: 10px;
+          background: linear-gradient(135deg, #ef4444 0%, #f97316 100%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          box-shadow: ${isDark ? 'none' : '0 2px 8px rgba(249, 115, 22, 0.3)'};
+        }
+
+        .rivalry-info {
           flex: 1;
           min-width: 0;
         }
 
-        .habit-card-icon {
+        .rivalry-title-row {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-bottom: 2px;
+        }
+
+        .rivalry-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: ${colors.text};
+        }
+
+        .rivalry-message {
+          font-size: 12px;
+          color: ${isDark ? '#fbbf24' : '#f97316'};
+          font-weight: 500;
+        }
+
+        .rivalry-scores {
+          text-align: center;
+          flex-shrink: 0;
+        }
+
+        .rivalry-score-text {
+          font-size: 15px;
+          font-weight: 700;
+        }
+
+        .rivalry-days {
+          font-size: 10px;
+          color: ${colors.textMuted};
+        }
+
+        /* Agenda Header */
+        .agenda-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 16px;
+        }
+
+        .agenda-title-section {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .agenda-icon {
           width: 36px;
           height: 36px;
           border-radius: 10px;
-          background: color-mix(in srgb, var(--card-color) 15%, transparent);
+          background: linear-gradient(135deg, ${colors.purple} 0%, ${colors.purpleLight} 100%);
           display: flex;
           align-items: center;
           justify-content: center;
-          flex-shrink: 0;
+          font-size: 16px;
         }
 
-        .habit-card-icon svg {
-          fill: var(--card-color);
-          transition: fill 0.3s ease;
-        }
-
-        .habit-card.completed .habit-card-icon {
-          background: rgba(255,255,255,0.2);
-        }
-
-        .habit-card.completed .habit-card-icon svg {
-          fill: white;
-        }
-
-        .habit-card-text {
-          flex: 1;
-          min-width: 0;
-        }
-
-        .habit-card-name {
-          display: block;
-          font-size: 15px;
+        .agenda-title {
+          font-size: 18px;
           font-weight: 700;
-          color: ${colors.textPrimary};
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          transition: color 0.3s ease;
+          color: ${colors.text};
+          margin: 0;
         }
 
-        .habit-card.completed .habit-card-name {
-          color: white;
-        }
-
-        .habit-card-target {
-          display: block;
+        .agenda-date {
           font-size: 12px;
           color: ${colors.textMuted};
-          margin-top: 2px;
-          transition: color 0.3s ease;
         }
 
-        .habit-card.completed .habit-card-target {
-          color: rgba(255,255,255,0.8);
-        }
-
-        .habit-card-action {
-          position: relative;
-          z-index: 1;
-          flex-shrink: 0;
-        }
-
-        .habit-card-add {
-          width: 36px;
-          height: 36px;
-          border-radius: 50%;
-          background: transparent;
-          border: 2px solid color-mix(in srgb, var(--card-color) 50%, transparent);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--card-color);
-          transition: all 0.2s ease;
-        }
-
-        .habit-card:hover .habit-card-add {
-          background: color-mix(in srgb, var(--card-color) 10%, transparent);
-          border-color: var(--card-color);
-        }
-
-        .habit-card-check {
-          width: 36px;
-          height: 36px;
-          border-radius: 50%;
-          background: white;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--card-color);
-          animation: checkPop 0.3s ease-out;
-        }
-
-        .habit-card-spinner {
-          width: 20px;
-          height: 20px;
-          border: 2px solid color-mix(in srgb, var(--card-color) 30%, transparent);
-          border-top-color: var(--card-color);
-          border-radius: 50%;
-          animation: spin 0.8s linear infinite;
-        }
-
-        .habit-card.completed .habit-card-spinner {
-          border-color: rgba(255,255,255,0.3);
-          border-top-color: white;
-        }
-
-        @keyframes checkPop {
-          0% { transform: scale(0); }
-          50% { transform: scale(1.2); }
-          100% { transform: scale(1); }
-        }
-
-        .view-all-habits {
-          display: block;
-          margin-top: 12px;
-          text-align: center;
-          font-size: 14px;
-          color: ${colors.purple};
-          font-weight: 500;
-          text-decoration: none;
-        }
-
-        .view-all-habits:hover {
-          color: ${colors.purpleDark};
-        }
-
-        /* Week dots indicator (collapsed) */
-        .habit-week-dots {
-          display: flex;
-          gap: 4px;
-          margin-right: 12px;
-        }
-
-        .habit-week-dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          background: ${colors.cardHover};
-          transition: all 0.2s ease;
-        }
-
-        .habit-week-dot.done {
-          background: var(--card-color);
-        }
-
-        .habit-card.completed .habit-week-dot {
-          background: rgba(255,255,255,0.3);
-        }
-
-        .habit-card.completed .habit-week-dot.done {
-          background: white;
-        }
-
-        .habit-week-dot.today {
-          box-shadow: 0 0 0 2px ${colors.bg}, 0 0 0 3px var(--card-color);
-        }
-
-        .habit-card.completed .habit-week-dot.today {
-          box-shadow: 0 0 0 2px var(--card-color), 0 0 0 3px white;
-        }
-
-        .habit-week-dot.future {
-          opacity: 0.4;
-        }
-
-        /* Expanded week view */
-        .habit-week-expanded {
-          padding: 0 16px 16px;
-          border-top: 1px solid color-mix(in srgb, var(--card-color) 20%, transparent);
-          margin-top: -2px;
-          position: relative;
-          z-index: 1;
-        }
-
-        .habit-card.completed .habit-week-expanded {
-          border-top-color: rgba(255,255,255,0.2);
-        }
-
-        .habit-week-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 12px 0 10px;
-        }
-
-        .habit-week-label {
-          font-size: 12px;
+        .agenda-count {
+          padding: 6px 12px;
+          background: ${colors.bgCard};
+          border-radius: 20px;
+          font-size: 13px;
           font-weight: 600;
-          color: ${colors.textMuted};
+          color: ${colors.textSecondary};
+          border: ${isDark ? 'none' : `1px solid ${colors.border}`};
         }
 
-        .habit-card.completed .habit-week-label {
-          color: rgba(255,255,255,0.7);
-        }
-
-        .habit-week-count {
-          font-size: 12px;
-          font-weight: 700;
-          color: var(--card-color);
-        }
-
-        .habit-card.completed .habit-week-count {
-          color: white;
-        }
-
-        .habit-week-grid {
-          display: flex;
-          justify-content: space-between;
-        }
-
-        .habit-week-day {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 6px;
-          cursor: pointer;
-          transition: all 0.15s ease;
-        }
-
-        .habit-week-day.future {
-          opacity: 0.4;
-          cursor: not-allowed;
-        }
-
-        .habit-week-day-name {
-          font-size: 11px;
-          font-weight: 600;
-          color: ${colors.textMuted};
-        }
-
-        .habit-card.completed .habit-week-day-name {
-          color: rgba(255,255,255,0.7);
-        }
-
-        .habit-week-day.today .habit-week-day-name {
-          color: var(--card-color);
-        }
-
-        .habit-card.completed .habit-week-day.today .habit-week-day-name {
-          color: white;
-        }
-
-        .habit-week-day-circle {
-          width: 32px;
-          height: 32px;
-          border-radius: 50%;
-          background: ${colors.cardHover};
-          border: 2px solid transparent;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: ${colors.textMuted};
-          transition: all 0.15s ease;
-        }
-
-        .habit-card.completed .habit-week-day-circle {
-          background: rgba(255,255,255,0.15);
-        }
-
-        .habit-week-day.today .habit-week-day-circle {
-          border-color: var(--card-color);
-        }
-
-        .habit-card.completed .habit-week-day.today .habit-week-day-circle {
-          border-color: white;
-        }
-
-        .habit-week-day.done .habit-week-day-circle {
-          background: var(--card-color);
-          color: white;
-        }
-
-        .habit-card.completed .habit-week-day.done .habit-week-day-circle {
-          background: white;
-          color: var(--card-color);
-        }
-
-        .habit-week-day:not(.future):hover .habit-week-day-circle {
-          transform: scale(1.1);
-        }
-
-        .habit-week-day:not(.future):active .habit-week-day-circle {
-          transform: scale(0.95);
-        }
-
-        .habit-week-spinner {
-          width: 14px;
-          height: 14px;
-          border: 2px solid ${colors.textMuted}30;
-          border-top-color: ${colors.textMuted};
-          border-radius: 50%;
-          animation: spin 0.8s linear infinite;
-        }
-
-        .habit-card.completed .habit-week-spinner {
-          border-color: rgba(255,255,255,0.3);
-          border-top-color: white;
-        }
-
-        /* Rivalry Card - Base */
-        .rivalry-card {
-          display: block;
-          text-decoration: none;
-          position: relative;
-          border-radius: 24px;
-          padding: 28px;
-          margin-bottom: 16px;
+        /* Progress Bar */
+        .progress-bar-container {
+          height: 6px;
+          background: ${isDark ? colors.bgCard : colors.border};
+          border-radius: 3px;
+          margin-bottom: 24px;
           overflow: hidden;
-          transition: transform 0.2s ease;
         }
 
-        .rivalry-card:hover {
-          transform: translateY(-2px);
+        .progress-bar-fill {
+          height: 100%;
+          background: linear-gradient(90deg, ${colors.purple} 0%, ${colors.green} 100%);
+          border-radius: 3px;
+          transition: width 0.3s ease;
         }
 
-        /* Dark Mode Styles */
-        .rivalry-card.dark {
-          background: linear-gradient(145deg, #1a1625 0%, #0f0a1a 100%);
-          border: 2px solid rgba(239, 68, 68, 0.3);
-          animation: pulse-glow-dark 3s ease-in-out infinite;
+        /* Agenda Item */
+        .agenda-item {
+          background: ${colors.bgCard};
+          border-radius: 16px;
+          padding: 16px;
+          margin-bottom: 12px;
+          border: 1px solid ${colors.border};
+          box-shadow: ${isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.05)'};
         }
 
-        /* Light Mode Styles */
-        .rivalry-card.light {
-          background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #ede9fe 100%);
-          border: 2px solid #c4b5fd;
-          animation: pulse-glow-light 3s ease-in-out infinite;
+        .agenda-item.has-rivalry {
+          border: 1.5px solid ${isDark ? 'rgba(249, 115, 22, 0.3)' : 'rgba(249, 115, 22, 0.5)'};
+          box-shadow: ${isDark ? 'none' : '0 2px 8px rgba(249, 115, 22, 0.1)'};
         }
 
-        /* Top Gradient Bar */
-        .rivalry-gradient-bar {
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 4px;
-          background: linear-gradient(135deg, #8b5cf6, #ef4444, #f59e0b, #8b5cf6);
-          background-size: 300% 300%;
-          animation: gradient-shift 4s ease infinite;
-        }
-
-        .rivalry-card.light .rivalry-gradient-bar {
-          height: 5px;
-        }
-
-        /* Red Glow Overlay (dark mode) */
-        .rivalry-glow-overlay {
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 120px;
-          background: radial-gradient(ellipse at top, rgba(239, 68, 68, 0.15) 0%, transparent 70%);
-          pointer-events: none;
-        }
-
-        /* Header */
-        .rivalry-header {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          margin-bottom: 20px;
-          position: relative;
-          z-index: 1;
-        }
-
-        .rivalry-header-left {
+        .agenda-item-content {
           display: flex;
           align-items: center;
           gap: 14px;
         }
 
-        .rivalry-icon-container {
-          width: 54px;
-          height: 54px;
-          border-radius: 16px;
+        .checkbox {
+          width: 28px;
+          height: 28px;
+          border-radius: 8px;
+          border: 2px solid ${colors.border};
+          background: transparent;
           display: flex;
           align-items: center;
           justify-content: center;
-          animation: float 2.5s ease-in-out infinite;
+          flex-shrink: 0;
+          cursor: pointer;
+          transition: all 0.2s;
         }
 
-        .rivalry-card.dark .rivalry-icon-container {
-          background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-          box-shadow: 0 0 30px rgba(239, 68, 68, 0.4);
+        .checkbox.completed {
+          background: ${colors.green};
+          border-color: ${colors.green};
         }
 
-        .rivalry-card.light .rivalry-icon-container {
-          width: 52px;
-          height: 52px;
-          background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-          box-shadow: 0 8px 20px rgba(139, 92, 246, 0.35);
+        .checkbox.loading {
+          opacity: 0.5;
         }
 
-        .rivalry-header-text {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-
-        .rivalry-label {
-          display: flex;
-          align-items: center;
-          font-size: 12px;
-          font-weight: 800;
-          letter-spacing: 1px;
-          text-transform: uppercase;
-        }
-
-        .rivalry-card.dark .rivalry-label {
-          color: #ef4444;
-        }
-
-        .rivalry-card.light .rivalry-label {
-          color: #7c3aed;
-        }
-
-        .rivalry-name {
-          font-size: 18px;
-          font-weight: 700;
-        }
-
-        .rivalry-card.dark .rivalry-name {
-          color: white;
-        }
-
-        .rivalry-card.light .rivalry-name {
-          color: #1e293b;
-        }
-
-        .rivalry-days-badge {
-          padding: 8px 14px;
-          border-radius: 12px;
-          font-size: 13px;
-          font-weight: 700;
-          color: white;
-          background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-          box-shadow: 0 4px 16px rgba(245, 158, 11, 0.4);
-        }
-
-        .rivalry-card.light .rivalry-days-badge {
-          box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
-        }
-
-        /* Scores Container */
-        .rivalry-scores-container {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 20px 0;
-          position: relative;
-          z-index: 1;
-        }
-
-        .rivalry-scores-container.light-bg {
-          background: white;
-          border-radius: 20px;
-          padding: 24px;
-          border: 1px solid #e9d5ff;
-          margin: 0 -8px 16px;
-        }
-
-        /* Player */
-        .rivalry-player {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 6px;
-        }
-
-        .rivalry-avatar {
-          position: relative;
-          width: 72px;
-          height: 72px;
-          border-radius: 22px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .rivalry-card.light .rivalry-avatar {
-          width: 64px;
-          height: 64px;
-          border-radius: 20px;
-        }
-
-        .rivalry-avatar.user {
-          background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-          box-shadow: 0 8px 24px rgba(139, 92, 246, 0.4);
-        }
-
-        .rivalry-card.light .rivalry-avatar.user {
-          box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
-        }
-
-        .rivalry-avatar.opponent {
-          background: #1e1a2e;
-          border: 2px solid #2a2640;
-        }
-
-        .rivalry-card.light .rivalry-avatar.opponent {
-          background: #f1f5f9;
-          border: 2px solid #e2e8f0;
-        }
-
-        .rivalry-avatar span {
-          font-size: 26px;
-          font-weight: 700;
-          color: white;
-        }
-
-        .rivalry-card.light .rivalry-avatar span {
-          font-size: 22px;
-        }
-
-        .rivalry-avatar.opponent span {
-          color: #64748b;
-        }
-
-        .rivalry-card.light .rivalry-avatar.opponent span {
-          color: #94a3b8;
-        }
-
-        .rivalry-avatar-img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          border-radius: inherit;
-        }
-
-        .rivalry-crown {
-          position: absolute;
-          top: -10px;
-          right: -10px;
-          width: 30px;
-          height: 30px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border: 3px solid #0f0a1a;
-        }
-
-        .rivalry-card.light .rivalry-crown {
-          width: 26px;
-          height: 26px;
-          top: -8px;
-          right: -8px;
-          border: 2px solid white;
-          box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
-        }
-
-        .rivalry-player-label {
-          font-size: 12px;
-          font-weight: 500;
-          color: #94a3b8;
-        }
-
-        .rivalry-card.light .rivalry-player-label {
-          color: #64748b;
-        }
-
-        .rivalry-player-score {
-          font-size: 42px;
-          font-weight: 900;
-        }
-
-        .rivalry-card.light .rivalry-player-score {
-          font-size: 36px;
-        }
-
-        .rivalry-player-score.winning {
-          background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        }
-
-        .rivalry-card.light .rivalry-player-score.winning {
-          background: none;
-          -webkit-text-fill-color: #10b981;
-          color: #10b981;
-        }
-
-        .rivalry-player-score.losing {
-          color: #ef4444;
-        }
-
-        /* VS Badge */
-        .rivalry-vs-container {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .rivalry-vs-badge {
-          width: 48px;
-          height: 48px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 14px;
-          font-weight: 800;
-        }
-
-        .rivalry-card.dark .rivalry-vs-badge {
-          background: linear-gradient(135deg, #ef4444 0%, #f97316 100%);
-          box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
-          color: white;
-        }
-
-        .rivalry-card.light .rivalry-vs-badge {
+        .item-icon {
           width: 44px;
           height: 44px;
-          background: linear-gradient(135deg, #f3e8ff 0%, #ede9fe 100%);
-          border: 2px solid #c4b5fd;
-          color: #7c3aed;
-        }
-
-        .rivalry-diff-pill {
-          padding: 6px 14px;
-          border-radius: 10px;
-          font-size: 13px;
-          font-weight: 700;
-          color: white;
-        }
-
-        .rivalry-card.light .rivalry-diff-pill {
-          padding: 5px 12px;
-          border-radius: 8px;
-          font-size: 12px;
-        }
-
-        .rivalry-diff-pill.positive {
-          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-          box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-        }
-
-        .rivalry-diff-pill.negative {
-          background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-          box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
-        }
-
-        /* Progress Bar */
-        .rivalry-progress {
-          height: 8px;
-          border-radius: 4px;
-          overflow: hidden;
-          position: relative;
-          z-index: 1;
-        }
-
-        .rivalry-card.dark .rivalry-progress {
-          background: #1e1a2e;
-        }
-
-        .rivalry-card.light .rivalry-progress {
-          height: 10px;
-          border-radius: 5px;
-          background: #e9d5ff;
-        }
-
-        .rivalry-progress-fill {
-          height: 100%;
-          border-radius: 4px;
-          background: linear-gradient(90deg, #10b981 0%, #34d399 100%);
-          transition: width 0.3s ease;
-        }
-
-        .rivalry-card.dark .rivalry-progress-fill {
-          box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
-        }
-
-        .rivalry-card.light .rivalry-progress-fill {
-          border-radius: 5px;
-        }
-
-        /* Footer */
-        .rivalry-footer {
+          border-radius: 12px;
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          margin-top: 16px;
-          position: relative;
-          z-index: 1;
+          justify-content: center;
+          font-size: 20px;
+          flex-shrink: 0;
         }
 
-        .rivalry-status {
+        .item-details {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .item-title {
+          font-size: 15px;
+          font-weight: 600;
+          color: ${colors.text};
+          margin-bottom: 2px;
+        }
+
+        .item-subtitle {
+          font-size: 13px;
+          color: ${colors.textMuted};
+        }
+
+        .start-btn {
+          padding: 8px 14px;
+          background: linear-gradient(135deg, ${colors.purple} 0%, ${colors.purpleLight} 100%);
+          border-radius: 10px;
+          font-size: 13px;
+          font-weight: 600;
+          color: white;
+          border: none;
+          cursor: pointer;
+        }
+
+        .add-btn {
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
+          background: ${colors.bgCardSolid};
+          border: ${isDark ? 'none' : `1px solid ${colors.border}`};
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+        }
+
+        /* Rivalry Badge on Habit */
+        .rivalry-badge {
+          margin-top: 10px;
+          margin-left: 42px;
+          padding: 8px 10px;
+          background: ${isDark
+            ? 'linear-gradient(135deg, rgba(249, 115, 22, 0.08) 0%, rgba(239, 68, 68, 0.04) 100%)'
+            : 'linear-gradient(135deg, rgba(249, 115, 22, 0.08) 0%, rgba(239, 68, 68, 0.04) 100%)'};
+          border-radius: 8px;
+          border: 1px solid ${isDark ? 'rgba(249, 115, 22, 0.2)' : 'rgba(249, 115, 22, 0.3)'};
           display: flex;
           align-items: center;
           gap: 8px;
-          font-size: 14px;
+        }
+
+        .rivalry-badge-text {
+          font-size: 11px;
+          color: #f97316;
           font-weight: 600;
-          color: #f59e0b;
         }
 
-        .rivalry-card.light .rivalry-status {
+        .rivalry-badge-score {
+          font-size: 11px;
+          color: ${colors.textMuted};
+        }
+
+        .rivalry-badge-days {
+          font-size: 10px;
+          color: ${colors.textMuted};
+          margin-left: auto;
+        }
+
+        /* Streak Card */
+        .streak-card {
+          background: ${isDark
+            ? `linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, ${colors.bgCard} 100%)`
+            : 'linear-gradient(135deg, rgba(251, 191, 36, 0.12) 0%, rgba(255,255,255,1) 100%)'};
+          border-radius: 16px;
+          padding: 16px;
+          margin-top: 8px;
+          border: 1px solid ${isDark ? 'rgba(251, 191, 36, 0.3)' : 'rgba(251, 191, 36, 0.4)'};
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+
+        .streak-icon {
+          font-size: 32px;
+        }
+
+        .streak-info {
+          flex: 1;
+        }
+
+        .streak-title {
+          font-size: 15px;
+          font-weight: 600;
+          color: ${colors.text};
+        }
+
+        .streak-subtitle {
+          font-size: 13px;
+          color: ${colors.textMuted};
+        }
+
+        .streak-count {
+          font-size: 24px;
+          font-weight: 800;
+          color: ${colors.amber};
+        }
+
+        /* Calendar View */
+        .calendar-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 8px 0 20px;
+        }
+
+        .calendar-title-section {
+          display: flex;
+          align-items: center;
+        }
+
+        .calendar-title-section h2 {
+          font-size: 24px;
           font-weight: 700;
+          color: ${colors.text};
+          margin: 0;
         }
 
-        .rivalry-view-btn {
+        /* Week Strip */
+        .week-strip {
+          display: flex;
+          gap: 8px;
+          margin-bottom: 24px;
+        }
+
+        .week-day-cell {
+          flex: 1;
+          background: ${colors.bgCard};
+          border-radius: 14px;
+          padding: 12px 6px;
+          text-align: center;
+          border: 1px solid ${colors.border};
+          box-shadow: ${isDark ? 'none' : '0 1px 2px rgba(0,0,0,0.04)'};
+        }
+
+        .week-day-cell.today {
+          background: ${colors.purple};
+          border: 2px solid ${colors.purpleLight};
+        }
+
+        .week-day-cell.selected {
+          background: ${isDark ? colors.bgCardSolid : colors.bgCard};
+          border: 2px solid ${colors.purple};
+        }
+
+        .week-day-cell:hover:not(.today) {
+          border-color: ${colors.purple}80;
+        }
+
+        .week-day-name {
+          font-size: 10px;
+          color: ${colors.textMuted};
+          margin-bottom: 4px;
+          font-weight: 500;
+        }
+
+        .week-day-cell.today .week-day-name {
+          color: rgba(255,255,255,0.7);
+        }
+
+        .week-day-date {
+          font-size: 16px;
+          font-weight: 700;
+          color: ${colors.text};
+          margin-bottom: 8px;
+        }
+
+        .week-day-cell.today .week-day-date {
+          color: white;
+        }
+
+        .week-day-dots {
+          display: flex;
+          justify-content: center;
+          gap: 3px;
+        }
+
+        .status-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+        }
+
+        .status-dot.workout {
+          background: ${colors.purple};
+        }
+
+        .status-dot.workout.completed {
+          background: ${colors.green};
+        }
+
+        .status-dot.workout.today {
+          background: white;
+        }
+
+        .status-dot.habits {
+          background: ${colors.bgCardSolid};
+        }
+
+        .status-dot.habits.partial {
+          background: ${colors.amber};
+        }
+
+        .status-dot.habits.complete {
+          background: ${colors.green};
+        }
+
+        .status-dot.habits.today-empty {
+          background: rgba(255,255,255,0.5);
+        }
+
+        /* Legend */
+        .legend {
+          display: flex;
+          justify-content: center;
+          gap: 16px;
+          margin-bottom: 24px;
+        }
+
+        .legend-item {
           display: flex;
           align-items: center;
           gap: 6px;
-          padding: 10px 18px;
-          border-radius: 12px;
+        }
+
+        .legend-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+        }
+
+        .legend-text {
+          font-size: 11px;
+          color: ${colors.textMuted};
+        }
+
+        /* Today's Details Section */
+        .section-label {
+          font-size: 12px;
+          font-weight: 700;
+          color: ${colors.textMuted};
+          letter-spacing: 0.5px;
+          margin-bottom: 12px;
+        }
+
+        .workout-detail-card {
+          background: ${isDark
+            ? `linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, ${colors.bgCard} 100%)`
+            : 'linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, #ffffff 100%)'};
+          border-radius: 16px;
+          padding: 16px;
+          margin-bottom: 12px;
+          border: 1px solid ${isDark ? 'rgba(139, 92, 246, 0.3)' : 'rgba(139, 92, 246, 0.3)'};
+        }
+
+        .workout-detail-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 12px;
+        }
+
+        .workout-detail-label {
+          font-size: 12px;
+          font-weight: 600;
+          color: ${colors.purple};
+        }
+
+        .workout-detail-content {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+
+        .workout-detail-info {
+          flex: 1;
+        }
+
+        .workout-detail-title {
+          font-size: 17px;
+          font-weight: 700;
+          color: ${colors.text};
+          margin-bottom: 4px;
+        }
+
+        .workout-detail-subtitle {
           font-size: 13px;
+          color: ${colors.textMuted};
+        }
+
+        .workout-start-btn {
+          padding: 10px 18px;
+          background: linear-gradient(135deg, ${colors.purple} 0%, ${colors.purpleLight} 100%);
+          border-radius: 12px;
+          font-size: 14px;
           font-weight: 600;
           color: white;
-          background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-          box-shadow: 0 4px 16px rgba(139, 92, 246, 0.4);
+          border: none;
+          cursor: pointer;
         }
 
-        .rivalry-card.light .rivalry-view-btn {
-          padding: 10px 16px;
-          box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+        /* Habits Detail Card */
+        .habits-detail-card {
+          background: ${colors.bgCard};
+          border-radius: 16px;
+          padding: 16px;
+          border: 1px solid ${colors.border};
+          box-shadow: ${isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.05)'};
         }
 
-        /* Animations */
-        @keyframes pulse-glow-dark {
-          0%, 100% {
-            box-shadow: 0 4px 30px rgba(239, 68, 68, 0.2), 0 8px 40px rgba(139, 92, 246, 0.15);
-          }
-          50% {
-            box-shadow: 0 8px 40px rgba(239, 68, 68, 0.35), 0 12px 50px rgba(139, 92, 246, 0.25);
-          }
+        .habits-detail-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 14px;
         }
 
-        @keyframes pulse-glow-light {
-          0%, 100% {
-            box-shadow: 0 4px 20px rgba(139, 92, 246, 0.15), 0 0 0 1px rgba(139, 92, 246, 0.1);
-          }
-          50% {
-            box-shadow: 0 8px 30px rgba(139, 92, 246, 0.25), 0 0 0 2px rgba(139, 92, 246, 0.15);
-          }
+        .habits-detail-label-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
         }
 
-        @keyframes gradient-shift {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
+        .habits-detail-label {
+          font-size: 12px;
+          font-weight: 600;
+          color: ${colors.green};
         }
 
-        @keyframes float {
-          0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-3px); }
+        .habits-detail-count {
+          font-size: 13px;
+          color: ${colors.textMuted};
+        }
+
+        .habit-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 0;
+        }
+
+        .habit-row:not(:last-child) {
+          border-bottom: 1px solid ${colors.border};
+        }
+
+        .habit-checkbox {
+          width: 24px;
+          height: 24px;
+          border-radius: 6px;
+          border: 2px solid ${colors.border};
+          flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+        }
+
+        .habit-checkbox.completed {
+          background: linear-gradient(135deg, #10b981 0%, #06b6d4 50%, #8b5cf6 100%);
+          border-color: transparent;
+          animation: habit-complete-fill 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+          box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3), 0 2px 8px rgba(139, 92, 246, 0.2);
+        }
+
+        .habit-checkbox.completed svg {
+          animation: habit-check-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s forwards;
+        }
+
+        .habit-checkbox.skipped {
+          background: ${colors.textMuted};
+          border-color: ${colors.textMuted};
+        }
+
+        .habit-icon {
+          font-size: 18px;
+        }
+
+        .habit-name {
+          font-size: 14px;
+          color: ${colors.text};
+          flex: 1;
+        }
+
+        .habit-add-btn {
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
+          background: ${colors.bgCardSolid};
+          border: ${isDark ? 'none' : `1px solid ${colors.border}`};
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+        }
+
+        .skip-btn {
+          padding: 6px 12px;
+          border-radius: 8px;
+          background: transparent;
+          border: 1px solid ${colors.border};
+          font-size: 12px;
+          font-weight: 500;
+          color: ${colors.textMuted};
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .skip-btn:hover {
+          border-color: ${colors.amber};
+          color: ${colors.amber};
+        }
+
+        .reschedule-btn {
+          padding: 8px 14px;
+          border-radius: 10px;
+          background: transparent;
+          border: 1px solid ${colors.border};
+          font-size: 13px;
+          font-weight: 500;
+          color: ${colors.textSecondary};
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .reschedule-btn:hover {
+          border-color: ${colors.purple};
+          color: ${colors.purple};
+        }
+
+        /* Calendar Rivalry Badge */
+        .calendar-rivalry-badge {
+          margin-left: 36px;
+          margin-bottom: 8px;
+          padding: 6px 10px;
+          background: rgba(249, 115, 22, 0.08);
+          border-radius: 6px;
+          border: 1px solid rgba(249, 115, 22, 0.2);
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .calendar-rivalry-text {
+          font-size: 10px;
+          color: #f97316;
+          font-weight: 600;
+        }
+
+        /* Upcoming Section */
+        .upcoming-card {
+          background: ${colors.bgCard};
+          border-radius: 14px;
+          padding: 14px 16px;
+          border: 1px solid ${colors.border};
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          box-shadow: ${isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.05)'};
+        }
+
+        .upcoming-icon {
+          width: 40px;
+          height: 40px;
+          border-radius: 10px;
+          background: ${colors.bgCardSolid};
+          border: ${isDark ? 'none' : `1px solid ${colors.border}`};
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 18px;
+        }
+
+        .upcoming-info {
+          flex: 1;
+        }
+
+        .upcoming-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: ${colors.text};
+        }
+
+        .upcoming-date {
+          font-size: 12px;
+          color: ${colors.textMuted};
         }
 
         /* Bottom Navigation */
         .bottom-nav {
           position: fixed;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          padding: 12px 24px 28px;
-          background: linear-gradient(180deg, transparent 0%, ${colors.bg} 20%);
-          z-index: 50;
-        }
-
-        @media (min-width: 768px) {
-          .bottom-nav {
-            padding: 12px 40px 24px;
-          }
-        }
-
-        .bottom-nav-inner {
-          max-width: 500px;
-          margin: 0 auto;
-          background: ${colors.card};
+          bottom: 20px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: calc(100% - 32px);
+          max-width: 468px;
+          background: ${colors.bgCard};
           border-radius: 20px;
-          padding: 8px;
+          padding: 12px 20px;
           display: flex;
           justify-content: space-around;
           align-items: center;
           border: 1px solid ${colors.border};
+          box-shadow: ${isDark ? 'none' : '0 -2px 10px rgba(0,0,0,0.05)'};
+          z-index: 100;
         }
 
         .nav-item {
@@ -1994,34 +1406,623 @@ export function DashboardClient({
           flex-direction: column;
           align-items: center;
           gap: 4px;
-          padding: 10px 24px;
-          border-radius: 14px;
           cursor: pointer;
-          background: transparent;
           text-decoration: none;
-          color: ${colors.textMuted};
-          transition: all 0.15s ease;
         }
 
-        .nav-item.active {
-          background: linear-gradient(135deg, ${colors.purple}20 0%, ${colors.purpleDark}20 100%);
-          color: ${colors.purple};
-        }
-
-        .nav-item:hover:not(.active) {
-          color: ${colors.textSecondary};
-        }
-
-        .nav-item span {
-          font-size: 11px;
+        .nav-label {
+          font-size: 10px;
           font-weight: 600;
         }
-
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
       `}</style>
+
+      <div className="dashboard-content">
+        {/* Header */}
+        <header className="header">
+          <div className="header-left">
+            <span className="greeting">{greeting}</span>
+            <h1 className="user-name">{userName.split(' ')[0]}</h1>
+          </div>
+          <div className="header-actions">
+            <div className="notification-btn">
+              <NotificationBell userId={userId} />
+            </div>
+            <div className="avatar">{initials}</div>
+          </div>
+        </header>
+
+        {/* TODAY'S AGENDA VIEW */}
+        {activeView === 'agenda' && (
+          <>
+            {/* Rivalry Banner */}
+            {showRivalryBanner && rivalry && (
+              <div className="rivalry-banner rivalry-card">
+                <div className="rivalry-banner-content">
+                  <div className="rivalry-icon">
+                    <Icons.swords size={18} color="white" />
+                  </div>
+                  <div className="rivalry-info">
+                    <div className="rivalry-title-row">
+                      <span className="rivalry-title">{rivalry.habit_name}</span>
+                      <div className="rivalry-dot" style={{ width: 5, height: 5, borderRadius: '50%', background: '#f97316' }} />
+                    </div>
+                    <div className="rivalry-message">{getRivalryMessage()}</div>
+                  </div>
+                  <div className="rivalry-scores">
+                    <div className="rivalry-score-text">
+                      <span style={{ color: colors.green }}>{rivalry.my_score}%</span>
+                      <span style={{ color: colors.textMuted, margin: '0 4px', fontSize: 12 }}>vs</span>
+                      <span style={{ color: '#f97316' }}>{rivalry.opponent_score}%</span>
+                    </div>
+                    <div className="rivalry-days">{rivalry.days_left}d left</div>
+                  </div>
+                  <Link href={`/rivalry/${rivalry.id}`}>
+                    <Icons.chevronRight size={18} color={colors.textMuted} />
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {/* Agenda Header */}
+            <div className="agenda-header">
+              <div className="agenda-title-section">
+                <div className="agenda-icon">📋</div>
+                <div>
+                  <h2 className="agenda-title">Today&apos;s Agenda</h2>
+                  <div className="agenda-date">{currentDayName}, {currentMonth.slice(0, 3)} {currentDate}</div>
+                </div>
+              </div>
+              <div className="agenda-count">{completedCount}/{agendaItems.length} done</div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="progress-bar-container">
+              <div className="progress-bar-fill" style={{ width: `${progressPercent}%` }} />
+            </div>
+
+            {/* Set Schedule Prompt */}
+            {scheduleInfo && !currentSchedule && (
+              <div
+                className="agenda-item"
+                onClick={() => setShowScheduleModal(true)}
+                style={{ cursor: 'pointer', marginBottom: 16 }}
+              >
+                <div className="agenda-item-content">
+                  <div className="item-icon" style={{ background: `${colors.purple}20` }}>
+                    📅
+                  </div>
+                  <div className="item-details">
+                    <div className="item-title">Set Your Workout Schedule</div>
+                    <div className="item-subtitle">Pick which days you&apos;ll work out each week</div>
+                  </div>
+                  <Icons.chevronRight size={20} color={colors.textMuted} />
+                </div>
+              </div>
+            )}
+
+            {/* Agenda Items */}
+            {agendaItems.map(item => (
+              <div key={item.id} className={`agenda-item ${item.rivalryData ? 'has-rivalry' : ''}`}>
+                <div className="agenda-item-content">
+                  <div
+                    className={`checkbox ${item.completed ? 'completed' : ''} ${loading === item.id ? 'loading' : ''}`}
+                    onClick={() => item.type === 'habit' && handleHabitComplete(item.id)}
+                  >
+                    {item.completed && <Icons.check size={16} color="white" />}
+                  </div>
+                  <div
+                    className="item-icon"
+                    style={{ background: isDark ? `${item.color}20` : `${item.color}15` }}
+                  >
+                    {item.icon}
+                  </div>
+                  <div className="item-details">
+                    <div className="item-title">{item.title}</div>
+                    <div className="item-subtitle">{item.subtitle}</div>
+                  </div>
+                  {item.type === 'workout' && todayWorkout && (
+                    <Link href={`/workouts/${todayWorkout.id}`}>
+                      <button className="start-btn">Start</button>
+                    </Link>
+                  )}
+                  {item.type === 'habit' && !item.completed && (
+                    <button
+                      className="add-btn"
+                      onClick={() => handleHabitComplete(item.id)}
+                      disabled={loading === item.id}
+                    >
+                      <Icons.plus size={20} color={colors.textSecondary} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Rivalry Badge on Habit */}
+                {item.rivalryData && (
+                  <div className="rivalry-badge">
+                    <span style={{ fontSize: 12 }}>⚔️</span>
+                    <span className="rivalry-badge-text">vs {item.rivalryData.opponent_name}</span>
+                    <span className="rivalry-badge-score">
+                      {item.rivalryData.my_score}%-{item.rivalryData.opponent_score}%
+                    </span>
+                    <span className="rivalry-badge-days">{item.rivalryData.days_left}d</span>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* Streak Card */}
+            {overallStreak > 0 && (
+              <div className="streak-card">
+                <div className="streak-icon">🔥</div>
+                <div className="streak-info">
+                  <div className="streak-title">Keep your streak alive!</div>
+                  <div className="streak-subtitle">Complete all tasks to hit day {overallStreak + 1}</div>
+                </div>
+                <div className="streak-count">{overallStreak}</div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* CALENDAR VIEW */}
+        {activeView === 'calendar' && (
+          <>
+            {/* Calendar Header */}
+            <div className="calendar-header">
+              <div className="calendar-title-section">
+                <h2>{displayMonth} {displayYear}</h2>
+                {weekOffset !== 0 && (
+                  <button
+                    onClick={goToCurrentWeek}
+                    style={{
+                      marginLeft: 12,
+                      padding: '4px 10px',
+                      borderRadius: 8,
+                      background: colors.purple,
+                      border: 'none',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: 'white',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Today
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={goToPrevWeek}
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 12,
+                    background: colors.bgCard,
+                    border: isDark ? 'none' : `1px solid ${colors.border}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Icons.chevronLeft size={20} color={colors.textSecondary} />
+                </button>
+                <button
+                  onClick={goToNextWeek}
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 12,
+                    background: colors.bgCard,
+                    border: isDark ? 'none' : `1px solid ${colors.border}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Icons.chevronRight size={20} color={colors.textSecondary} />
+                </button>
+              </div>
+            </div>
+
+            {/* Rivalry Banner (Compact) */}
+            {showRivalryBanner && rivalry && (
+              <div className="rivalry-banner rivalry-card" style={{ padding: '12px 14px', marginBottom: 20 }}>
+                <div className="rivalry-banner-content" style={{ gap: 10 }}>
+                  <div className="rivalry-icon" style={{ width: 36, height: 36 }}>
+                    <Icons.swords size={16} color="white" />
+                  </div>
+                  <div className="rivalry-info">
+                    <div className="rivalry-title" style={{ fontSize: 13 }}>{rivalry.habit_name}</div>
+                    <div className="rivalry-message" style={{ fontSize: 11 }}>{getRivalryMessage()}</div>
+                  </div>
+                  <div className="rivalry-scores">
+                    <div className="rivalry-score-text" style={{ fontSize: 14 }}>
+                      <span style={{ color: colors.green }}>{rivalry.my_score}%</span>
+                      <span style={{ color: colors.textMuted, fontSize: 11 }}> vs </span>
+                      <span style={{ color: '#f97316' }}>{rivalry.opponent_score}%</span>
+                    </div>
+                  </div>
+                  <Icons.chevronRight size={16} color={colors.textMuted} />
+                </div>
+              </div>
+            )}
+
+            {/* Week Strip */}
+            <div className="week-strip">
+              {displayWeekDays.map((day, i) => {
+                const dateStr = day.dateStr || ''
+                const habitStatus = getHabitsStatusForDay(dateStr)
+                // Use displayWeekWorkouts which works for any week offset
+                const dayWorkout = displayWeekWorkouts[i]
+                const hasWorkout = !!dayWorkout
+                const isWorkoutCompleted = dayWorkout?.completed || false
+                const isSelected = i === selectedDayIndex
+
+                return (
+                  <div
+                    key={i}
+                    className={`week-day-cell ${day.isToday ? 'today' : ''} ${isSelected && !day.isToday ? 'selected' : ''}`}
+                    onClick={() => {
+                      // Just select the day - don't navigate away from the current week view
+                      setSelectedDayIndex(i)
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <div className="week-day-name">{day.dayName}</div>
+                    <div className="week-day-date">{day.dayNum}</div>
+                    <div className="week-day-dots">
+                      {hasWorkout && (
+                        <div className={`status-dot workout ${isWorkoutCompleted ? 'completed' : ''} ${day.isToday && !isWorkoutCompleted ? 'today' : ''}`} />
+                      )}
+                      {habits.length > 0 && (
+                        <div className={`status-dot habits ${
+                          habitStatus.completed === habitStatus.total && habitStatus.total > 0 ? 'complete' :
+                            habitStatus.completed > 0 ? 'partial' :
+                              day.isToday ? 'today-empty' : ''
+                        }`} />
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Legend */}
+            <div className="legend">
+              <div className="legend-item">
+                <div className="legend-dot" style={{ background: colors.purple }} />
+                <span className="legend-text">Workout</span>
+              </div>
+              <div className="legend-item">
+                <div className="legend-dot" style={{ background: colors.amber }} />
+                <span className="legend-text">Habits</span>
+              </div>
+              <div className="legend-item">
+                <div className="legend-dot" style={{ background: colors.green }} />
+                <span className="legend-text">Done</span>
+              </div>
+            </div>
+
+            {/* Selected Day's Details */}
+            <div style={{ marginBottom: 16 }}>
+              <div className="section-label">
+                {selectedDayFullName.toUpperCase()}, {selectedMonthName.toUpperCase().slice(0, 3)} {selectedDateNum}
+                {isSelectedDayToday && ' — TODAY'}
+                {isSelectedDayPast && ' — PAST'}
+                {isSelectedDayFuture && ' — UPCOMING'}
+              </div>
+
+              {/* Workout Card */}
+              {selectedDayWorkout ? (
+                <div className="workout-detail-card">
+                  <div className="workout-detail-header">
+                    <span style={{ fontSize: 14 }}>🏋️</span>
+                    <span className="workout-detail-label">WORKOUT</span>
+                    {selectedDayWorkout.completed && (
+                      <span style={{ marginLeft: 'auto', fontSize: 11, color: colors.green, fontWeight: 600 }}>✓ DONE</span>
+                    )}
+                  </div>
+                  <div className="workout-detail-content">
+                    <div className="workout-detail-info">
+                      <div className="workout-detail-title">{selectedDayWorkout.name}</div>
+                      <div className="workout-detail-subtitle">
+                        Week {selectedDayWorkout.week} · {selectedDayWorkout.estimatedDuration} min · {selectedDayWorkout.exerciseCount} exercises
+                      </div>
+                    </div>
+                    {selectedDayWorkout.completed ? (
+                      // Completed workout - just show View button
+                      <Link href={`/workouts/${selectedDayWorkout.id}`}>
+                        <button className="workout-start-btn">View</button>
+                      </Link>
+                    ) : isSelectedDayFuture ? (
+                      // Future workout - show Reschedule only
+                      <button
+                        className="reschedule-btn"
+                        onClick={() => setShowRescheduleModal(true)}
+                      >
+                        Reschedule
+                      </button>
+                    ) : (
+                      // Today or past incomplete workout
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {!isSelectedDayToday && (
+                          <button
+                            className="reschedule-btn"
+                            onClick={() => setShowRescheduleModal(true)}
+                          >
+                            Reschedule
+                          </button>
+                        )}
+                        <Link href={`/workouts/${selectedDayWorkout.id}`}>
+                          <button className="workout-start-btn">
+                            {isSelectedDayToday ? 'Start' : 'View'}
+                          </button>
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Habits Card */}
+              {habits.length > 0 && (
+                <div className="habits-detail-card">
+                  <div className="habits-detail-header">
+                    <div className="habits-detail-label-row">
+                      <span style={{ fontSize: 14 }}>✅</span>
+                      <span className="habits-detail-label">HABITS</span>
+                    </div>
+                    <div className="habits-detail-count">
+                      {selectedDayCompletions.filter(c => c.value !== 0).length}/{habits.length} complete
+                    </div>
+                  </div>
+
+                  {habits.map((habit, i) => {
+                    const template = getHabitTemplate(habit)
+                    const completion = selectedDayCompletions.find(c => c.client_habit_id === habit.id)
+                    const isCompleted = !!completion && completion.value !== 0
+                    const isSkipped = !!completion && completion.value === 0
+                    const icon = template.category ? habitIcons[template.category] : '✓'
+                    const hasRivalry = rivalry && rivalry.habit_name === template.name
+
+                    return (
+                      <div key={habit.id}>
+                        <div className="habit-row" style={{ borderBottom: i < habits.length - 1 ? `1px solid ${colors.border}` : 'none' }}>
+                          <div
+                            className={`habit-checkbox ${isCompleted ? 'completed' : ''} ${isSkipped ? 'skipped' : ''}`}
+                            onClick={() => !isSelectedDayFuture && handleHabitCompleteForDate(habit.id, selectedDay.dateStr)}
+                            style={{ cursor: isSelectedDayFuture ? 'not-allowed' : 'pointer' }}
+                          >
+                            {isCompleted && <Icons.check size={14} color="white" />}
+                            {isSkipped && <span style={{ fontSize: 10, color: 'white' }}>—</span>}
+                          </div>
+                          <span className="habit-icon">{icon}</span>
+                          <span className="habit-name" style={{ textDecoration: isSkipped ? 'line-through' : 'none', opacity: isSkipped ? 0.6 : 1 }}>
+                            {template.name}
+                          </span>
+                          {!isCompleted && !isSkipped && !isSelectedDayFuture && (
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button
+                                className="skip-btn"
+                                onClick={() => setShowSkipModal(habit.id)}
+                              >
+                                Skip
+                              </button>
+                              <button
+                                className="habit-add-btn"
+                                onClick={() => handleHabitCompleteForDate(habit.id, selectedDay.dateStr)}
+                                disabled={loading === habit.id}
+                              >
+                                <Icons.plus size={18} color={colors.textMuted} />
+                              </button>
+                            </div>
+                          )}
+                          {isSkipped && (
+                            <span style={{ fontSize: 11, color: colors.textMuted, fontStyle: 'italic' }}>Skipped</span>
+                          )}
+                        </div>
+                        {hasRivalry && rivalry && (
+                          <div className="calendar-rivalry-badge">
+                            <span style={{ fontSize: 11 }}>⚔️</span>
+                            <span className="calendar-rivalry-text">
+                              vs {rivalry.opponent_name} · {rivalry.my_score}%-{rivalry.opponent_score}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Bottom Navigation */}
+      <nav className="bottom-nav">
+        <div
+          className="nav-item"
+          onClick={() => setActiveView('agenda')}
+        >
+          <Icons.home size={22} color={activeView === 'agenda' ? colors.purple : colors.textMuted} filled={activeView === 'agenda'} />
+          <span className="nav-label" style={{ color: activeView === 'agenda' ? colors.purple : colors.textMuted }}>Home</span>
+        </div>
+        <div
+          className="nav-item"
+          onClick={() => setActiveView('calendar')}
+        >
+          <Icons.calendar size={22} color={activeView === 'calendar' ? colors.purple : colors.textMuted} />
+          <span className="nav-label" style={{ color: activeView === 'calendar' ? colors.purple : colors.textMuted }}>Calendar</span>
+        </div>
+        <Link href="/workouts" className="nav-item">
+          <Icons.dumbbell size={22} color={colors.textMuted} />
+          <span className="nav-label" style={{ color: colors.textMuted }}>Plans</span>
+        </Link>
+        <Link href="/settings" className="nav-item">
+          <Icons.user size={22} color={colors.textMuted} />
+          <span className="nav-label" style={{ color: colors.textMuted }}>Account</span>
+        </Link>
+      </nav>
+
+      {/* Schedule Modal */}
+      {scheduleInfo && (
+        <WorkoutScheduleModal
+          isOpen={showScheduleModal}
+          onClose={() => setShowScheduleModal(false)}
+          assignmentId={scheduleInfo.assignmentId}
+          programName={scheduleInfo.programName}
+          workoutDaysPerWeek={scheduleInfo.workoutDaysPerWeek}
+          currentSchedule={currentSchedule}
+          onSave={(data) => {
+            setCurrentSchedule(data.scheduledDays ?? null)
+            setShowScheduleModal(false)
+          }}
+        />
+      )}
+
+      {/* Skip Habit Modal */}
+      {showSkipModal && (
+        <div className="modal-overlay" onClick={() => setShowSkipModal(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: colors.text }}>Skip Habit?</h3>
+            </div>
+            <p style={{ margin: '12px 0 20px', fontSize: 14, color: colors.textMuted }}>
+              This will mark the habit as skipped for {selectedDayFullName}. Skipped habits don&apos;t count toward your streak.
+            </p>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button
+                onClick={() => setShowSkipModal(null)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: 12,
+                  border: `1px solid ${colors.border}`,
+                  background: 'transparent',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: colors.textSecondary,
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSkipHabit(showSkipModal)}
+                disabled={skippingHabit}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: 12,
+                  border: 'none',
+                  background: colors.amber,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: 'white',
+                  cursor: 'pointer',
+                  opacity: skippingHabit ? 0.5 : 1
+                }}
+              >
+                {skippingHabit ? 'Skipping...' : 'Skip'}
+              </button>
+            </div>
+          </div>
+          <style>{`
+            .modal-overlay {
+              position: fixed;
+              inset: 0;
+              background: rgba(0,0,0,0.5);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              z-index: 1000;
+              padding: 20px;
+            }
+            .modal-content {
+              background: ${colors.bgCard};
+              border-radius: 20px;
+              padding: 24px;
+              width: 100%;
+              max-width: 340px;
+              border: 1px solid ${colors.border};
+            }
+          `}</style>
+        </div>
+      )}
+
+      {/* Reschedule Modal */}
+      {showRescheduleModal && scheduleInfo && (
+        <div className="modal-overlay" onClick={() => setShowRescheduleModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: colors.text }}>Reschedule Workout</h3>
+            </div>
+            <p style={{ margin: '12px 0 20px', fontSize: 14, color: colors.textMuted }}>
+              To reschedule your workouts, update your weekly workout schedule.
+            </p>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button
+                onClick={() => setShowRescheduleModal(false)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: 12,
+                  border: `1px solid ${colors.border}`,
+                  background: 'transparent',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: colors.textSecondary,
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowRescheduleModal(false)
+                  setShowScheduleModal(true)
+                }}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: 12,
+                  border: 'none',
+                  background: `linear-gradient(135deg, ${colors.purple} 0%, ${colors.purpleLight} 100%)`,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: 'white',
+                  cursor: 'pointer'
+                }}
+              >
+                Edit Schedule
+              </button>
+            </div>
+          </div>
+          <style>{`
+            .modal-overlay {
+              position: fixed;
+              inset: 0;
+              background: rgba(0,0,0,0.5);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              z-index: 1000;
+              padding: 20px;
+            }
+            .modal-content {
+              background: ${colors.bgCard};
+              border-radius: 20px;
+              padding: 24px;
+              width: 100%;
+              max-width: 340px;
+              border: 1px solid ${colors.border};
+            }
+          `}</style>
+        </div>
+      )}
     </div>
   )
 }

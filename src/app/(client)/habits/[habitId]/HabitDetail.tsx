@@ -43,7 +43,6 @@ interface HabitDetailProps {
   stats: Stats
   yearData: YearDay[]
   months: Month[]
-  todayCompleted: boolean
 }
 
 // Colors matching the dark dashboard
@@ -91,7 +90,7 @@ function getHabitTemplate(habit: Habit): HabitTemplate {
   return habit.habit_templates
 }
 
-export function HabitDetail({ habit, stats, yearData, months, todayCompleted }: HabitDetailProps) {
+export function HabitDetail({ habit, stats, yearData, months }: HabitDetailProps) {
   const template = getHabitTemplate(habit)
   const category = template.category || 'tracking'
 
