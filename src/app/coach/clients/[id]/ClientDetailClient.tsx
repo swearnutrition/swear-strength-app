@@ -308,13 +308,28 @@ export function ClientDetailClient({
 
     setResetting(true)
     try {
+      const requestBody = JSON.stringify(resetOptions)
+      console.log('Sending reset request:', { clientId: client.id, body: requestBody })
+
       const res = await fetch(`/api/coach/clients/${client.id}/reset`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(resetOptions),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: requestBody,
       })
 
-      const data = await res.json()
+      console.log('Response status:', res.status)
+      const responseText = await res.text()
+      console.log('Response text:', responseText)
+
+      let data
+      try {
+        data = JSON.parse(responseText)
+      } catch {
+        throw new Error(`Server returned invalid JSON: ${responseText.substring(0, 100)}`)
+      }
 
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Failed to reset client')
@@ -326,6 +341,7 @@ export function ClientDetailClient({
       setResetConfirmName('')
       window.location.reload()
     } catch (err) {
+      console.error('Reset error:', err)
       alert(err instanceof Error ? err.message : 'Failed to reset client')
     } finally {
       setResetting(false)
