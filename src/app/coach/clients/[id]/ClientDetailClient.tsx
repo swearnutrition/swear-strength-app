@@ -314,11 +314,13 @@ export function ClientDetailClient({
         body: JSON.stringify(resetOptions),
       })
 
-      if (!res.ok) {
-        const data = await res.json()
+      const data = await res.json()
+
+      if (!res.ok || !data.success) {
         throw new Error(data.error || 'Failed to reset client')
       }
 
+      alert(`Success: ${data.message}`)
       setShowResetModal(false)
       setResetStep(1)
       setResetConfirmName('')
