@@ -204,6 +204,17 @@ export function ClientDetailClient({
   const [selectedProgramId, setSelectedProgramId] = useState<string>('')
   const [programStartDate, setProgramStartDate] = useState(new Date().toISOString().split('T')[0])
 
+  // Reset client state
+  const [showResetModal, setShowResetModal] = useState(false)
+  const [resetStep, setResetStep] = useState<1 | 2>(1)
+  const [resetConfirmName, setResetConfirmName] = useState('')
+  const [resetting, setResetting] = useState(false)
+  const [resetOptions, setResetOptions] = useState({
+    workoutHistory: true,
+    habitHistory: true,
+    unassignProgram: true,
+  })
+
   const activeRivalries = rivalries.filter(r => r.status === 'active' || r.status === 'pending')
   const completedRivalries = rivalries.filter(r => r.status === 'completed' || r.status === 'cancelled')
 
@@ -289,6 +300,47 @@ export function ClientDetailClient({
     }
   }
 
+  const handleResetClient = async () => {
+    if (resetConfirmName.toLowerCase() !== client.name.toLowerCase()) {
+      alert('Name does not match')
+      return
+    }
+
+    setResetting(true)
+    try {
+      const res = await fetch(`/api/coach/clients/${client.id}/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(resetOptions),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to reset client')
+      }
+
+      setShowResetModal(false)
+      setResetStep(1)
+      setResetConfirmName('')
+      window.location.reload()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to reset client')
+    } finally {
+      setResetting(false)
+    }
+  }
+
+  const closeResetModal = () => {
+    setShowResetModal(false)
+    setResetStep(1)
+    setResetConfirmName('')
+    setResetOptions({
+      workoutHistory: true,
+      habitHistory: true,
+      unassignProgram: true,
+    })
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       <div className="max-w-7xl mx-auto px-4 py-6">
@@ -329,6 +381,12 @@ export function ClientDetailClient({
               className="px-4 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-medium rounded-lg transition-colors"
             >
               Assign Habit
+            </button>
+            <button
+              onClick={() => setShowResetModal(true)}
+              className="px-4 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-600 dark:text-red-400 text-sm font-medium rounded-lg transition-colors border border-red-600/20"
+            >
+              Reset Client
             </button>
           </div>
         </div>
@@ -1081,6 +1139,141 @@ export function ClientDetailClient({
                   Create a habit template first
                 </Link>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Reset Client Modal */}
+      {showResetModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-md w-full">
+            {resetStep === 1 ? (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-500/20 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Reset Client Data</h2>
+                </div>
+
+                <p className="text-slate-500 dark:text-slate-400 mb-6">
+                  This action will permanently delete selected data for <strong className="text-slate-900 dark:text-white">{client.name}</strong>. This cannot be undone.
+                </p>
+
+                <div className="space-y-3 mb-6">
+                  <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={resetOptions.workoutHistory}
+                      onChange={(e) => setResetOptions({ ...resetOptions, workoutHistory: e.target.checked })}
+                      className="w-4 h-4 text-red-600 border-slate-300 rounded focus:ring-red-500"
+                    />
+                    <div>
+                      <p className="font-medium text-slate-900 dark:text-white">Delete Workout History</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">All workout logs, set logs, and personal records</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={resetOptions.habitHistory}
+                      onChange={(e) => setResetOptions({ ...resetOptions, habitHistory: e.target.checked })}
+                      className="w-4 h-4 text-red-600 border-slate-300 rounded focus:ring-red-500"
+                    />
+                    <div>
+                      <p className="font-medium text-slate-900 dark:text-white">Delete Habit History</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">All habit completions and streaks</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={resetOptions.unassignProgram}
+                      onChange={(e) => setResetOptions({ ...resetOptions, unassignProgram: e.target.checked })}
+                      className="w-4 h-4 text-red-600 border-slate-300 rounded focus:ring-red-500"
+                    />
+                    <div>
+                      <p className="font-medium text-slate-900 dark:text-white">Unassign Program</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">Remove current program assignment</p>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={closeResetModal}
+                    className="flex-1 py-2.5 px-4 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => setResetStep(2)}
+                    disabled={!resetOptions.workoutHistory && !resetOptions.habitHistory && !resetOptions.unassignProgram}
+                    className="flex-1 py-2.5 px-4 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Continue
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-red-600 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Confirm Reset</h2>
+                </div>
+
+                <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg p-4 mb-6">
+                  <p className="text-red-800 dark:text-red-300 text-sm font-medium mb-2">You are about to:</p>
+                  <ul className="text-red-700 dark:text-red-400 text-sm space-y-1">
+                    {resetOptions.workoutHistory && <li>• Delete all workout history and PRs</li>}
+                    {resetOptions.habitHistory && <li>• Delete all habit completions</li>}
+                    {resetOptions.unassignProgram && <li>• Unassign current program</li>}
+                  </ul>
+                </div>
+
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Type <strong>{client.name}</strong> to confirm
+                  </label>
+                  <input
+                    type="text"
+                    value={resetConfirmName}
+                    onChange={(e) => setResetConfirmName(e.target.value)}
+                    placeholder={client.name}
+                    className="w-full p-3 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    autoComplete="off"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setResetStep(1)
+                      setResetConfirmName('')
+                    }}
+                    className="flex-1 py-2.5 px-4 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={handleResetClient}
+                    disabled={resetConfirmName.toLowerCase() !== client.name.toLowerCase() || resetting}
+                    className="flex-1 py-2.5 px-4 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {resetting ? 'Resetting...' : 'Reset Client'}
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>
