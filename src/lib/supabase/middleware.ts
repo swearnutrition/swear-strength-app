@@ -56,8 +56,8 @@ export async function updateSession(request: NextRequest) {
       .single()
 
     const isCoach = profile?.role === 'coach'
-    const isCoachRoute = pathname.startsWith('/coach')
-    const isClientRoute = !isCoachRoute && !isPublicRoute
+    const isCoachRoute = pathname.startsWith('/coach') || pathname.startsWith('/api/coach')
+    const isClientRoute = !isCoachRoute && !isPublicRoute && !isApiRoute
 
     // Coach trying to access client routes - redirect to coach dashboard
     if (isCoach && isClientRoute && pathname !== '/') {
