@@ -216,11 +216,15 @@ export function ClientDetailClient({
     unassignHabits: true,
   })
 
+  // Unassign program state
+  const [unassigningProgram, setUnassigningProgram] = useState(false)
+  const [currentProgram, setCurrentProgram] = useState(program)
+
   const activeRivalries = rivalries.filter(r => r.status === 'active' || r.status === 'pending')
   const completedRivalries = rivalries.filter(r => r.status === 'completed' || r.status === 'cancelled')
 
   // Determine what assignments this client has
-  const hasWorkouts = !!program
+  const hasWorkouts = !!currentProgram
   const hasHabits = habitStats.length > 0
 
   // Find max volume for chart scaling
@@ -298,6 +302,30 @@ export function ClientDetailClient({
       alert('Failed to assign program')
     } finally {
       setAssigningProgram(false)
+    }
+  }
+
+  const handleUnassignProgram = async () => {
+    if (!confirm(`Unassign "${currentProgram?.name}" from ${client.name}? Their workout history will be preserved.`)) {
+      return
+    }
+
+    setUnassigningProgram(true)
+    try {
+      const res = await fetch(`/api/coach/clients/${client.id}/program`, {
+        method: 'DELETE',
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to unassign program')
+      }
+
+      setCurrentProgram(null)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to unassign program')
+    } finally {
+      setUnassigningProgram(false)
     }
   }
 
@@ -412,16 +440,35 @@ export function ClientDetailClient({
         </div>
 
         {/* Current Program Banner */}
-        {program && (
+        {currentProgram && (
           <div className="mb-6 p-4 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-xl text-white">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-purple-200 text-sm">Current Program</p>
-                <p className="font-semibold text-lg">{program.name}</p>
+                <p className="font-semibold text-lg">{currentProgram.name}</p>
               </div>
-              <div className="text-right">
-                <p className="text-purple-200 text-sm">Week</p>
-                <p className="font-semibold text-2xl">{program.currentWeek}</p>
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <p className="text-purple-200 text-sm">Week</p>
+                  <p className="font-semibold text-2xl">{currentProgram.currentWeek}</p>
+                </div>
+                <button
+                  onClick={handleUnassignProgram}
+                  disabled={unassigningProgram}
+                  className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+                  title="Unassign program"
+                >
+                  {unassigningProgram ? (
+                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  )}
+                </button>
               </div>
             </div>
           </div>
@@ -745,7 +792,7 @@ export function ClientDetailClient({
                 ) : (
                   <div className="text-center py-8">
                     <p className="text-slate-400 dark:text-slate-500">
-                      {!program ? 'No program assigned' : 'No workout data'}
+                      {!currentProgram ? 'No program assigned' : 'No workout data'}
                     </p>
                   </div>
                 )}
@@ -843,7 +890,7 @@ export function ClientDetailClient({
                 ) : (
                   <div className="text-center py-6">
                     <p className="text-slate-400 dark:text-slate-500">
-                      {!program ? 'No program assigned' : 'No workouts logged'}
+                      {!currentProgram ? 'No program assigned' : 'No workouts logged'}
                     </p>
                   </div>
                 )}
@@ -882,7 +929,7 @@ export function ClientDetailClient({
               ) : (
                 <div className="text-center py-6">
                   <p className="text-slate-400 dark:text-slate-500">
-                    {!program ? 'No program assigned' : 'No personal records yet'}
+                    {!currentProgram ? 'No program assigned' : 'No personal records yet'}
                   </p>
                 </div>
               )}
@@ -1066,9 +1113,9 @@ export function ClientDetailClient({
                   />
                 </div>
 
-                {program && (
+                {currentProgram && (
                   <p className="text-amber-600 dark:text-amber-400 text-sm mb-4">
-                    Note: This will replace their current program ({program.name})
+                    Note: This will replace their current program ({currentProgram.name})
                   </p>
                 )}
 
