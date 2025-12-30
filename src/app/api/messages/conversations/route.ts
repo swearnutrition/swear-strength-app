@@ -50,9 +50,10 @@ export async function GET() {
   // Process conversations to include unread count and last message
   const processedConversations = (conversations || []).map((conv) => {
     const messages = conv.messages || []
-    const lastMessage = messages.sort((a: { created_at: string }) =>
-      new Date(a.created_at).getTime()
-    ).reverse()[0]
+    const lastMessage = messages.sort(
+      (a: { created_at: string }, b: { created_at: string }) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
 
     // Unread = messages from client that coach hasn't read
     const unreadCount = messages.filter(
