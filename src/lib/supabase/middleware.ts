@@ -37,9 +37,11 @@ export async function updateSession(request: NextRequest) {
   // Public routes that don't require auth
   const publicRoutes = ['/login', '/invite']
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
+  const isApiRoute = pathname.startsWith('/api')
 
   // If no user and trying to access protected route, redirect to login
-  if (!user && !isPublicRoute) {
+  // API routes should return 401, not redirect (handled by the route itself)
+  if (!user && !isPublicRoute && !isApiRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
