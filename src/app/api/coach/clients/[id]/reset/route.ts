@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 
 export async function POST(
   request: NextRequest,
@@ -18,6 +18,8 @@ export async function POST(
     const { workoutHistory, habitHistory, unassignProgram, unassignHabits } = body
 
     const supabase = await createClient()
+    // Use admin client for deletions to bypass RLS (after verifying permissions)
+    const adminClient = createAdminClient()
 
     // Get current user and verify they're a coach
     const { data: { user } } = await supabase.auth.getUser()
@@ -57,7 +59,8 @@ export async function POST(
 
     if (workoutHistory) {
       // Delete personal records FIRST (they reference set_logs via set_log_id FK)
-      const { error: prsError } = await supabase
+      // Use admin client to bypass RLS
+      const { error: prsError } = await adminClient
         .from('personal_records')
         .delete()
         .eq('user_id', clientId)
@@ -68,7 +71,7 @@ export async function POST(
       }
 
       // Get workout log IDs for deleting set logs
-      const { data: workoutLogs } = await supabase
+      const { data: workoutLogs } = await adminClient
         .from('workout_logs')
         .select('id')
         .eq('user_id', clientId)
@@ -77,7 +80,7 @@ export async function POST(
         const logIds = workoutLogs.map(l => l.id)
 
         // Delete workout completions (references workout_logs)
-        const { error: completionsError } = await supabase
+        const { error: completionsError } = await adminClient
           .from('workout_completions')
           .delete()
           .in('workout_log_id', logIds)
@@ -88,7 +91,7 @@ export async function POST(
         }
 
         // Delete set logs
-        const { error: setLogsError } = await supabase
+        const { error: setLogsError } = await adminClient
           .from('set_logs')
           .delete()
           .in('workout_log_id', logIds)
@@ -100,7 +103,7 @@ export async function POST(
       }
 
       // Delete workout logs
-      const { error: workoutLogsError } = await supabase
+      const { error: workoutLogsError } = await adminClient
         .from('workout_logs')
         .delete()
         .eq('user_id', clientId)
@@ -114,8 +117,8 @@ export async function POST(
     }
 
     if (habitHistory) {
-      // Delete habit completions
-      const { error: habitError } = await supabase
+      // Delete habit completions using admin client to bypass RLS
+      const { error: habitError } = await adminClient
         .from('habit_completions')
         .delete()
         .eq('client_id', clientId)
@@ -129,8 +132,8 @@ export async function POST(
     }
 
     if (unassignProgram) {
-      // Mark active program assignments as inactive
-      const { error: assignmentError } = await supabase
+      // Mark active program assignments as inactive using admin client
+      const { error: assignmentError } = await adminClient
         .from('user_program_assignments')
         .update({ is_active: false })
         .eq('user_id', clientId)
@@ -145,8 +148,8 @@ export async function POST(
     }
 
     if (unassignHabits) {
-      // Mark active habit assignments as inactive (keeps history)
-      const { error: habitsError } = await supabase
+      // Mark active habit assignments as inactive (keeps history) using admin client
+      const { error: habitsError } = await adminClient
         .from('client_habits')
         .update({ is_active: false })
         .eq('client_id', clientId)
