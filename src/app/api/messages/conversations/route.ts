@@ -50,20 +50,24 @@ export async function GET() {
   // Process conversations to include unread count and last message
   const processedConversations = (conversations || []).map((conv) => {
     const messages = conv.messages || []
-    const lastMessage = messages.sort((a, b) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    )[0]
+    const lastMessage = messages.sort((a: { created_at: string }) =>
+      new Date(a.created_at).getTime()
+    ).reverse()[0]
 
     // Unread = messages from client that coach hasn't read
     const unreadCount = messages.filter(
-      (m) => m.sender_id === conv.client_id && !m.read_at && !m.is_deleted
+      (m: { sender_id: string; read_at: string | null; is_deleted: boolean }) =>
+        m.sender_id === conv.client_id && !m.read_at && !m.is_deleted
     ).length
+
+    // Supabase returns joined data as array for foreign key joins
+    const client = Array.isArray(conv.client) ? conv.client[0] : conv.client
 
     return {
       id: conv.id,
       clientId: conv.client_id,
-      clientName: conv.client?.name || 'Unknown',
-      clientAvatar: conv.client?.avatar_url,
+      clientName: client?.name || 'Unknown',
+      clientAvatar: client?.avatar_url,
       lastMessageAt: conv.last_message_at,
       lastMessage: lastMessage ? {
         content: lastMessage.is_deleted ? 'Message deleted' : lastMessage.content,

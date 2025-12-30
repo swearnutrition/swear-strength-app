@@ -61,19 +61,23 @@ export async function GET(
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  const processedMessages = (messages || []).map((m) => ({
-    id: m.id,
-    senderId: m.sender_id,
-    senderName: m.sender?.name || 'Unknown',
-    senderAvatar: m.sender?.avatar_url,
-    senderRole: m.sender?.role,
-    content: m.is_deleted ? null : m.content,
-    contentType: m.content_type,
-    mediaUrl: m.is_deleted ? null : m.media_url,
-    isDeleted: m.is_deleted,
-    readAt: m.read_at,
-    createdAt: m.created_at,
-  }))
+  const processedMessages = (messages || []).map((m) => {
+    // Supabase returns joined data as array for foreign key joins
+    const sender = Array.isArray(m.sender) ? m.sender[0] : m.sender
+    return {
+      id: m.id,
+      senderId: m.sender_id,
+      senderName: sender?.name || 'Unknown',
+      senderAvatar: sender?.avatar_url,
+      senderRole: sender?.role,
+      content: m.is_deleted ? null : m.content,
+      contentType: m.content_type,
+      mediaUrl: m.is_deleted ? null : m.media_url,
+      isDeleted: m.is_deleted,
+      readAt: m.read_at,
+      createdAt: m.created_at,
+    }
+  })
 
   return NextResponse.json({ messages: processedMessages })
 }
