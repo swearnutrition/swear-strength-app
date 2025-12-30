@@ -213,6 +213,7 @@ export function ClientDetailClient({
     workoutHistory: true,
     habitHistory: true,
     unassignProgram: true,
+    unassignHabits: true,
   })
 
   const activeRivalries = rivalries.filter(r => r.status === 'active' || r.status === 'pending')
@@ -356,6 +357,7 @@ export function ClientDetailClient({
       workoutHistory: true,
       habitHistory: true,
       unassignProgram: true,
+      unassignHabits: true,
     })
   }
 
@@ -1220,6 +1222,19 @@ export function ClientDetailClient({
                       <p className="text-sm text-slate-500 dark:text-slate-400">Remove current program assignment</p>
                     </div>
                   </label>
+
+                  <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={resetOptions.unassignHabits}
+                      onChange={(e) => setResetOptions({ ...resetOptions, unassignHabits: e.target.checked })}
+                      className="w-4 h-4 text-red-600 border-slate-300 rounded focus:ring-red-500"
+                    />
+                    <div>
+                      <p className="font-medium text-slate-900 dark:text-white">Unassign Habits</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">Remove all habit assignments (keeps history)</p>
+                    </div>
+                  </label>
                 </div>
 
                 <div className="flex gap-3">
@@ -1231,7 +1246,7 @@ export function ClientDetailClient({
                   </button>
                   <button
                     onClick={() => setResetStep(2)}
-                    disabled={!resetOptions.workoutHistory && !resetOptions.habitHistory && !resetOptions.unassignProgram}
+                    disabled={!resetOptions.workoutHistory && !resetOptions.habitHistory && !resetOptions.unassignProgram && !resetOptions.unassignHabits}
                     className="flex-1 py-2.5 px-4 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Continue
@@ -1255,6 +1270,7 @@ export function ClientDetailClient({
                     {resetOptions.workoutHistory && <li>• Delete all workout history and PRs</li>}
                     {resetOptions.habitHistory && <li>• Delete all habit completions</li>}
                     {resetOptions.unassignProgram && <li>• Unassign current program</li>}
+                    {resetOptions.unassignHabits && <li>• Unassign all habits</li>}
                   </ul>
                 </div>
 

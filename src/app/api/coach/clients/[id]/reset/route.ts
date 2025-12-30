@@ -15,7 +15,7 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
     }
 
-    const { workoutHistory, habitHistory, unassignProgram } = body
+    const { workoutHistory, habitHistory, unassignProgram, unassignHabits } = body
 
     const supabase = await createClient()
 
@@ -142,6 +142,22 @@ export async function POST(
       }
 
       results.push('Unassigned program')
+    }
+
+    if (unassignHabits) {
+      // Mark active habit assignments as inactive (keeps history)
+      const { error: habitsError } = await supabase
+        .from('client_habits')
+        .update({ is_active: false })
+        .eq('client_id', clientId)
+        .eq('is_active', true)
+
+      if (habitsError) {
+        console.error('Error unassigning habits:', habitsError)
+        errors.push(`habits: ${habitsError.message}`)
+      }
+
+      results.push('Unassigned habits')
     }
 
     // If there were any errors, return them
