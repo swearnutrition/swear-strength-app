@@ -128,7 +128,18 @@ export async function POST(
         errors.push(`habit_completions: ${habitError.message}`)
       }
 
-      results.push('Deleted habit completions')
+      // Also delete all client_habits (both active and archived) since we're deleting history
+      const { error: clientHabitsError } = await adminClient
+        .from('client_habits')
+        .delete()
+        .eq('client_id', clientId)
+
+      if (clientHabitsError) {
+        console.error('Error deleting client_habits:', clientHabitsError)
+        errors.push(`client_habits: ${clientHabitsError.message}`)
+      }
+
+      results.push('Deleted habit history and assignments')
     }
 
     if (unassignProgram) {
