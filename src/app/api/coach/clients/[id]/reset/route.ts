@@ -36,10 +36,10 @@ export async function POST(
       return NextResponse.json({ error: 'Only coaches can reset client data' }, { status: 403 })
     }
 
-    // Verify the client exists and belongs to this coach
+    // Verify the client exists and is a client (not a coach)
     const { data: clientProfile } = await supabase
       .from('profiles')
-      .select('id, invited_by')
+      .select('id, role')
       .eq('id', clientId)
       .single()
 
@@ -47,8 +47,8 @@ export async function POST(
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
-    if (clientProfile.invited_by !== user.id) {
-      return NextResponse.json({ error: 'This client does not belong to you' }, { status: 403 })
+    if (clientProfile.role !== 'client') {
+      return NextResponse.json({ error: 'Cannot reset a coach account' }, { status: 403 })
     }
 
     // Perform deletions based on options
