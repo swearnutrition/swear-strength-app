@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 interface ClientHabit {
   id: string
@@ -72,10 +73,45 @@ function getDaysLeft(endDate: string): number {
 }
 
 export function HabitsDashboardClient({
-  clients,
+  clients: initialClients,
   rivalries,
 }: HabitsDashboardClientProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('week')
+  const [clients, setClients] = useState(initialClients)
+  const [unassigning, setUnassigning] = useState<string | null>(null)
+  const router = useRouter()
+
+  const handleUnassignHabit = async (clientHabitId: string, habitName: string) => {
+    if (!confirm(`Unassign "${habitName}"? This will remove the habit from the client but keep their completion history.`)) {
+      return
+    }
+
+    setUnassigning(clientHabitId)
+    try {
+      const res = await fetch(`/api/coach/client-habits/${clientHabitId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: false }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to unassign habit')
+      }
+
+      // Remove the habit from local state
+      setClients(prev => prev.map(client => ({
+        ...client,
+        habits: client.habits.filter(h => h.id !== clientHabitId),
+      })).filter(client => client.habits.length > 0))
+
+      router.refresh()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to unassign habit')
+    } finally {
+      setUnassigning(null)
+    }
+  }
 
   // Generate dates for the view
   const today = new Date()
@@ -386,9 +422,28 @@ export function HabitsDashboardClient({
                     </thead>
                     <tbody>
                       {client.habits.map((habit) => (
-                        <tr key={habit.id}>
-                          <td className="text-xs text-slate-600 dark:text-slate-400 py-1 pr-4 truncate max-w-[120px]">
-                            {habit.name}
+                        <tr key={habit.id} className="group">
+                          <td className="text-xs text-slate-600 dark:text-slate-400 py-1 pr-4 max-w-[120px]">
+                            <div className="flex items-center gap-1">
+                              <span className="truncate">{habit.name}</span>
+                              <button
+                                onClick={() => handleUnassignHabit(habit.id, habit.name)}
+                                disabled={unassigning === habit.id}
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 dark:hover:bg-red-500/20 text-slate-400 hover:text-red-500 transition-all flex-shrink-0"
+                                title="Unassign habit"
+                              >
+                                {unassigning === habit.id ? (
+                                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                ) : (
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
                           </td>
                           {dates.map((date) => {
                             const dateKey = formatDateKey(date)
