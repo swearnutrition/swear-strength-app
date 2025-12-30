@@ -56,7 +56,18 @@ export async function POST(
     const errors: string[] = []
 
     if (workoutHistory) {
-      // Delete set logs first (child records)
+      // Delete personal records FIRST (they reference set_logs via set_log_id FK)
+      const { error: prsError } = await supabase
+        .from('personal_records')
+        .delete()
+        .eq('user_id', clientId)
+
+      if (prsError) {
+        console.error('Error deleting personal_records:', prsError)
+        errors.push(`personal_records: ${prsError.message}`)
+      }
+
+      // Get workout log IDs for deleting set logs
       const { data: workoutLogs } = await supabase
         .from('workout_logs')
         .select('id')
@@ -64,6 +75,19 @@ export async function POST(
 
       if (workoutLogs && workoutLogs.length > 0) {
         const logIds = workoutLogs.map(l => l.id)
+
+        // Delete workout completions (references workout_logs)
+        const { error: completionsError } = await supabase
+          .from('workout_completions')
+          .delete()
+          .in('workout_log_id', logIds)
+
+        if (completionsError) {
+          console.error('Error deleting workout_completions:', completionsError)
+          errors.push(`workout_completions: ${completionsError.message}`)
+        }
+
+        // Delete set logs
         const { error: setLogsError } = await supabase
           .from('set_logs')
           .delete()
@@ -84,17 +108,6 @@ export async function POST(
       if (workoutLogsError) {
         console.error('Error deleting workout_logs:', workoutLogsError)
         errors.push(`workout_logs: ${workoutLogsError.message}`)
-      }
-
-      // Delete personal records
-      const { error: prsError } = await supabase
-        .from('personal_records')
-        .delete()
-        .eq('user_id', clientId)
-
-      if (prsError) {
-        console.error('Error deleting personal_records:', prsError)
-        errors.push(`personal_records: ${prsError.message}`)
       }
 
       results.push('Deleted workout history and personal records')
@@ -119,10 +132,7 @@ export async function POST(
       // Mark active program assignments as inactive
       const { error: assignmentError } = await supabase
         .from('user_program_assignments')
-        .update({
-          is_active: false,
-          completed_at: new Date().toISOString()
-        })
+        .update({ is_active: false })
         .eq('user_id', clientId)
         .eq('is_active', true)
 
