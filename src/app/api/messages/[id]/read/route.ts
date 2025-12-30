@@ -38,7 +38,9 @@ export async function PATCH(
     .single()
 
   const isCoach = profile?.role === 'coach'
-  const conversation = message.conversations as { client_id: string }
+  // Supabase returns joined data as array for foreign key joins
+  const conversationData = Array.isArray(message.conversations) ? message.conversations[0] : message.conversations
+  const conversation = conversationData as { client_id: string }
 
   // Verify access: coach can mark any, client can only mark in their conversation
   if (!isCoach && conversation.client_id !== user.id) {

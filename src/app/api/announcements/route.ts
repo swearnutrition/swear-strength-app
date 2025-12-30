@@ -86,7 +86,9 @@ export async function GET() {
     const processedAnnouncements = (recipients || [])
       .filter((r) => r.announcement)
       .map((r) => {
-        const a = r.announcement as {
+        // Supabase returns joined data as array for foreign key joins
+        const announcement = Array.isArray(r.announcement) ? r.announcement[0] : r.announcement
+        const a = announcement as {
           id: string
           title: string
           content: string
