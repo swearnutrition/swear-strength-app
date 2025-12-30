@@ -57,6 +57,33 @@ export default async function ClientDetailPage({ params }: PageProps) {
     .eq('is_active', true)
     .single()
 
+  // Get archived program assignments (past programs)
+  const { data: archivedAssignments } = await supabase
+    .from('user_program_assignments')
+    .select(`
+      id,
+      started_at,
+      current_week,
+      is_active,
+      program:programs(id, name)
+    `)
+    .eq('user_id', id)
+    .eq('is_active', false)
+    .order('started_at', { ascending: false })
+
+  // Get archived habits
+  const { data: archivedHabits } = await supabase
+    .from('client_habits')
+    .select(`
+      id,
+      start_date,
+      is_active,
+      habit:habit_templates(id, name, category)
+    `)
+    .eq('client_id', id)
+    .eq('is_active', false)
+    .order('start_date', { ascending: false })
+
   // Get workout logs (last 8 weeks for weekly volume chart)
   const eightWeeksAgo = new Date()
   eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56)
@@ -411,6 +438,24 @@ export default async function ClientDetailPage({ params }: PageProps) {
       coachPrograms={(coachPrograms || []).map(p => ({ id: p.id, name: p.name }))}
       habitTemplates={(habitTemplates || []).map(h => ({ id: h.id, name: h.name, category: h.category }))}
       currentUserId={user.id}
+      archivedPrograms={(archivedAssignments || []).map(a => {
+        const prog = Array.isArray(a.program) ? a.program[0] : a.program
+        return {
+          id: a.id,
+          name: prog?.name || 'Unknown Program',
+          startedAt: a.started_at,
+          endedWeek: a.current_week,
+        }
+      })}
+      archivedHabits={(archivedHabits || []).map(h => {
+        const habit = Array.isArray(h.habit) ? h.habit[0] : h.habit
+        return {
+          id: h.id,
+          name: habit?.name || 'Unknown Habit',
+          category: habit?.category || 'lifestyle',
+          startDate: h.start_date,
+        }
+      })}
     />
   )
 }

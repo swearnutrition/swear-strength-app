@@ -100,6 +100,20 @@ interface HabitTemplate {
   category: string
 }
 
+interface ArchivedProgram {
+  id: string
+  name: string
+  startedAt: string
+  endedWeek: number
+}
+
+interface ArchivedHabit {
+  id: string
+  name: string
+  category: string
+  startDate: string
+}
+
 interface ClientDetailClientProps {
   client: Client
   program: Program | null
@@ -113,6 +127,8 @@ interface ClientDetailClientProps {
   coachPrograms: CoachProgram[]
   habitTemplates: HabitTemplate[]
   currentUserId: string
+  archivedPrograms: ArchivedProgram[]
+  archivedHabits: ArchivedHabit[]
 }
 
 const categoryColors: Record<string, string> = {
@@ -193,6 +209,8 @@ export function ClientDetailClient({
   coachPrograms,
   habitTemplates,
   currentUserId,
+  archivedPrograms,
+  archivedHabits,
 }: ClientDetailClientProps) {
   const [volumeTimeframe, setVolumeTimeframe] = useState<'weekly' | 'monthly'>('weekly')
   const [muscleTimeframe, setMuscleTimeframe] = useState<'week' | 'month' | 'year'>('week')
@@ -210,8 +228,8 @@ export function ClientDetailClient({
   const [resetConfirmName, setResetConfirmName] = useState('')
   const [resetting, setResetting] = useState(false)
   const [resetOptions, setResetOptions] = useState({
-    workoutHistory: true,
-    habitHistory: true,
+    workoutHistory: false,
+    habitHistory: false,
     unassignProgram: true,
     unassignHabits: true,
   })
@@ -382,8 +400,8 @@ export function ClientDetailClient({
     setResetStep(1)
     setResetConfirmName('')
     setResetOptions({
-      workoutHistory: true,
-      habitHistory: true,
+      workoutHistory: false,
+      habitHistory: false,
       unassignProgram: true,
       unassignHabits: true,
     })
@@ -1075,6 +1093,73 @@ export function ClientDetailClient({
             </div>
           </div>
         )}
+
+        {/* Archive History Section */}
+        {(archivedPrograms.length > 0 || archivedHabits.length > 0) && (
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+              </svg>
+              <h2 className="font-semibold text-slate-900 dark:text-white">Archive History</h2>
+            </div>
+
+            <div className="space-y-4">
+              {/* Archived Programs */}
+              {archivedPrograms.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Past Programs</p>
+                  <div className="space-y-2">
+                    {archivedPrograms.map((prog) => (
+                      <div
+                        key={prog.id}
+                        className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-500/20 flex items-center justify-center">
+                            <svg className="w-4 h-4 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                            </svg>
+                          </div>
+                          <div>
+                            <p className="font-medium text-slate-900 dark:text-white text-sm">{prog.name}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              Started {new Date(prog.startedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Week {prog.endedWeek}</p>
+                          <p className="text-xs text-slate-400">when archived</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Archived Habits */}
+              {archivedHabits.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Past Habits</p>
+                  <div className="flex flex-wrap gap-2">
+                    {archivedHabits.map((habit) => (
+                      <div
+                        key={habit.id}
+                        className={`px-3 py-1.5 rounded-lg text-sm ${categoryColors[habit.category] || categoryColors.lifestyle}`}
+                      >
+                        <span className="font-medium">{habit.name}</span>
+                        <span className="ml-2 opacity-70 text-xs">
+                          {new Date(habit.startDate).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Assign Program Modal */}
@@ -1227,61 +1312,71 @@ export function ClientDetailClient({
                 </div>
 
                 <p className="text-slate-500 dark:text-slate-400 mb-6">
-                  This action will permanently delete selected data for <strong className="text-slate-900 dark:text-white">{client.name}</strong>. This cannot be undone.
+                  Select actions to perform for <strong className="text-slate-900 dark:text-white">{client.name}</strong>.
                 </p>
 
-                <div className="space-y-3 mb-6">
-                  <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={resetOptions.workoutHistory}
-                      onChange={(e) => setResetOptions({ ...resetOptions, workoutHistory: e.target.checked })}
-                      className="w-4 h-4 text-red-600 border-slate-300 rounded focus:ring-red-500"
-                    />
-                    <div>
-                      <p className="font-medium text-slate-900 dark:text-white">Delete Workout History</p>
-                      <p className="text-sm text-slate-500 dark:text-slate-400">All workout logs, set logs, and personal records</p>
-                    </div>
-                  </label>
+                {/* Archive Section */}
+                <div className="mb-4">
+                  <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Archive (Keeps History)</p>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={resetOptions.unassignProgram}
+                        onChange={(e) => setResetOptions({ ...resetOptions, unassignProgram: e.target.checked })}
+                        className="w-4 h-4 text-purple-600 border-slate-300 rounded focus:ring-purple-500"
+                      />
+                      <div>
+                        <p className="font-medium text-slate-900 dark:text-white">Archive Program</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Move current program to history</p>
+                      </div>
+                    </label>
 
-                  <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={resetOptions.habitHistory}
-                      onChange={(e) => setResetOptions({ ...resetOptions, habitHistory: e.target.checked })}
-                      className="w-4 h-4 text-red-600 border-slate-300 rounded focus:ring-red-500"
-                    />
-                    <div>
-                      <p className="font-medium text-slate-900 dark:text-white">Delete Habit History</p>
-                      <p className="text-sm text-slate-500 dark:text-slate-400">All habit completions and streaks</p>
-                    </div>
-                  </label>
+                    <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={resetOptions.unassignHabits}
+                        onChange={(e) => setResetOptions({ ...resetOptions, unassignHabits: e.target.checked })}
+                        className="w-4 h-4 text-purple-600 border-slate-300 rounded focus:ring-purple-500"
+                      />
+                      <div>
+                        <p className="font-medium text-slate-900 dark:text-white">Archive Habits</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Move all habits to history (keeps completions)</p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
 
-                  <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={resetOptions.unassignProgram}
-                      onChange={(e) => setResetOptions({ ...resetOptions, unassignProgram: e.target.checked })}
-                      className="w-4 h-4 text-red-600 border-slate-300 rounded focus:ring-red-500"
-                    />
-                    <div>
-                      <p className="font-medium text-slate-900 dark:text-white">Unassign Program</p>
-                      <p className="text-sm text-slate-500 dark:text-slate-400">Remove current program assignment</p>
-                    </div>
-                  </label>
+                {/* Permanent Deletion Section */}
+                <div className="mb-6">
+                  <p className="text-xs font-semibold text-red-500 dark:text-red-400 uppercase tracking-wider mb-2">Permanent Deletion</p>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-3 p-3 rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50/50 dark:bg-red-500/5 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={resetOptions.workoutHistory}
+                        onChange={(e) => setResetOptions({ ...resetOptions, workoutHistory: e.target.checked })}
+                        className="w-4 h-4 text-red-600 border-red-300 rounded focus:ring-red-500"
+                      />
+                      <div>
+                        <p className="font-medium text-red-700 dark:text-red-400">Delete Workout History</p>
+                        <p className="text-sm text-red-600/70 dark:text-red-400/70">Permanently delete all workout logs, set logs, and PRs</p>
+                      </div>
+                    </label>
 
-                  <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={resetOptions.unassignHabits}
-                      onChange={(e) => setResetOptions({ ...resetOptions, unassignHabits: e.target.checked })}
-                      className="w-4 h-4 text-red-600 border-slate-300 rounded focus:ring-red-500"
-                    />
-                    <div>
-                      <p className="font-medium text-slate-900 dark:text-white">Unassign Habits</p>
-                      <p className="text-sm text-slate-500 dark:text-slate-400">Remove all habit assignments (keeps history)</p>
-                    </div>
-                  </label>
+                    <label className="flex items-center gap-3 p-3 rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50/50 dark:bg-red-500/5 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={resetOptions.habitHistory}
+                        onChange={(e) => setResetOptions({ ...resetOptions, habitHistory: e.target.checked })}
+                        className="w-4 h-4 text-red-600 border-red-300 rounded focus:ring-red-500"
+                      />
+                      <div>
+                        <p className="font-medium text-red-700 dark:text-red-400">Delete Habit History</p>
+                        <p className="text-sm text-red-600/70 dark:text-red-400/70">Permanently delete all habit completions and streaks</p>
+                      </div>
+                    </label>
+                  </div>
                 </div>
 
                 <div className="flex gap-3">
@@ -1311,14 +1406,25 @@ export function ClientDetailClient({
                   <h2 className="text-xl font-bold text-slate-900 dark:text-white">Confirm Reset</h2>
                 </div>
 
-                <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg p-4 mb-6">
-                  <p className="text-red-800 dark:text-red-300 text-sm font-medium mb-2">You are about to:</p>
-                  <ul className="text-red-700 dark:text-red-400 text-sm space-y-1">
-                    {resetOptions.workoutHistory && <li>• Delete all workout history and PRs</li>}
-                    {resetOptions.habitHistory && <li>• Delete all habit completions</li>}
-                    {resetOptions.unassignProgram && <li>• Unassign current program</li>}
-                    {resetOptions.unassignHabits && <li>• Unassign all habits</li>}
-                  </ul>
+                <div className="space-y-3 mb-6">
+                  {(resetOptions.unassignProgram || resetOptions.unassignHabits) && (
+                    <div className="bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/20 rounded-lg p-4">
+                      <p className="text-purple-800 dark:text-purple-300 text-sm font-medium mb-2">Archive actions:</p>
+                      <ul className="text-purple-700 dark:text-purple-400 text-sm space-y-1">
+                        {resetOptions.unassignProgram && <li>• Archive current program (moves to history)</li>}
+                        {resetOptions.unassignHabits && <li>• Archive all habits (moves to history)</li>}
+                      </ul>
+                    </div>
+                  )}
+                  {(resetOptions.workoutHistory || resetOptions.habitHistory) && (
+                    <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg p-4">
+                      <p className="text-red-800 dark:text-red-300 text-sm font-medium mb-2">Permanent deletions (cannot be undone):</p>
+                      <ul className="text-red-700 dark:text-red-400 text-sm space-y-1">
+                        {resetOptions.workoutHistory && <li>• Delete all workout history and PRs</li>}
+                        {resetOptions.habitHistory && <li>• Delete all habit completions</li>}
+                      </ul>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mb-6">
