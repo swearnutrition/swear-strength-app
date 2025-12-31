@@ -34,3 +34,36 @@ export interface SendMessagePayload {
   contentType: 'text' | 'image' | 'gif' | 'video'
   mediaUrl?: string
 }
+
+// Announcement types
+
+export interface Announcement {
+  id: string
+  title: string
+  content: string
+  isPinned: boolean
+  sendPush: boolean
+  targetType: 'all' | 'selected'
+  createdAt: string
+  readCount: number
+  totalCount: number
+}
+
+export interface ClientAnnouncement {
+  id: string
+  recipientId: string
+  title: string
+  content: string
+  isPinned: boolean
+  createdAt: string
+  readAt: string | null
+}
+
+export interface CreateAnnouncementPayload {
+  title: string
+  content: string
+  isPinned?: boolean
+  sendPush?: boolean
+  targetType: 'all' | 'selected'
+  selectedClientIds?: string[]
+}
