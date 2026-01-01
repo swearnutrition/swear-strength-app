@@ -385,7 +385,7 @@ export function WorkoutSection({
                         </svg>
                       </button>
                     </td>
-                    <td className="py-1 text-slate-400">{e.label || ''}</td>
+                    <td className="py-1 text-slate-400">{e.label || `${String.fromCharCode(65 + i)}1`}</td>
                     <td className="py-1 text-slate-800 dark:text-slate-200 truncate">
                       {e.exercise?.name}
                     </td>
