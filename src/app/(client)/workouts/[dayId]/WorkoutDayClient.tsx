@@ -142,6 +142,7 @@ interface WorkoutDay {
   name: string
   subtitle: string | null
   is_rest_day: boolean
+  cardio_notes: string | null
   workout_exercises: WorkoutExercise[]
 }
 
@@ -442,6 +443,7 @@ export function WorkoutDayClient({
   const [feedbackEnergy, setFeedbackEnergy] = useState<string | null>(null)
   const [feedbackFeeling, setFeedbackFeeling] = useState<number | null>(null)
   const [feedbackNotes, setFeedbackNotes] = useState('')
+  const [feedbackCardioCompleted, setFeedbackCardioCompleted] = useState<boolean | null>(null)
   const [savingFeedback, setSavingFeedback] = useState(false)
 
   // Notes modal state
@@ -724,14 +726,16 @@ export function WorkoutDayClient({
         .update({ completed_at: new Date().toISOString() })
         .eq('id', workoutLog.id)
 
-      // Save feedback if not skipping and at least one field is filled
-      if (!skip && (feedbackDifficulty || feedbackEnergy || feedbackFeeling || feedbackNotes)) {
+      // Save feedback if not skipping and at least one field is filled (or cardio was tracked)
+      const hasCardio = workoutDay.cardio_notes && feedbackCardioCompleted !== null
+      if (!skip && (feedbackDifficulty || feedbackEnergy || feedbackFeeling || feedbackNotes || hasCardio)) {
         await supabase.from('workout_completions').insert({
           workout_log_id: workoutLog.id,
           difficulty_rating: feedbackDifficulty,
           energy_level: feedbackEnergy,
           feeling: feedbackFeeling,
           notes: feedbackNotes || null,
+          cardio_completed: hasCardio ? feedbackCardioCompleted : null,
         })
       }
 
@@ -1606,6 +1610,47 @@ export function WorkoutDayClient({
             </div>
           )
         })}
+
+        {/* Cardio Notes Section */}
+        {workoutDay.cardio_notes && (
+          <div className="space-y-3">
+            {/* Section Header */}
+            <div className="flex items-center gap-3">
+              <div
+                className="flex items-center justify-center w-8 h-8 rounded-lg text-sm"
+                style={{
+                  background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                  boxShadow: '0 4px 14px rgba(249, 115, 22, 0.25)',
+                }}
+              >
+                ⚡
+              </div>
+              <span
+                className="text-sm font-bold uppercase tracking-wide"
+                style={{ color: colors.textSecondary }}
+              >
+                Cardio
+              </span>
+            </div>
+
+            {/* Cardio Card */}
+            <div
+              className="rounded-2xl border p-4"
+              style={{
+                background: colors.bgCard,
+                borderColor: colors.border,
+                boxShadow: colors.shadowSm,
+              }}
+            >
+              <p
+                className="text-sm whitespace-pre-wrap"
+                style={{ color: colors.text }}
+              >
+                {workoutDay.cardio_notes}
+              </p>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Bottom Action Button */}
@@ -1952,6 +1997,45 @@ export function WorkoutDayClient({
                   }}
                 />
               </div>
+
+              {/* Cardio Completion - only show if cardio was prescribed */}
+              {workoutDay.cardio_notes && (
+                <div>
+                  <label className="block text-sm font-semibold mb-3" style={{ color: colors.text }}>
+                    Did you complete your cardio?
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setFeedbackCardioCompleted(true)}
+                      className="py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2"
+                      style={{
+                        background: feedbackCardioCompleted === true
+                          ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                          : colors.bgTertiary,
+                        color: feedbackCardioCompleted === true ? '#fff' : colors.textSecondary,
+                      }}
+                    >
+                      <span>⚡</span> Yes
+                    </button>
+                    <button
+                      onClick={() => setFeedbackCardioCompleted(false)}
+                      className="py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2"
+                      style={{
+                        background: feedbackCardioCompleted === false
+                          ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+                          : colors.bgTertiary,
+                        color: feedbackCardioCompleted === false ? '#fff' : colors.textSecondary,
+                      }}
+                    >
+                      Skipped
+                    </button>
+                  </div>
+                  <p className="text-xs mt-2" style={{ color: colors.textMuted }}>
+                    {workoutDay.cardio_notes.split('\n')[0].substring(0, 50)}
+                    {workoutDay.cardio_notes.length > 50 ? '...' : ''}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Action buttons */}
