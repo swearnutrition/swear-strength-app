@@ -211,15 +211,8 @@ export default async function WorkoutDayPage({ params }: PageProps) {
 
       workoutLog = newLog
     } else {
-      // Reset started_at when resuming an incomplete workout so timer starts fresh
-      const { data: updatedLog } = await supabase
-        .from('workout_logs')
-        .update({ started_at: new Date().toISOString() })
-        .eq('id', activeLog.id)
-        .select()
-        .single()
-
-      workoutLog = updatedLog || activeLog
+      // Keep the original started_at so timer persists across sessions
+      workoutLog = activeLog
     }
   }
 
