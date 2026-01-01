@@ -59,7 +59,7 @@ export default async function ClientDashboard() {
     .from('user_program_assignments')
     .select(`
       *,
-      programs(name, description)
+      programs(name, description, is_indefinite)
     `)
     .eq('user_id', user.id)
     .eq('is_active', true)
@@ -137,12 +137,32 @@ export default async function ClientDashboard() {
       .eq('week_number', assignment.current_week)
       .single()
 
+    // For indefinite programs, get the first week to determine the actual days-per-week pattern
+    const isIndefinite = assignment.programs?.is_indefinite
+    let daysPerWeekPattern = 0
+    if (isIndefinite) {
+      const { data: firstWeek } = await supabase
+        .from('program_weeks')
+        .select(`
+          workout_days(is_rest_day)
+        `)
+        .eq('program_id', assignment.program_id)
+        .eq('week_number', 1)
+        .single()
+
+      if (firstWeek?.workout_days) {
+        daysPerWeekPattern = (firstWeek.workout_days as { is_rest_day: boolean }[])
+          .filter(d => !d.is_rest_day).length
+      }
+    }
+
     if (programWeeks?.workout_days) {
       const weeks = programWeeks as ProgramWeek
       const workoutDays = weeks.workout_days
         .filter(d => !d.is_rest_day)
         .sort((a, b) => a.day_number - b.day_number)
-      workoutDaysCount = workoutDays.length
+      // For indefinite programs, use the first week's pattern; otherwise use current week's count
+      workoutDaysCount = isIndefinite && daysPerWeekPattern > 0 ? daysPerWeekPattern : workoutDays.length
       totalWorkoutsInWeek = workoutDays.length
 
       // Build programWorkoutDays for client to use for future/past weeks
