@@ -26,6 +26,8 @@ interface WorkoutSectionProps {
   onUpdate: (day: WorkoutDay) => void
   supabase: ReturnType<typeof createClient>
   onSaveAsBlock?: (exerciseId: string, exerciseName: string, dayExercises: WorkoutExercise[]) => void
+  onGlobalDragStart?: (exerciseId: string) => void
+  onGlobalDragEnd?: () => void
 }
 
 const sectionConfig = {
@@ -44,6 +46,8 @@ export function WorkoutSection({
   onUpdate,
   supabase,
   onSaveAsBlock,
+  onGlobalDragStart,
+  onGlobalDragEnd,
 }: WorkoutSectionProps) {
   const config = sectionConfig[section]
   const sectionExercises = day.workout_exercises.filter(e => e.section === section)
@@ -242,6 +246,7 @@ export function WorkoutSection({
   // Drag and drop handlers
   const handleDragStart = (id: string) => {
     setDraggedId(id)
+    onGlobalDragStart?.(id)
   }
 
   const handleDragOver = (e: React.DragEvent, id: string) => {
@@ -275,6 +280,7 @@ export function WorkoutSection({
     }
     setDraggedId(null)
     setDragOverId(null)
+    onGlobalDragEnd?.()
   }
 
   // Context menu handlers

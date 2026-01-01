@@ -411,6 +411,8 @@ export function WorkoutCard({
         onUpdate={onUpdate}
         supabase={supabase}
         onSaveAsBlock={onSaveAsBlock}
+        onGlobalDragStart={(exId) => onGlobalDragStart(exId, day.id)}
+        onGlobalDragEnd={onGlobalDragEnd}
       />
       <WorkoutSection
         section="strength"
@@ -422,6 +424,8 @@ export function WorkoutCard({
         onUpdate={onUpdate}
         supabase={supabase}
         onSaveAsBlock={onSaveAsBlock}
+        onGlobalDragStart={(exId) => onGlobalDragStart(exId, day.id)}
+        onGlobalDragEnd={onGlobalDragEnd}
       />
       <WorkoutSection
         section="cooldown"
@@ -433,6 +437,8 @@ export function WorkoutCard({
         onUpdate={onUpdate}
         supabase={supabase}
         onSaveAsBlock={onSaveAsBlock}
+        onGlobalDragStart={(exId) => onGlobalDragStart(exId, day.id)}
+        onGlobalDragEnd={onGlobalDragEnd}
       />
 
       {/* Cardio Notes Section */}
