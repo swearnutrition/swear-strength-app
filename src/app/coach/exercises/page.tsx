@@ -33,6 +33,7 @@ export default function ExerciseLibraryPage() {
   const [activeTab, setActiveTab] = useState<ExerciseType>('strength')
   const [selectedFilter, setSelectedFilter] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [showMissingInfo, setShowMissingInfo] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null)
   const [bulkImportOpen, setBulkImportOpen] = useState(false)
@@ -62,6 +63,17 @@ export default function ExerciseLibraryPage() {
 
   const filterOptions = activeTab === 'strength' ? MUSCLE_GROUPS : MOBILITY_FOCUS_AREAS
 
+  // Helper to check if exercise is missing important info
+  const isMissingInfo = (ex: Exercise) => {
+    if (activeTab === 'strength') {
+      return !ex.primary_muscle || !ex.purpose || !ex.equipment
+    } else {
+      return !ex.focus_area || !ex.purpose
+    }
+  }
+
+  const missingInfoCount = exercises.filter(isMissingInfo).length
+
   const filteredExercises = exercises.filter((ex) => {
     const matchesSearch = ex.name.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesFilter =
@@ -69,7 +81,8 @@ export default function ExerciseLibraryPage() {
       (activeTab === 'strength'
         ? ex.primary_muscle === selectedFilter
         : ex.focus_area === selectedFilter)
-    return matchesSearch && matchesFilter
+    const matchesMissingInfo = !showMissingInfo || isMissingInfo(ex)
+    return matchesSearch && matchesFilter && matchesMissingInfo
   })
 
   const handleDelete = async (id: string) => {
@@ -197,10 +210,32 @@ export default function ExerciseLibraryPage() {
         {/* Filter Pills - Horizontal Scroll */}
         <div className="relative mb-6">
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+            {/* Missing Info Filter */}
+            {missingInfoCount > 0 && (
+              <button
+                onClick={() => {
+                  setShowMissingInfo(!showMissingInfo)
+                  if (!showMissingInfo) setSelectedFilter(null)
+                }}
+                className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-1.5 ${
+                  showMissingInfo
+                    ? 'bg-amber-500 text-white'
+                    : 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 hover:bg-amber-100 dark:hover:bg-amber-500/20'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                Missing Info ({missingInfoCount})
+              </button>
+            )}
             <button
-              onClick={() => setSelectedFilter(null)}
+              onClick={() => {
+                setSelectedFilter(null)
+                setShowMissingInfo(false)
+              }}
               className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                selectedFilter === null
+                selectedFilter === null && !showMissingInfo
                   ? 'bg-purple-600 text-white'
                   : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-transparent'
               }`}
@@ -210,7 +245,10 @@ export default function ExerciseLibraryPage() {
             {filterOptions.map((option) => (
               <button
                 key={option.value}
-                onClick={() => setSelectedFilter(option.value)}
+                onClick={() => {
+                  setSelectedFilter(option.value)
+                  setShowMissingInfo(false)
+                }}
                 className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap ${
                   selectedFilter === option.value
                     ? 'bg-purple-600 text-white'
@@ -322,7 +360,17 @@ function ExerciseCard({
 
   const loggingLabel = LOGGING_TYPES.find((l) => l.value === exercise.logging_type)?.label
 
-  const hasWarning = !exercise.primary_muscle && type === 'strength' || !exercise.focus_area && type === 'mobility'
+  // Build list of missing fields
+  const missingFields: string[] = []
+  if (type === 'strength') {
+    if (!exercise.primary_muscle) missingFields.push('muscle group')
+    if (!exercise.equipment) missingFields.push('equipment')
+  } else {
+    if (!exercise.focus_area) missingFields.push('focus area')
+  }
+  if (!exercise.purpose) missingFields.push('description')
+
+  const hasWarning = missingFields.length > 0
 
   return (
     <div className="bg-white dark:bg-slate-900/50 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-xl p-4 hover:border-slate-300 dark:hover:border-slate-700 transition-all group shadow-sm">
@@ -355,9 +403,11 @@ function ExerciseCard({
             <div>
               <div className="flex items-center gap-2">
                 {hasWarning && (
-                  <svg className="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-label="Missing required info">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
+                  <span title={`Missing: ${missingFields.join(', ')}`}>
+                    <svg className="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </span>
                 )}
                 <h3 className="font-semibold text-slate-900 dark:text-white truncate">{exercise.name}</h3>
               </div>
