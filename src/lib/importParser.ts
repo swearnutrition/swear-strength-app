@@ -26,7 +26,7 @@ export interface ParsedDay {
 }
 
 export interface ParsedExercise {
-  section: 'warmup' | 'strength' | 'cooldown'
+  section: 'warmup' | 'strength' | 'cooldown' | 'cardio'
   label: string | null
   name: string
   sets: string
@@ -70,7 +70,7 @@ function parseSetsReps(val: string): { sets: string; reps: string } {
 }
 
 // Parse exercise line: "A1. Exercise Name | 3x10 | Rest: 60s | RPE: 7 | Note: text"
-function parseExerciseLine(line: string, lineNumber: number, section: 'warmup' | 'strength' | 'cooldown'): ParsedExercise | null {
+function parseExerciseLine(line: string, lineNumber: number, section: 'warmup' | 'strength' | 'cooldown' | 'cardio'): ParsedExercise | null {
   const trimmed = line.trim()
   if (!trimmed) return null
 
@@ -148,7 +148,7 @@ export function parseProgram(text: string): ParsedProgram {
 
   let currentWeek: ParsedWeek | null = null
   let currentDay: ParsedDay | null = null
-  let currentSection: 'warmup' | 'strength' | 'cooldown' | null = null
+  let currentSection: 'warmup' | 'strength' | 'cooldown' | 'cardio' | null = null
   let inRestDay = false
   let restDayNotesLines: string[] = []
 
@@ -257,6 +257,11 @@ export function parseProgram(text: string): ParsedProgram {
     }
     if (trimmed === '[COOLDOWN]') {
       currentSection = 'cooldown'
+      inRestDay = false
+      continue
+    }
+    if (trimmed === '[CARDIO]') {
+      currentSection = 'cardio'
       inRestDay = false
       continue
     }
