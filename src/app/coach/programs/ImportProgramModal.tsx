@@ -125,7 +125,6 @@ export function ImportProgramModal({ isOpen, onClose, onSuccess }: ImportProgram
             .insert({
               name: match.parsedName,
               type: parsed.type,
-              created_by: userData.user.id
             })
             .select()
             .single()
