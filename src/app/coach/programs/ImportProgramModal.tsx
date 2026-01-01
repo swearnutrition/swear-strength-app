@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { parseProgram, getUniqueExerciseNames, type ParsedProgram } from '@/lib/importParser'
-import { matchExercises, allResolved, type ExerciseMatch, type Exercise } from '@/lib/exerciseMatcher'
+import { matchExercises, type ExerciseMatch, type Exercise } from '@/lib/exerciseMatcher'
 
 interface ImportProgramModalProps {
   isOpen: boolean
@@ -106,18 +106,35 @@ export function ImportProgramModal({ isOpen, onClose, onSuccess }: ImportProgram
   }
 
   const handleImport = async () => {
-    if (!parsed || !allResolved(exerciseMatches)) return
+    if (!parsed) return
     setImporting(true)
 
     try {
       const { data: userData } = await supabase.auth.getUser()
       if (!userData.user) throw new Error('Not logged in')
 
-      // Build exercise name to ID map
+      // Build exercise name to ID map, auto-creating unresolved exercises
       const exerciseIdMap = new Map<string, string>()
       for (const match of exerciseMatches) {
         if (match.selectedExerciseId) {
           exerciseIdMap.set(match.parsedName, match.selectedExerciseId)
+        } else if (!match.resolution || match.status === 'unmatched') {
+          // Auto-create unresolved exercises
+          const { data, error } = await supabase
+            .from('exercises')
+            .insert({
+              name: match.parsedName,
+              type: parsed.type,
+              created_by: userData.user.id
+            })
+            .select()
+            .single()
+
+          if (data && !error) {
+            exerciseIdMap.set(match.parsedName, data.id)
+          } else {
+            console.error(`Failed to create exercise: ${match.parsedName}`, error)
+          }
         }
       }
 
@@ -212,7 +229,7 @@ export function ImportProgramModal({ isOpen, onClose, onSuccess }: ImportProgram
 
   if (!isOpen) return null
 
-  const canImport = parsed && parsed.errors.length === 0 && allResolved(exerciseMatches)
+  const canImport = parsed && parsed.errors.length === 0
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
