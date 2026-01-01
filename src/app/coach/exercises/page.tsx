@@ -91,6 +91,12 @@ export default function ExerciseLibraryPage() {
     const { error } = await supabase.from('exercises').delete().eq('id', id)
     if (error) {
       console.error('Error deleting exercise:', error)
+      // Foreign key constraint violation - exercise is in use
+      if (error.code === '23503') {
+        alert('Cannot delete this exercise because it is being used in one or more workout programs. Remove it from all programs first.')
+      } else {
+        alert('Error deleting exercise. It may be in use.')
+      }
     } else {
       fetchExercises()
     }
