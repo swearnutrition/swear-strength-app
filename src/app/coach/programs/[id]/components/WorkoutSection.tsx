@@ -53,6 +53,10 @@ export function WorkoutSection({
   const [focused, setFocused] = useState(false)
   const [showAddRow, setShowAddRow] = useState(false)
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null)
+  const [menuRowId, setMenuRowId] = useState<string | null>(null)
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
+  const [draggedId, setDraggedId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
 
   // Filter templates by section type (warmup templates for warmup section, etc.)
   const sectionTemplates = templates.filter(t =>
@@ -231,7 +235,70 @@ export function WorkoutSection({
     if (!confirm('Delete this exercise?')) return
     await supabase.from('workout_exercises').delete().eq('id', id)
     onUpdate({ ...day, workout_exercises: day.workout_exercises.filter(e => e.id !== id) })
+    setMenuRowId(null)
+    setMenuPosition(null)
   }
+
+  // Drag and drop handlers
+  const handleDragStart = (id: string) => {
+    setDraggedId(id)
+  }
+
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault()
+    if (draggedId && draggedId !== id) {
+      setDragOverId(id)
+    }
+  }
+
+  const handleDragEnd = async () => {
+    if (draggedId && dragOverId && draggedId !== dragOverId) {
+      const fromIdx = sectionExercises.findIndex(e => e.id === draggedId)
+      const toIdx = sectionExercises.findIndex(e => e.id === dragOverId)
+
+      if (fromIdx !== -1 && toIdx !== -1) {
+        // Reorder within section
+        const newSectionExercises = [...sectionExercises]
+        const [moved] = newSectionExercises.splice(fromIdx, 1)
+        newSectionExercises.splice(toIdx, 0, moved)
+
+        // Update sort_order in DB
+        const updates = newSectionExercises.map((e, i) =>
+          supabase.from('workout_exercises').update({ sort_order: i }).eq('id', e.id)
+        )
+        await Promise.all(updates)
+
+        // Update local state - replace section exercises with new order
+        const otherExercises = day.workout_exercises.filter(e => e.section !== section)
+        onUpdate({ ...day, workout_exercises: [...otherExercises, ...newSectionExercises] })
+      }
+    }
+    setDraggedId(null)
+    setDragOverId(null)
+  }
+
+  // Context menu handlers
+  const openMenu = (e: React.MouseEvent, id: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const rect = e.currentTarget.getBoundingClientRect()
+    setMenuPosition({ top: rect.bottom + 4, left: rect.left })
+    setMenuRowId(id)
+  }
+
+  const closeMenu = () => {
+    setMenuRowId(null)
+    setMenuPosition(null)
+  }
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => closeMenu()
+    if (menuRowId) {
+      document.addEventListener('click', handleClickOutside)
+      return () => document.removeEventListener('click', handleClickOutside)
+    }
+  }, [menuRowId])
 
   const isStrength = section === 'strength'
 
@@ -266,6 +333,7 @@ export function WorkoutSection({
           {sectionExercises.length > 0 ? (
             <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
               <colgroup>
+                <col style={{ width: '20px' }} />
                 <col style={{ width: '24px' }} />
                 <col />
                 <col style={{ width: '40px' }} />
@@ -274,10 +342,10 @@ export function WorkoutSection({
                 {isStrength && settings.showEffort && <col style={{ width: '44px' }} />}
                 {isStrength && settings.showRest && <col style={{ width: '48px' }} />}
                 {settings.showNotes && <col style={{ width: '100px' }} />}
-                <col style={{ width: '24px' }} />
               </colgroup>
               <thead>
                 <tr className="text-slate-500">
+                  <th></th>
                   <th className="py-1 text-left">#</th>
                   <th className="py-1 text-left">Exercise</th>
                   <th className="py-1 text-center">Sets</th>
@@ -286,12 +354,29 @@ export function WorkoutSection({
                   {isStrength && settings.showEffort && <th className="py-1 text-center">{settings.effortUnit.toUpperCase()}</th>}
                   {isStrength && settings.showRest && <th className="py-1 text-center">Rest</th>}
                   {settings.showNotes && <th className="py-1 text-left">Notes</th>}
-                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {sectionExercises.map((e, i) => (
-                  <tr key={e.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <tr
+                    key={e.id}
+                    className={`group hover:bg-slate-50 dark:hover:bg-slate-800/50 ${draggedId === e.id ? 'opacity-50' : ''} ${dragOverId === e.id ? 'border-t-2 border-purple-500' : ''}`}
+                    draggable
+                    onDragStart={() => handleDragStart(e.id)}
+                    onDragOver={(ev) => handleDragOver(ev, e.id)}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <td className="py-1">
+                      <button
+                        onClick={(ev) => openMenu(ev, e.id)}
+                        className="p-0.5 text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing"
+                        title="Drag to reorder, click for options"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                        </svg>
+                      </button>
+                    </td>
                     <td className="py-1 text-slate-400">{e.label || i + 1}</td>
                     <td className="py-1 text-slate-800 dark:text-slate-200 truncate">
                       {e.exercise?.name}
@@ -350,21 +435,47 @@ export function WorkoutSection({
                         />
                       </td>
                     )}
-                    <td className="py-1">
-                      <button
-                        onClick={() => deleteEx(e.id)}
-                        className="p-0.5 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100"
-                      >
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           ) : null}
+
+          {/* Context Menu */}
+          {menuRowId && menuPosition && (
+            <div
+              className="fixed bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-50 py-1 min-w-[160px]"
+              style={{ top: menuPosition.top, left: menuPosition.left }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {isStrength && onSaveAsBlock && (
+                <button
+                  onClick={() => {
+                    const exercise = sectionExercises.find(ex => ex.id === menuRowId)
+                    if (exercise) {
+                      onSaveAsBlock(menuRowId, exercise.exercise?.name || '', day.workout_exercises)
+                    }
+                    closeMenu()
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  Save as Block
+                </button>
+              )}
+              <button
+                onClick={() => deleteEx(menuRowId)}
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-red-50 dark:hover:bg-red-500/10 text-red-600 flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Delete
+              </button>
+            </div>
+          )}
 
           {/* Add row / search */}
           {(showAddRow || search || sectionExercises.length === 0) && (
