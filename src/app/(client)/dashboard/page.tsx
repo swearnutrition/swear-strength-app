@@ -137,22 +137,40 @@ export default async function ClientDashboard() {
       .eq('week_number', assignment.current_week)
       .single()
 
-    // For indefinite programs, get the first week to determine the actual days-per-week pattern
+    // For indefinite programs, calculate actual days-per-week
+    // The pattern might span multiple DB weeks (e.g., a 3-day program stored
+    // as week 1 with days 1-3, week 2 with days 1-3, cycling indefinitely)
     const isIndefinite = assignment.programs?.is_indefinite
     let daysPerWeekPattern = 0
     if (isIndefinite) {
-      const { data: firstWeek } = await supabase
+      // Get all weeks to understand the structure
+      const { data: allWeeks } = await supabase
         .from('program_weeks')
         .select(`
-          workout_days(is_rest_day)
+          id,
+          week_number,
+          workout_days(id, day_number, is_rest_day)
         `)
         .eq('program_id', assignment.program_id)
-        .eq('week_number', 1)
-        .single()
+        .order('week_number')
 
-      if (firstWeek?.workout_days) {
-        daysPerWeekPattern = (firstWeek.workout_days as { is_rest_day: boolean }[])
-          .filter(d => !d.is_rest_day).length
+      if (allWeeks && allWeeks.length > 0) {
+        // Check if each week has <=7 days (standard weekly structure)
+        const firstWeek = allWeeks[0]
+        const daysInFirstWeek = (firstWeek.workout_days as { id: string; day_number: number; is_rest_day: boolean }[])
+        const maxDayNumber = Math.max(...daysInFirstWeek.map(d => d.day_number))
+
+        if (maxDayNumber <= 7) {
+          // Standard structure: each DB week = 1 calendar week
+          // Use the first week's workout count as the pattern
+          daysPerWeekPattern = daysInFirstWeek.filter(d => !d.is_rest_day).length
+        } else {
+          // Extended structure: DB week contains multiple calendar weeks
+          // Divide total workout days by how many calendar weeks are represented
+          const calendarWeeksInDB = Math.ceil(maxDayNumber / 7)
+          const workoutDaysInFirstWeek = daysInFirstWeek.filter(d => !d.is_rest_day).length
+          daysPerWeekPattern = Math.round(workoutDaysInFirstWeek / calendarWeeksInDB)
+        }
       }
     }
 
