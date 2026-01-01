@@ -61,6 +61,8 @@ export function WorkoutSection({
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [editingRestId, setEditingRestId] = useState<string | null>(null)
+  const [editingRestValue, setEditingRestValue] = useState('')
 
   // Filter templates by section type (warmup templates for warmup section, etc.)
   const sectionTemplates = templates.filter(t =>
@@ -422,10 +424,19 @@ export function WorkoutSection({
                     {isStrength && settings.showRest && (
                       <td className="py-1">
                         <input
-                          value={formatRestTime(e.rest_seconds)}
+                          value={editingRestId === e.id ? editingRestValue : formatRestTime(e.rest_seconds)}
+                          onFocus={() => {
+                            setEditingRestId(e.id)
+                            setEditingRestValue(formatRestTime(e.rest_seconds))
+                          }}
                           onChange={ev => {
-                            const seconds = parseRestInput(ev.target.value)
+                            setEditingRestValue(ev.target.value)
+                          }}
+                          onBlur={() => {
+                            const seconds = parseRestInput(editingRestValue)
                             updateEx(e.id, 'rest_seconds', seconds)
+                            setEditingRestId(null)
+                            setEditingRestValue('')
                           }}
                           className="w-full text-center bg-transparent focus:outline-none text-slate-700 dark:text-slate-300"
                         />
