@@ -15,6 +15,7 @@ interface WorkoutDay {
   name: string
   subtitle: string | null
   is_rest_day: boolean
+  cardio_notes: string | null
   workout_exercises: { id: string }[]
 }
 
@@ -106,6 +107,7 @@ export default async function ClientDashboard() {
   let totalWorkoutsInWeek = 4 // default
   const scheduledDays = new Set<number>()
   let workoutDaysCount = 0
+  let cardioDaysCount = 0
   const weekWorkouts: Record<number, WeekWorkoutInfo> = {} // Map day index (0-6) to workout
   let programWorkoutDays: Array<{
     id: string
@@ -130,6 +132,7 @@ export default async function ClientDashboard() {
           name,
           subtitle,
           is_rest_day,
+          cardio_notes,
           workout_exercises(id)
         )
       `)
@@ -145,6 +148,11 @@ export default async function ClientDashboard() {
         .sort((a, b) => a.day_number - b.day_number)
       workoutDaysCount = workoutDays.length
       totalWorkoutsInWeek = workoutDays.length
+
+      // Count cardio-only days (have cardio_notes but no exercises)
+      const cardioDays = weeks.workout_days
+        .filter(d => !d.is_rest_day && d.workout_exercises.length === 0 && d.cardio_notes)
+      cardioDaysCount = cardioDays.length
 
       // Build programWorkoutDays for client to use for future/past weeks
       programWorkoutDays = workoutDays.map(d => ({
@@ -472,7 +480,9 @@ export default async function ClientDashboard() {
     assignmentId: assignment.id,
     programName: assignment.programs?.name || 'Your Program',
     workoutDaysPerWeek: workoutDaysCount,
+    cardioDaysPerWeek: cardioDaysCount,
     scheduledDays: assignment.scheduled_days as number[] | null,
+    scheduledCardioDays: assignment.scheduled_cardio_days as number[] | null,
     needsSchedule,
     isFlexibleMode,
   } : null

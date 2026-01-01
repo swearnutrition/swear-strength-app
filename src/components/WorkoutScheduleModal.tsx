@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 
 type ScheduleMode = 'scheduled' | 'flexible'
 type ReminderThreshold = 2 | 3 | 4 | 7 | null
+type Step = 'mode' | 'scheduled' | 'cardio' | 'flexible'
 
 interface WorkoutScheduleModalProps {
   isOpen: boolean
@@ -12,10 +13,12 @@ interface WorkoutScheduleModalProps {
   assignmentId: string
   programName: string
   workoutDaysPerWeek: number
+  cardioDaysPerWeek?: number
   currentSchedule?: number[] | null
+  currentCardioDays?: number[] | null
   currentMode?: ScheduleMode
   currentThreshold?: ReminderThreshold
-  onSave: (data: { mode: ScheduleMode; scheduledDays?: number[]; reminderThreshold?: ReminderThreshold }) => void
+  onSave: (data: { mode: ScheduleMode; scheduledDays?: number[]; scheduledCardioDays?: number[]; reminderThreshold?: ReminderThreshold }) => void
 }
 
 const DAYS_OF_WEEK = [
@@ -42,20 +45,35 @@ export function WorkoutScheduleModal({
   assignmentId,
   programName,
   workoutDaysPerWeek,
+  cardioDaysPerWeek = 0,
   currentSchedule,
+  currentCardioDays,
   currentMode = 'flexible',
   currentThreshold = 3,
   onSave,
 }: WorkoutScheduleModalProps) {
-  const [step, setStep] = useState<'mode' | 'scheduled' | 'flexible'>('mode')
+  const [step, setStep] = useState<Step>('mode')
   const [mode, setMode] = useState<ScheduleMode>(currentMode)
   const [selectedDays, setSelectedDays] = useState<number[]>(currentSchedule || [])
+  const [selectedCardioDays, setSelectedCardioDays] = useState<number[]>(currentCardioDays || [])
   const [reminderThreshold, setReminderThreshold] = useState<ReminderThreshold>(currentThreshold)
   const [saving, setSaving] = useState(false)
   const supabase = createClient()
 
+  const hasCardioDays = cardioDaysPerWeek > 0
+
   const toggleDay = (dayValue: number) => {
     setSelectedDays(prev => {
+      if (prev.includes(dayValue)) {
+        return prev.filter(d => d !== dayValue)
+      } else {
+        return [...prev, dayValue].sort((a, b) => a - b)
+      }
+    })
+  }
+
+  const toggleCardioDay = (dayValue: number) => {
+    setSelectedCardioDays(prev => {
       if (prev.includes(dayValue)) {
         return prev.filter(d => d !== dayValue)
       } else {
@@ -70,7 +88,19 @@ export function WorkoutScheduleModal({
   }
 
   const handleBack = () => {
-    setStep('mode')
+    if (step === 'cardio') {
+      setStep('scheduled')
+    } else {
+      setStep('mode')
+    }
+  }
+
+  const handleNext = () => {
+    if (step === 'scheduled' && hasCardioDays) {
+      setStep('cardio')
+    } else {
+      handleSave()
+    }
   }
 
   const handleSave = async () => {
@@ -83,9 +113,11 @@ export function WorkoutScheduleModal({
 
     if (mode === 'scheduled') {
       updateData.scheduled_days = selectedDays
+      updateData.scheduled_cardio_days = selectedCardioDays.length > 0 ? selectedCardioDays : null
       updateData.reminder_threshold = 7 // Backup threshold for scheduled mode
     } else {
       updateData.scheduled_days = null
+      updateData.scheduled_cardio_days = null
       updateData.reminder_threshold = reminderThreshold
     }
 
@@ -100,6 +132,7 @@ export function WorkoutScheduleModal({
       onSave({
         mode,
         scheduledDays: mode === 'scheduled' ? selectedDays : undefined,
+        scheduledCardioDays: mode === 'scheduled' && selectedCardioDays.length > 0 ? selectedCardioDays : undefined,
         reminderThreshold: mode === 'flexible' ? reminderThreshold : undefined,
       })
       onClose()
@@ -109,6 +142,16 @@ export function WorkoutScheduleModal({
   if (!isOpen) return null
 
   const isMinimumMet = selectedDays.length >= workoutDaysPerWeek
+  const isCardioMinimumMet = selectedCardioDays.length >= cardioDaysPerWeek
+
+  const getTitle = () => {
+    switch (step) {
+      case 'mode': return 'Set Up Your Schedule'
+      case 'scheduled': return 'Pick Your Workout Days'
+      case 'cardio': return 'Pick Your Cardio Days'
+      case 'flexible': return 'Reminder Preferences'
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -117,14 +160,24 @@ export function WorkoutScheduleModal({
         {/* Header */}
         <div className="px-6 py-5 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-purple-100 dark:bg-purple-500/20 flex items-center justify-center">
-              <svg className="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+              step === 'cardio'
+                ? 'bg-orange-100 dark:bg-orange-500/20'
+                : 'bg-purple-100 dark:bg-purple-500/20'
+            }`}>
+              {step === 'cardio' ? (
+                <svg className="w-6 h-6 text-orange-600 dark:text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              )}
             </div>
             <div>
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                {step === 'mode' ? 'Set Up Your Schedule' : step === 'scheduled' ? 'Pick Your Days' : 'Reminder Preferences'}
+                {getTitle()}
               </h2>
               <p className="text-sm text-slate-500">{programName}</p>
             </div>
@@ -184,7 +237,7 @@ export function WorkoutScheduleModal({
           {step === 'scheduled' && (
             <div className="space-y-5">
               <p className="text-slate-600 dark:text-slate-400 text-sm">
-                Which days do you want to work out? Select at least {workoutDaysPerWeek} day{workoutDaysPerWeek !== 1 ? 's' : ''}.
+                Which days will you do your <span className="font-medium text-purple-600 dark:text-purple-400">strength workouts</span>? Select at least {workoutDaysPerWeek} day{workoutDaysPerWeek !== 1 ? 's' : ''}.
               </p>
 
               {/* Day selector */}
@@ -244,6 +297,79 @@ export function WorkoutScheduleModal({
                     Get a reminder if you miss a scheduled day
                   </li>
                 </ul>
+              </div>
+            </div>
+          )}
+
+          {step === 'cardio' && (
+            <div className="space-y-5">
+              <p className="text-slate-600 dark:text-slate-400 text-sm">
+                Which days will you do <span className="font-medium text-orange-600 dark:text-orange-400">cardio</span>? Select at least {cardioDaysPerWeek} day{cardioDaysPerWeek !== 1 ? 's' : ''}.
+              </p>
+
+              {/* Day selector - show which days are already selected for strength */}
+              <div className="grid grid-cols-7 gap-2">
+                {DAYS_OF_WEEK.map(day => {
+                  const isStrengthDay = selectedDays.includes(day.value)
+                  const isCardioSelected = selectedCardioDays.includes(day.value)
+                  return (
+                    <button
+                      key={day.value}
+                      onClick={() => toggleCardioDay(day.value)}
+                      className={`flex flex-col items-center py-3 rounded-xl transition-all relative ${
+                        isCardioSelected
+                          ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30'
+                          : isStrengthDay
+                            ? 'bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-500/30'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      <span className="text-xs font-medium">{day.label}</span>
+                      {isStrengthDay && !isCardioSelected && (
+                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-purple-500 rounded-full" />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Legend */}
+              <div className="flex items-center gap-4 text-xs text-slate-500">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 bg-purple-500 rounded-full" />
+                  <span>Strength day</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 bg-orange-500 rounded" />
+                  <span>Cardio day</span>
+                </div>
+              </div>
+
+              {/* Selected count */}
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500 dark:text-slate-400">
+                  {selectedCardioDays.length} cardio day{selectedCardioDays.length !== 1 ? 's' : ''} selected
+                </span>
+                {selectedCardioDays.length > 0 && selectedCardioDays.length < cardioDaysPerWeek && (
+                  <span className="text-amber-600 dark:text-amber-400">
+                    Need {cardioDaysPerWeek - selectedCardioDays.length} more
+                  </span>
+                )}
+                {isCardioMinimumMet && (
+                  <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Good to go!
+                  </span>
+                )}
+              </div>
+
+              {/* Info callout */}
+              <div className="bg-orange-50 dark:bg-orange-500/10 rounded-xl p-4">
+                <p className="text-sm text-orange-700 dark:text-orange-400">
+                  Cardio days will appear on your calendar. You can do cardio on the same day as strength training if you want!
+                </p>
               </div>
             </div>
           )}
@@ -320,11 +446,15 @@ export function WorkoutScheduleModal({
                 Back
               </button>
               <button
-                onClick={handleSave}
-                disabled={(step === 'scheduled' && selectedDays.length === 0) || saving}
+                onClick={handleNext}
+                disabled={
+                  (step === 'scheduled' && !isMinimumMet) ||
+                  (step === 'cardio' && !isCardioMinimumMet) ||
+                  saving
+                }
                 className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-3 rounded-xl transition-all"
               >
-                {saving ? 'Saving...' : 'Save'}
+                {saving ? 'Saving...' : step === 'scheduled' && hasCardioDays ? 'Next' : 'Save'}
               </button>
             </>
           )}

@@ -93,7 +93,9 @@ interface ScheduleInfo {
   assignmentId: string
   programName: string
   workoutDaysPerWeek: number
+  cardioDaysPerWeek: number
   scheduledDays: number[] | null
+  scheduledCardioDays: number[] | null
   needsSchedule: boolean
   isFlexibleMode?: boolean
 }
@@ -1875,7 +1877,9 @@ export function DashboardClient({
           assignmentId={scheduleInfo.assignmentId}
           programName={scheduleInfo.programName}
           workoutDaysPerWeek={scheduleInfo.workoutDaysPerWeek}
+          cardioDaysPerWeek={scheduleInfo.cardioDaysPerWeek}
           currentSchedule={currentSchedule}
+          currentCardioDays={scheduleInfo.scheduledCardioDays}
           onSave={(data) => {
             setCurrentSchedule(data.scheduledDays ?? null)
             setShowScheduleModal(false)
