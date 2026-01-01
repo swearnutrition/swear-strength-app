@@ -269,15 +269,16 @@ export function WorkoutSection({
         const [moved] = newSectionExercises.splice(fromIdx, 1)
         newSectionExercises.splice(toIdx, 0, moved)
 
-        // Update sort_order in DB
+        // Update sort_order and clear labels in DB (let auto-generate handle labels)
         const updates = newSectionExercises.map((e, i) =>
-          supabase.from('workout_exercises').update({ sort_order: i }).eq('id', e.id)
+          supabase.from('workout_exercises').update({ sort_order: i, label: null }).eq('id', e.id)
         )
         await Promise.all(updates)
 
-        // Update local state - replace section exercises with new order
+        // Update local state - clear labels and replace section exercises with new order
+        const updatedSectionExercises = newSectionExercises.map(e => ({ ...e, label: null }))
         const otherExercises = day.workout_exercises.filter(e => e.section !== section)
-        onUpdate({ ...day, workout_exercises: [...otherExercises, ...newSectionExercises] })
+        onUpdate({ ...day, workout_exercises: [...otherExercises, ...updatedSectionExercises] })
       }
     }
     setDraggedId(null)
