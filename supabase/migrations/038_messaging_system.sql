@@ -5,7 +5,7 @@
 -- CONVERSATIONS TABLE
 -- ============================================
 CREATE TABLE IF NOT EXISTS conversations (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   last_message_at TIMESTAMPTZ DEFAULT NOW(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -71,7 +71,7 @@ CREATE POLICY "Clients can update own conversation"
 -- MESSAGES TABLE
 -- ============================================
 CREATE TABLE IF NOT EXISTS messages (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   sender_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   content TEXT,
@@ -152,7 +152,7 @@ CREATE POLICY "Users can delete own messages"
 -- ANNOUNCEMENTS TABLE
 -- ============================================
 CREATE TABLE IF NOT EXISTS announcements (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
   content TEXT NOT NULL,
   is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
@@ -196,7 +196,7 @@ CREATE POLICY "Clients can view announcements"
 -- ANNOUNCEMENT RECIPIENTS TABLE
 -- ============================================
 CREATE TABLE IF NOT EXISTS announcement_recipients (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   announcement_id UUID NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
   client_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   read_at TIMESTAMPTZ,
@@ -241,7 +241,7 @@ CREATE POLICY "Clients can update own announcement recipients"
 -- PUSH SUBSCRIPTIONS TABLE
 -- ============================================
 CREATE TABLE IF NOT EXISTS push_subscriptions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   endpoint TEXT NOT NULL,
   keys JSONB NOT NULL,
