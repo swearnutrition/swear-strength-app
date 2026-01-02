@@ -19,16 +19,18 @@ export function GifPicker({ isOpen, onClose, onSelect }: GifPickerProps) {
   const [gifs, setGifs] = useState<Gif[]>([])
   const [loading, setLoading] = useState(false)
 
+  const apiKey = process.env.NEXT_PUBLIC_GIPHY_API_KEY
+
   // Search GIFs using Giphy
   const searchGifs = async (query: string) => {
-    if (!query.trim()) {
+    if (!query.trim() || !apiKey) {
       setGifs([])
       return
     }
     setLoading(true)
     try {
       const res = await fetch(
-        `https://api.giphy.com/v1/gifs/search?api_key=${process.env.NEXT_PUBLIC_GIPHY_API_KEY || 'dc6zaTOxFJmzC'}&q=${encodeURIComponent(query)}&limit=12&rating=pg`
+        `https://api.giphy.com/v1/gifs/search?api_key=${apiKey}&q=${encodeURIComponent(query)}&limit=12&rating=pg`
       )
       const data = await res.json()
       setGifs(
@@ -47,10 +49,14 @@ export function GifPicker({ isOpen, onClose, onSelect }: GifPickerProps) {
 
   // Load trending GIFs on open
   const loadTrending = async () => {
+    if (!apiKey) {
+      setGifs([])
+      return
+    }
     setLoading(true)
     try {
       const res = await fetch(
-        `https://api.giphy.com/v1/gifs/trending?api_key=${process.env.NEXT_PUBLIC_GIPHY_API_KEY || 'dc6zaTOxFJmzC'}&limit=12&rating=pg`
+        `https://api.giphy.com/v1/gifs/trending?api_key=${apiKey}&limit=12&rating=pg`
       )
       const data = await res.json()
       setGifs(
@@ -116,6 +122,11 @@ export function GifPicker({ isOpen, onClose, onSelect }: GifPickerProps) {
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
           </div>
+        ) : !apiKey ? (
+          <p className="text-center text-slate-500 py-8 text-sm">
+            GIF search not configured.<br />
+            <span className="text-xs">Add NEXT_PUBLIC_GIPHY_API_KEY to .env.local</span>
+          </p>
         ) : gifs.length > 0 ? (
           <div className="grid grid-cols-3 gap-2">
             {gifs.map((gif) => (

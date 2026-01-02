@@ -149,11 +149,16 @@ export function RivalryDetailClient({
       setGifs([])
       return
     }
+    const giphyKey = process.env.NEXT_PUBLIC_GIPHY_API_KEY
+    if (!giphyKey) {
+      console.error('NEXT_PUBLIC_GIPHY_API_KEY not configured')
+      setLoadingGifs(false)
+      return
+    }
     setLoadingGifs(true)
     try {
-      // Using Giphy's public beta key for demo - in production use your own
       const res = await fetch(
-        `https://api.giphy.com/v1/gifs/search?api_key=dc6zaTOxFJmzC&q=${encodeURIComponent(query)}&limit=12&rating=pg`
+        `https://api.giphy.com/v1/gifs/search?api_key=${giphyKey}&q=${encodeURIComponent(query)}&limit=12&rating=pg`
       )
       const data = await res.json()
       setGifs(

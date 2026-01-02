@@ -157,6 +157,7 @@ export async function POST(request: NextRequest) {
       is_pinned: isPinned,
       send_push: sendPush,
       target_type: targetType,
+      created_by: user.id,
     })
     .select('id, title, content, is_pinned, send_push, target_type, created_at')
     .single()

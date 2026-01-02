@@ -43,9 +43,17 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
     if (showNewConversation) {
       setLoadingClients(true)
       fetch('/api/coach/clients')
-        .then((res) => res.json())
-        .then((data) => setClients(data.clients || []))
-        .catch(console.error)
+        .then((res) => {
+          if (!res.ok) {
+            throw new Error(`Failed to fetch clients: ${res.status}`)
+          }
+          return res.json()
+        })
+        .then((data) => {
+          console.log('Fetched clients:', data)
+          setClients(data.clients || [])
+        })
+        .catch((err) => console.error('Error fetching clients:', err))
         .finally(() => setLoadingClients(false))
     }
   }, [showNewConversation])
@@ -62,14 +70,19 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId }),
       })
-      if (res.ok) {
-        const data = await res.json()
+      const data = await res.json()
+      console.log('Create conversation response:', res.status, data)
+      if (res.ok && data.conversation) {
         await refetch()
         setSelectedConversationId(data.conversation.id)
         setShowNewConversation(false)
+      } else {
+        console.error('Failed to create conversation:', data.error || 'Unknown error')
+        alert(`Failed to create conversation: ${data.error || 'Unknown error'}`)
       }
     } catch (error) {
       console.error('Error creating conversation:', error)
+      alert(`Error creating conversation: ${error}`)
     } finally {
       setCreatingConversation(false)
     }
@@ -161,6 +174,10 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
         <div className="space-y-2">
           {loadingClients ? (
             <div className="text-center py-8 text-slate-500">Loading clients...</div>
+          ) : clients.length === 0 ? (
+            <div className="text-center py-8 text-slate-500">
+              <p>No clients found</p>
+            </div>
           ) : clientsWithoutConversation.length === 0 ? (
             <div className="text-center py-8 text-slate-500">
               <p>All clients already have conversations</p>

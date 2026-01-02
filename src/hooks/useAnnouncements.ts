@@ -82,15 +82,20 @@ export function useAnnouncements(isCoach: boolean): UseAnnouncementsReturn {
         body: JSON.stringify(payload),
       })
 
+      const data = await res.json()
+      console.log('Create announcement response:', res.status, data)
+
       if (!res.ok) {
-        throw new Error('Failed to create announcement')
+        console.error('Failed to create announcement:', data.error || 'Unknown error')
+        alert(`Failed to create announcement: ${data.error || 'Unknown error'}`)
+        return null
       }
 
-      const data = await res.json()
       await fetchAnnouncements()
       return data.announcement
     } catch (err) {
       console.error('Error creating announcement:', err)
+      alert(`Error creating announcement: ${err}`)
       return null
     }
   }
