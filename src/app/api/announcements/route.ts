@@ -1,5 +1,6 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { sendPushToUsers } from '@/lib/push-server'
 
 // GET /api/announcements - List announcements
 export async function GET() {
@@ -194,6 +195,19 @@ export async function POST(request: NextRequest) {
     if (recipientError) {
       console.error('Error creating recipients:', recipientError)
       // Don't fail the whole request, announcement is created
+    }
+
+    // Send push notifications if enabled
+    if (sendPush) {
+      sendPushToUsers(clientIds, {
+        title: title,
+        body: content.length > 100 ? content.substring(0, 100) + '...' : content,
+        url: '/dashboard',
+      }).then(({ sent, failed }) => {
+        console.log(`Push notifications: ${sent} sent, ${failed} failed`)
+      }).catch((err) => {
+        console.error('Error sending push notifications:', err)
+      })
     }
   }
 

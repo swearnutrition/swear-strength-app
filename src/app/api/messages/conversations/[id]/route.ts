@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { sendPushToUsers } from '@/lib/push-server'
 
 // GET /api/messages/conversations/[id] - Get messages for a conversation
 export async function GET(
@@ -156,6 +157,24 @@ export async function POST(
     .from('conversations')
     .update({ last_message_at: message.created_at })
     .eq('id', id)
+
+  // Send push notification to the recipient
+  // Coach messages go to client, client messages go to coach
+  const recipientId = isCoach ? conversation.client_id : null
+  if (recipientId) {
+    // Only send push when coach messages client
+    const messagePreview = contentType === 'text'
+      ? (content.length > 50 ? content.substring(0, 50) + '...' : content)
+      : contentType === 'gif' ? 'Sent a GIF' : `Sent ${contentType}`
+
+    sendPushToUsers([recipientId], {
+      title: `Message from ${profile?.name || 'Coach'}`,
+      body: messagePreview,
+      url: '/messages',
+    }).catch((err) => {
+      console.error('Error sending message push:', err)
+    })
+  }
 
   return NextResponse.json({
     message: {
