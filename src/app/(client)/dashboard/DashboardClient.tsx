@@ -1998,9 +1998,9 @@ export function DashboardClient({
           <Icons.calendar size={22} color={activeView === 'calendar' ? colors.purple : colors.textMuted} />
           <span className="nav-label" style={{ color: activeView === 'calendar' ? colors.purple : colors.textMuted }}>Calendar</span>
         </div>
-        <Link href="/messages" className="nav-item">
-          <Icons.chat size={22} color={colors.textMuted} />
-          <span className="nav-label" style={{ color: colors.textMuted }}>Messages</span>
+        <Link href="/workouts" className="nav-item">
+          <Icons.dumbbell size={22} color={colors.textMuted} />
+          <span className="nav-label" style={{ color: colors.textMuted }}>Plans</span>
         </Link>
         <Link href="/settings" className="nav-item">
           <Icons.user size={22} color={colors.textMuted} />

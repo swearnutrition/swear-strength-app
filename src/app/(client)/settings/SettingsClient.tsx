@@ -226,22 +226,35 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushLoading, setPushLoading] = useState(true)
   const [pushSupported, setPushSupported] = useState(true)
+  const [pushError, setPushError] = useState<string | null>(null)
 
   // Check push notification status on mount
   useEffect(() => {
     const checkPushStatus = async () => {
+      // Check basic support
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
         setPushSupported(false)
         setPushLoading(false)
         return
       }
 
+      // Check if Notification API exists
+      if (!('Notification' in window)) {
+        setPushSupported(false)
+        setPushLoading(false)
+        return
+      }
+
       try {
+        // Wait for service worker to be ready
+        const registration = await navigator.serviceWorker.ready
         const permission = await checkPushPermission()
+
         if (permission === 'granted') {
-          const registration = await navigator.serviceWorker.ready
           const subscription = await registration.pushManager.getSubscription()
           setPushEnabled(!!subscription)
+        } else if (permission === 'denied') {
+          setPushError('Notifications are blocked. Enable them in your browser settings.')
         }
       } catch (err) {
         console.error('Error checking push status:', err)
@@ -253,19 +266,31 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
 
   const handleTogglePush = async () => {
     setPushLoading(true)
+    setPushError(null)
     try {
       if (pushEnabled) {
         await unsubscribeFromPushNotifications()
         setPushEnabled(false)
       } else {
+        // First request permission
         const granted = await requestPushPermission()
-        if (granted) {
-          const subscription = await subscribeToPushNotifications()
-          setPushEnabled(!!subscription)
+        if (!granted) {
+          setPushError('Permission denied. Enable notifications in browser settings.')
+          setPushLoading(false)
+          return
+        }
+
+        // Then subscribe
+        const subscription = await subscribeToPushNotifications()
+        if (subscription) {
+          setPushEnabled(true)
+        } else {
+          setPushError('Failed to enable notifications. Try refreshing the page.')
         }
       }
     } catch (err) {
       console.error('Error toggling push notifications:', err)
+      setPushError('Something went wrong. Please try again.')
     }
     setPushLoading(false)
   }
@@ -1025,6 +1050,13 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
                 style={{ opacity: pushLoading ? 0.5 : 1, cursor: pushLoading ? 'wait' : 'pointer' }}
               />
             </div>
+            {pushError && (
+              <div style={{ padding: '12px 16px', borderTop: `1px solid ${colors.border}` }}>
+                <p style={{ margin: 0, fontSize: 12, color: colors.red, lineHeight: 1.5 }}>
+                  {pushError}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
