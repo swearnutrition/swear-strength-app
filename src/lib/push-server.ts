@@ -5,7 +5,9 @@ import { createAdminClient } from '@/lib/supabase/server'
 // Initialize web-push with VAPID keys
 const vapidPublicKey = process.env.VAPID_PUBLIC_KEY
 const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY
-const vapidSubject = process.env.VAPID_SUBJECT || 'mailto:noreply@swearstrength.com'
+// Ensure vapid subject has mailto: prefix
+const rawVapidSubject = process.env.VAPID_SUBJECT || 'noreply@swearstrength.com'
+const vapidSubject = rawVapidSubject.startsWith('mailto:') ? rawVapidSubject : `mailto:${rawVapidSubject}`
 
 if (vapidPublicKey && vapidPrivateKey) {
   webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey)
