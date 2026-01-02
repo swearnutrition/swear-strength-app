@@ -10,6 +10,7 @@ interface MessageThreadProps {
   onDeleteMessage?: (messageId: string) => void
   onMarkAsRead?: (messageId: string) => void
   isCoach: boolean
+  showSenderName?: boolean
 }
 
 export function MessageThread({
@@ -18,6 +19,7 @@ export function MessageThread({
   onDeleteMessage,
   onMarkAsRead,
   isCoach,
+  showSenderName = false,
 }: MessageThreadProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -98,6 +100,7 @@ export function MessageThread({
                 message={message}
                 isOwnMessage={message.senderId === currentUserId}
                 showAvatar={shouldShowAvatar(group.messages, index)}
+                showSenderName={showSenderName && message.senderId !== currentUserId && shouldShowAvatar(group.messages, index)}
                 onDelete={onDeleteMessage}
               />
             ))}

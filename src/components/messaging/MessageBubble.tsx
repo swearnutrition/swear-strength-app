@@ -8,10 +8,11 @@ interface MessageBubbleProps {
   message: Message
   isOwnMessage: boolean
   showAvatar: boolean
+  showSenderName?: boolean
   onDelete?: (messageId: string) => void
 }
 
-export function MessageBubble({ message, isOwnMessage, showAvatar, onDelete }: MessageBubbleProps) {
+export function MessageBubble({ message, isOwnMessage, showAvatar, showSenderName = false, onDelete }: MessageBubbleProps) {
   const [showMenu, setShowMenu] = useState(false)
 
   const formatTime = (dateStr: string) => {
@@ -47,6 +48,10 @@ export function MessageBubble({ message, isOwnMessage, showAvatar, onDelete }: M
 
       {/* Message content */}
       <div className="max-w-[70%] relative">
+        {/* Sender name for group chats */}
+        {showSenderName && !isOwnMessage && (
+          <p className="text-xs text-purple-400 mb-1 ml-1 font-medium">{message.senderName}</p>
+        )}
         <div
           className={`
             rounded-2xl overflow-hidden
