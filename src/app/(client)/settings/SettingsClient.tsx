@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
 import { useColors } from '@/hooks/useColors'
+import { subscribeToPushNotifications, unsubscribeFromPushNotifications, checkPushPermission, requestPushPermission } from '@/lib/push-notifications'
 
 type WeightUnit = 'lbs' | 'kg'
 
@@ -195,6 +196,12 @@ const Icons = {
       <polyline points="22,6 12,13 2,6"/>
     </svg>
   ),
+  bell: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+      <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+    </svg>
+  ),
 }
 
 export function SettingsClient({ profile, coachName, userEmail }: SettingsClientProps) {
@@ -216,6 +223,52 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
   const [signingOut, setSigningOut] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
+  const [pushEnabled, setPushEnabled] = useState(false)
+  const [pushLoading, setPushLoading] = useState(true)
+  const [pushSupported, setPushSupported] = useState(true)
+
+  // Check push notification status on mount
+  useEffect(() => {
+    const checkPushStatus = async () => {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        setPushSupported(false)
+        setPushLoading(false)
+        return
+      }
+
+      try {
+        const permission = await checkPushPermission()
+        if (permission === 'granted') {
+          const registration = await navigator.serviceWorker.ready
+          const subscription = await registration.pushManager.getSubscription()
+          setPushEnabled(!!subscription)
+        }
+      } catch (err) {
+        console.error('Error checking push status:', err)
+      }
+      setPushLoading(false)
+    }
+    checkPushStatus()
+  }, [])
+
+  const handleTogglePush = async () => {
+    setPushLoading(true)
+    try {
+      if (pushEnabled) {
+        await unsubscribeFromPushNotifications()
+        setPushEnabled(false)
+      } else {
+        const granted = await requestPushPermission()
+        if (granted) {
+          const subscription = await subscribeToPushNotifications()
+          setPushEnabled(!!subscription)
+        }
+      }
+    } catch (err) {
+      console.error('Error toggling push notifications:', err)
+    }
+    setPushLoading(false)
+  }
 
   // Get initials for avatar
   const initials = name
@@ -953,6 +1006,27 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
             </p>
           </div>
         </div>
+
+        {/* Push Notifications */}
+        {pushSupported && (
+          <div className="settings-card">
+            <div className="settings-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Icons.bell size={14} color={colors.textMuted} />
+              Push Notifications
+            </div>
+            <div className="toggle-switch-row">
+              <div className="toggle-switch-content">
+                <span className="toggle-switch-label">Enable Push Notifications</span>
+                <span className="toggle-switch-desc">Get instant alerts for messages & announcements</span>
+              </div>
+              <div
+                className={`toggle-switch ${pushEnabled ? 'on' : ''}`}
+                onClick={pushLoading ? undefined : handleTogglePush}
+                style={{ opacity: pushLoading ? 0.5 : 1, cursor: pushLoading ? 'wait' : 'pointer' }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Account Info */}
         <div className="settings-card">

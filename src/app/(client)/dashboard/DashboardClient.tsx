@@ -1,12 +1,22 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { NotificationBell } from '@/components/NotificationBell'
 import { WorkoutScheduleModal } from '@/components/WorkoutScheduleModal'
 import { useColors } from '@/hooks/useColors'
 import { useTheme } from '@/lib/theme'
+
+interface ClientAnnouncement {
+  id: string
+  recipientId: string
+  title: string
+  content: string
+  isPinned: boolean
+  createdAt: string
+  readAt: string | null
+}
 
 type HabitCategory = 'nutrition' | 'fitness' | 'sleep' | 'mindset' | 'lifestyle' | 'tracking'
 
@@ -253,9 +263,48 @@ export function DashboardClient({
   const [showSkipModal, setShowSkipModal] = useState<string | null>(null) // habit id
   const [showRescheduleModal, setShowRescheduleModal] = useState(false)
   const [skippingHabit, setSkippingHabit] = useState(false)
+  const [announcements, setAnnouncements] = useState<ClientAnnouncement[]>([])
+  const [dismissedAnnouncements, setDismissedAnnouncements] = useState<Set<string>>(new Set())
 
   const supabase = createClient()
   const today = new Date().toLocaleDateString('en-CA')
+
+  // Fetch announcements on mount
+  useEffect(() => {
+    const fetchAnnouncements = async () => {
+      try {
+        const res = await fetch('/api/announcements')
+        if (res.ok) {
+          const data = await res.json()
+          setAnnouncements(data.announcements || [])
+        }
+      } catch (err) {
+        console.error('Failed to fetch announcements:', err)
+      }
+    }
+    fetchAnnouncements()
+  }, [])
+
+  // Get unread pinned announcements that haven't been dismissed
+  const unreadPinnedAnnouncements = announcements.filter(
+    (a) => a.isPinned && !a.readAt && !dismissedAnnouncements.has(a.id)
+  )
+
+  const markAnnouncementRead = async (id: string) => {
+    try {
+      await fetch(`/api/announcements/${id}/read`, { method: 'PATCH' })
+      setAnnouncements((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, readAt: new Date().toISOString() } : a))
+      )
+    } catch (err) {
+      console.error('Failed to mark announcement as read:', err)
+    }
+  }
+
+  const dismissAnnouncement = (id: string) => {
+    setDismissedAnnouncements((prev) => new Set([...prev, id]))
+    markAnnouncementRead(id)
+  }
 
   // Get selected day info - this will be updated after displayWeekDays is computed
   // For now, use habitWeekDays for current week, will be overridden in calendar view
@@ -688,6 +737,67 @@ export function DashboardClient({
           font-size: 16px;
           font-weight: 700;
           color: white;
+        }
+
+        /* Announcements Banner */
+        .announcements-banner {
+          margin-bottom: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .announcement-card {
+          background: linear-gradient(135deg, ${colors.purple}15, ${colors.purple}08);
+          border: 1px solid ${colors.purple}40;
+          border-radius: 12px;
+          padding: 12px 14px;
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+        }
+
+        .announcement-icon {
+          font-size: 20px;
+          flex-shrink: 0;
+        }
+
+        .announcement-content {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .announcement-title {
+          font-weight: 600;
+          font-size: 14px;
+          color: ${colors.textPrimary};
+          margin-bottom: 4px;
+        }
+
+        .announcement-message {
+          font-size: 13px;
+          color: ${colors.textSecondary};
+          line-height: 1.4;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+
+        .announcement-dismiss {
+          flex-shrink: 0;
+          padding: 4px;
+          border: none;
+          background: transparent;
+          color: ${colors.textMuted};
+          cursor: pointer;
+          border-radius: 6px;
+          transition: all 0.15s ease;
+        }
+
+        .announcement-dismiss:hover {
+          background: ${colors.purple}20;
+          color: ${colors.textPrimary};
         }
 
         /* Rivalry Banner */
@@ -1437,6 +1547,30 @@ export function DashboardClient({
             <div className="avatar">{initials}</div>
           </div>
         </header>
+
+        {/* Pinned Announcements Banner */}
+        {unreadPinnedAnnouncements.length > 0 && (
+          <div className="announcements-banner">
+            {unreadPinnedAnnouncements.map((announcement) => (
+              <div key={announcement.id} className="announcement-card">
+                <div className="announcement-icon">📢</div>
+                <div className="announcement-content">
+                  <div className="announcement-title">{announcement.title}</div>
+                  <div className="announcement-message">{announcement.content}</div>
+                </div>
+                <button
+                  onClick={() => dismissAnnouncement(announcement.id)}
+                  className="announcement-dismiss"
+                  aria-label="Dismiss announcement"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* TODAY'S AGENDA VIEW */}
         {activeView === 'agenda' && (

@@ -23,6 +23,7 @@ interface Assignment {
   reminder_threshold: number | null
   last_reminder_sent_at: string | null
   last_workout_at: string | null
+  assigned_at: string | null
   programs: { name: string; created_by: string } | null
   profiles: { name: string; email: string } | null
 }
@@ -144,6 +145,7 @@ serve(async (req) => {
         reminder_threshold,
         last_reminder_sent_at,
         last_workout_at,
+        assigned_at,
         programs(name, created_by),
         profiles:user_id(name, email)
       `)
@@ -164,13 +166,25 @@ serve(async (req) => {
 
       if (!coachId || !clientEmail) continue
 
-      // Calculate days since last workout
+      // Skip clients who haven't set up their schedule yet
+      // They need to configure their workout days before we track activity
+      if (!assignment.scheduled_days || assignment.scheduled_days.length === 0) {
+        console.log(`Skipping ${clientName} - no schedule configured yet`)
+        continue
+      }
+
+      // Calculate days since last workout OR since assignment (whichever is more recent)
       let daysInactive = 0
       if (assignment.last_workout_at) {
         const lastWorkout = new Date(assignment.last_workout_at)
         daysInactive = Math.floor((now.getTime() - lastWorkout.getTime()) / (1000 * 60 * 60 * 24))
+      } else if (assignment.assigned_at) {
+        // If no workout logged, count from when they were assigned
+        const assignedDate = new Date(assignment.assigned_at)
+        daysInactive = Math.floor((now.getTime() - assignedDate.getTime()) / (1000 * 60 * 60 * 24))
       } else {
-        daysInactive = 7 // No workouts ever
+        // Fallback: treat as new assignment, don't flag as inactive
+        daysInactive = 0
       }
 
       // Check if we already sent a reminder recently (within 7 days for client nudges)
