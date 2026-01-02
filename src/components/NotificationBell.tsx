@@ -186,6 +186,37 @@ export function NotificationBell({ userId }: NotificationBellProps) {
             )}
           </div>
 
+          {/* Quick Link to Announcements */}
+          <Link
+            href="/announcements"
+            onClick={() => setIsOpen(false)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '12px 16px',
+              borderBottom: `1px solid ${colors.border}`,
+              textDecoration: 'none',
+              background: `${colors.purple}08`,
+            }}
+          >
+            <span style={{ fontSize: '18px' }}>📢</span>
+            <span style={{ fontSize: '14px', fontWeight: 500, color: colors.textPrimary }}>
+              Coach Announcements
+            </span>
+            <svg
+              width={16}
+              height={16}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={colors.textMuted}
+              strokeWidth={2}
+              style={{ marginLeft: 'auto' }}
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </Link>
+
           {/* Notifications List */}
           <div style={{ maxHeight: '340px', overflowY: 'auto' }}>
             {notifications.length === 0 ? (

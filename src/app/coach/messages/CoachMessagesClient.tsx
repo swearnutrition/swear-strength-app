@@ -1,13 +1,21 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useConversations } from '@/hooks/useConversations'
 import { useMessages } from '@/hooks/useMessages'
 import { ConversationList } from '@/components/messaging/ConversationList'
 import { MessageThread } from '@/components/messaging/MessageThread'
 import { MessageInput } from '@/components/messaging/MessageInput'
 import { Avatar } from '@/components/ui/Avatar'
+import { Modal } from '@/components/ui/Modal'
+import { Button } from '@/components/ui/Button'
 import type { SendMessagePayload } from '@/types/messaging'
+
+interface Client {
+  id: string
+  name: string
+  avatar_url: string | null
+}
 
 interface CoachMessagesClientProps {
   userId: string
@@ -16,21 +24,72 @@ interface CoachMessagesClientProps {
 
 export function CoachMessagesClient({ userId, userName }: CoachMessagesClientProps) {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
-  const { conversations, loading: conversationsLoading } = useConversations()
+  const [showNewConversation, setShowNewConversation] = useState(false)
+  const [clients, setClients] = useState<Client[]>([])
+  const [loadingClients, setLoadingClients] = useState(false)
+  const [creatingConversation, setCreatingConversation] = useState(false)
+  const { conversations, loading: conversationsLoading, refetch } = useConversations()
   const { messages, loading: messagesLoading, sendMessage, deleteMessage, markAsRead } = useMessages(selectedConversationId)
 
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId)
 
+  // Get clients who don't have a conversation yet
+  const clientsWithoutConversation = clients.filter(
+    (client) => !conversations.some((conv) => conv.clientId === client.id)
+  )
+
+  // Fetch clients when modal opens
+  useEffect(() => {
+    if (showNewConversation) {
+      setLoadingClients(true)
+      fetch('/api/coach/clients')
+        .then((res) => res.json())
+        .then((data) => setClients(data.clients || []))
+        .catch(console.error)
+        .finally(() => setLoadingClients(false))
+    }
+  }, [showNewConversation])
+
   const handleSendMessage = async (payload: SendMessagePayload) => {
     await sendMessage(payload)
+  }
+
+  const handleStartConversation = async (clientId: string) => {
+    setCreatingConversation(true)
+    try {
+      const res = await fetch('/api/messages/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        await refetch()
+        setSelectedConversationId(data.conversation.id)
+        setShowNewConversation(false)
+      }
+    } catch (error) {
+      console.error('Error creating conversation:', error)
+    } finally {
+      setCreatingConversation(false)
+    }
   }
 
   return (
     <div className="h-[calc(100vh-4rem)] flex">
       {/* Conversations sidebar */}
       <div className="w-80 border-r border-slate-800 flex flex-col bg-slate-900/50">
-        <div className="p-4 border-b border-slate-800">
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <h1 className="text-lg font-semibold text-white">Messages</h1>
+          <button
+            onClick={() => setShowNewConversation(true)}
+            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            title="New conversation"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
         </div>
         <ConversationList
           conversations={conversations}
@@ -92,6 +151,37 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
           </div>
         )}
       </div>
+
+      {/* New Conversation Modal */}
+      <Modal
+        isOpen={showNewConversation}
+        onClose={() => setShowNewConversation(false)}
+        title="Start New Conversation"
+      >
+        <div className="space-y-2">
+          {loadingClients ? (
+            <div className="text-center py-8 text-slate-500">Loading clients...</div>
+          ) : clientsWithoutConversation.length === 0 ? (
+            <div className="text-center py-8 text-slate-500">
+              <p>All clients already have conversations</p>
+            </div>
+          ) : (
+            <div className="max-h-80 overflow-y-auto space-y-1">
+              {clientsWithoutConversation.map((client) => (
+                <button
+                  key={client.id}
+                  onClick={() => handleStartConversation(client.id)}
+                  disabled={creatingConversation}
+                  className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-50"
+                >
+                  <Avatar name={client.name} src={client.avatar_url} size="md" />
+                  <span className="text-white font-medium">{client.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   )
 }

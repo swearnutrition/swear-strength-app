@@ -176,6 +176,11 @@ const Icons = {
       <circle cx="12" cy="7" r="4"/>
     </svg>
   ),
+  chat: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </svg>
+  ),
   check: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="3" strokeLinecap="round">
       <polyline points="20 6 9 17 4 12"/>
@@ -1859,9 +1864,9 @@ export function DashboardClient({
           <Icons.calendar size={22} color={activeView === 'calendar' ? colors.purple : colors.textMuted} />
           <span className="nav-label" style={{ color: activeView === 'calendar' ? colors.purple : colors.textMuted }}>Calendar</span>
         </div>
-        <Link href="/workouts" className="nav-item">
-          <Icons.dumbbell size={22} color={colors.textMuted} />
-          <span className="nav-label" style={{ color: colors.textMuted }}>Plans</span>
+        <Link href="/messages" className="nav-item">
+          <Icons.chat size={22} color={colors.textMuted} />
+          <span className="nav-label" style={{ color: colors.textMuted }}>Messages</span>
         </Link>
         <Link href="/settings" className="nav-item">
           <Icons.user size={22} color={colors.textMuted} />
