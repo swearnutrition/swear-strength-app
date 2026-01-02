@@ -124,6 +124,7 @@ interface ProgramWorkoutDay {
 interface DashboardClientProps {
   userName: string
   initials: string
+  avatarUrl?: string | null
   userId: string
   greeting: string
   todayWorkout: TodayWorkout | null
@@ -229,6 +230,7 @@ const Icons = {
 export function DashboardClient({
   userName,
   initials,
+  avatarUrl,
   userId,
   greeting,
   todayWorkout,
@@ -737,6 +739,15 @@ export function DashboardClient({
           font-size: 16px;
           font-weight: 700;
           color: white;
+          overflow: hidden;
+          cursor: pointer;
+          text-decoration: none;
+        }
+
+        .avatar-img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
         }
 
         /* Announcements Banner */
@@ -1544,7 +1555,13 @@ export function DashboardClient({
             <div className="notification-btn">
               <NotificationBell userId={userId} />
             </div>
-            <div className="avatar">{initials}</div>
+            <Link href="/settings" className="avatar">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={userName} className="avatar-img" />
+              ) : (
+                initials
+              )}
+            </Link>
           </div>
         </header>
 
@@ -2002,9 +2019,9 @@ export function DashboardClient({
           <Icons.dumbbell size={22} color={colors.textMuted} />
           <span className="nav-label" style={{ color: colors.textMuted }}>Plans</span>
         </Link>
-        <Link href="/settings" className="nav-item">
-          <Icons.user size={22} color={colors.textMuted} />
-          <span className="nav-label" style={{ color: colors.textMuted }}>Account</span>
+        <Link href="/messages" className="nav-item">
+          <Icons.chat size={22} color={colors.textMuted} />
+          <span className="nav-label" style={{ color: colors.textMuted }}>Messages</span>
         </Link>
       </nav>
 

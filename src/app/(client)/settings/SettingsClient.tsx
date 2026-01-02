@@ -227,6 +227,8 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
   const [pushLoading, setPushLoading] = useState(true)
   const [pushSupported, setPushSupported] = useState(true)
   const [pushError, setPushError] = useState<string | null>(null)
+  const [groupNotificationsEnabled, setGroupNotificationsEnabled] = useState(true)
+  const [groupNotificationsLoading, setGroupNotificationsLoading] = useState(false)
 
   // Check push notification status on mount
   useEffect(() => {
@@ -293,6 +295,39 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
       setPushError('Something went wrong. Please try again.')
     }
     setPushLoading(false)
+  }
+
+  // Check group notification status on mount
+  useEffect(() => {
+    const checkGroupNotifications = async () => {
+      try {
+        const res = await fetch('/api/group-chats/notifications')
+        if (res.ok) {
+          const data = await res.json()
+          setGroupNotificationsEnabled(data.enabled)
+        }
+      } catch (err) {
+        console.error('Error checking group notification status:', err)
+      }
+    }
+    checkGroupNotifications()
+  }, [])
+
+  const handleToggleGroupNotifications = async () => {
+    setGroupNotificationsLoading(true)
+    try {
+      const res = await fetch('/api/group-chats/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !groupNotificationsEnabled }),
+      })
+      if (res.ok) {
+        setGroupNotificationsEnabled(!groupNotificationsEnabled)
+      }
+    } catch (err) {
+      console.error('Error toggling group notifications:', err)
+    }
+    setGroupNotificationsLoading(false)
   }
 
   // Get initials for avatar
@@ -1057,6 +1092,17 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
                 </p>
               </div>
             )}
+            <div className="toggle-switch-row">
+              <div className="toggle-switch-content">
+                <span className="toggle-switch-label">Group Chat Notifications</span>
+                <span className="toggle-switch-desc">Receive notifications for group messages</span>
+              </div>
+              <div
+                className={`toggle-switch ${groupNotificationsEnabled ? 'on' : ''}`}
+                onClick={groupNotificationsLoading ? undefined : handleToggleGroupNotifications}
+                style={{ opacity: groupNotificationsLoading ? 0.5 : 1, cursor: groupNotificationsLoading ? 'wait' : 'pointer' }}
+              />
+            </div>
           </div>
         )}
 

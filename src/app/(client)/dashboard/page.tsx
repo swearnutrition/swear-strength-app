@@ -491,6 +491,7 @@ export default async function ClientDashboard() {
     <DashboardClient
       userName={profile.name}
       initials={initials}
+      avatarUrl={profile.avatar_url}
       userId={user.id}
       greeting={greeting}
       todayWorkout={todayWorkout}
