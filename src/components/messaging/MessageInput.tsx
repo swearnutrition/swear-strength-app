@@ -8,10 +8,11 @@ import type { SendMessagePayload } from '@/types/messaging'
 interface MessageInputProps {
   conversationId: string
   onSend: (payload: SendMessagePayload) => Promise<void>
+  onSchedule?: (payload: SendMessagePayload) => void
   disabled?: boolean
 }
 
-export function MessageInput({ conversationId, onSend, disabled }: MessageInputProps) {
+export function MessageInput({ conversationId, onSend, onSchedule, disabled }: MessageInputProps) {
   const [message, setMessage] = useState('')
   const [showGifPicker, setShowGifPicker] = useState(false)
   const [sending, setSending] = useState(false)
@@ -109,6 +110,25 @@ export function MessageInput({ conversationId, onSend, disabled }: MessageInputP
             className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all disabled:opacity-50"
           />
         </div>
+
+        {/* Schedule button (only if onSchedule provided) */}
+        {onSchedule && (
+          <button
+            onClick={() => {
+              if (message.trim()) {
+                onSchedule({ content: message.trim(), contentType: 'text' })
+                setMessage('')
+              }
+            }}
+            disabled={!message.trim() || disabled || sending}
+            className="p-3 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Schedule message"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
+        )}
 
         {/* Send button */}
         <button
