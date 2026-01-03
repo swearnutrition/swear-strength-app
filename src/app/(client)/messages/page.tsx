@@ -31,11 +31,21 @@ export default async function ClientMessagesPage() {
     .eq('client_id', user.id)
     .single()
 
+  // Check if client is a member of any group chats
+  const { data: groupMemberships } = await supabase
+    .from('group_chat_members')
+    .select('id')
+    .eq('user_id', user.id)
+    .limit(1)
+
+  const hasGroupChats = (groupMemberships?.length ?? 0) > 0
+
   return (
     <ClientMessagesClient
       userId={user.id}
       userName={profile?.name || 'Client'}
       conversationId={conversation?.id || null}
+      hasGroupChats={hasGroupChats}
     />
   )
 }

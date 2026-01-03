@@ -45,13 +45,16 @@ export function useUnreadCounts(userId: string, isCoach: boolean): UseUnreadCoun
         }
       } else {
         // Client: count unread messages from coach
-        const { data: conversation } = await supabase
+        // Use maybeSingle() instead of single() to avoid throwing when no conversation exists
+        const { data: conversation, error: convError } = await supabase
           .from('conversations')
           .select(`messages(id, sender_id, read_at, is_deleted)`)
           .eq('client_id', userId)
-          .single()
+          .maybeSingle()
 
-        if (conversation?.messages) {
+        if (convError) {
+          console.error('Error fetching conversation for unread count:', convError)
+        } else if (conversation?.messages) {
           messageCount = conversation.messages.filter(
             (m: { sender_id: string; read_at: string | null; is_deleted: boolean }) =>
               m.sender_id !== userId && !m.read_at && !m.is_deleted

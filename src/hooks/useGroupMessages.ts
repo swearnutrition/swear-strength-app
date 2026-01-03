@@ -162,12 +162,40 @@ export function useGroupMessages(groupChatId: string | null) {
     }
   }
 
+  const markAsRead = async (messageIds: string[]) => {
+    if (!groupChatId || messageIds.length === 0) return
+
+    try {
+      const res = await fetch(`/api/group-chats/${groupChatId}/messages/read`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messageIds }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to mark messages as read')
+      }
+
+      // Update local state to reflect read status
+      setMessages(prev =>
+        prev.map(m =>
+          messageIds.includes(m.id) ? { ...m, isRead: true } : m
+        )
+      )
+    } catch (err) {
+      console.error('Error marking messages as read:', err)
+      throw err
+    }
+  }
+
   return {
     messages,
     loading,
     error,
     sendMessage,
     deleteMessage,
+    markAsRead,
     refresh: fetchMessages,
   }
 }

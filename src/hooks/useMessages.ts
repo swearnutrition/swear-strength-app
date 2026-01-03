@@ -8,9 +8,9 @@ interface UseMessagesReturn {
   messages: Message[]
   loading: boolean
   error: string | null
-  sendMessage: (payload: SendMessagePayload) => Promise<Message | null>
-  deleteMessage: (messageId: string) => Promise<boolean>
-  markAsRead: (messageId: string) => Promise<void>
+  sendMessage: (payload: SendMessagePayload) => Promise<{ message: Message | null; error: string | null }>
+  deleteMessage: (messageId: string) => Promise<{ success: boolean; error: string | null }>
+  markAsRead: (messageId: string) => Promise<{ success: boolean; error: string | null }>
   refetch: () => Promise<void>
 }
 
@@ -96,8 +96,10 @@ export function useMessages(conversationId: string | null): UseMessagesReturn {
     }
   }, [conversationId, fetchMessages, supabase])
 
-  const sendMessage = async (payload: SendMessagePayload): Promise<Message | null> => {
-    if (!conversationId) return null
+  const sendMessage = async (payload: SendMessagePayload): Promise<{ message: Message | null; error: string | null }> => {
+    if (!conversationId) {
+      return { message: null, error: 'No conversation selected' }
+    }
 
     try {
       const res = await fetch(`/api/messages/conversations/${conversationId}`, {
@@ -107,36 +109,57 @@ export function useMessages(conversationId: string | null): UseMessagesReturn {
       })
 
       if (!res.ok) {
-        throw new Error('Failed to send message')
+        const data = await res.json().catch(() => ({}))
+        const errorMessage = data.error || `Failed to send message (${res.status})`
+        return { message: null, error: errorMessage }
       }
 
       const data = await res.json()
-      return data.message
+      return { message: data.message, error: null }
     } catch (err) {
       console.error('Error sending message:', err)
-      return null
+      const errorMessage = err instanceof Error ? err.message : 'Failed to send message'
+      return { message: null, error: errorMessage }
     }
   }
 
-  const deleteMessage = async (messageId: string): Promise<boolean> => {
+  const deleteMessage = async (messageId: string): Promise<{ success: boolean; error: string | null }> => {
     try {
       const res = await fetch(`/api/messages/${messageId}`, {
         method: 'PATCH',
       })
-      return res.ok
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        const errorMessage = data.error || `Failed to delete message (${res.status})`
+        return { success: false, error: errorMessage }
+      }
+
+      return { success: true, error: null }
     } catch (err) {
       console.error('Error deleting message:', err)
-      return false
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete message'
+      return { success: false, error: errorMessage }
     }
   }
 
-  const markAsRead = async (messageId: string): Promise<void> => {
+  const markAsRead = async (messageId: string): Promise<{ success: boolean; error: string | null }> => {
     try {
-      await fetch(`/api/messages/${messageId}/read`, {
+      const res = await fetch(`/api/messages/${messageId}/read`, {
         method: 'PATCH',
       })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        const errorMessage = data.error || `Failed to mark as read (${res.status})`
+        return { success: false, error: errorMessage }
+      }
+
+      return { success: true, error: null }
     } catch (err) {
       console.error('Error marking message as read:', err)
+      const errorMessage = err instanceof Error ? err.message : 'Failed to mark as read'
+      return { success: false, error: errorMessage }
     }
   }
 

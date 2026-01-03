@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useConversations } from '@/hooks/useConversations'
 import { useMessages } from '@/hooks/useMessages'
 import { useGroupChats } from '@/hooks/useGroupChats'
@@ -42,6 +42,7 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
   const [newGroupName, setNewGroupName] = useState('')
   const [newGroupDescription, setNewGroupDescription] = useState('')
   const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set())
+  const [sendError, setSendError] = useState<string | null>(null)
 
   const { conversations, loading: conversationsLoading, refetch } = useConversations()
   const { messages, loading: messagesLoading, sendMessage, deleteMessage, markAsRead } = useMessages(
@@ -52,7 +53,8 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
     messages: groupMessages,
     loading: groupMessagesLoading,
     sendMessage: sendGroupMessage,
-    deleteMessage: deleteGroupMessage
+    deleteMessage: deleteGroupMessage,
+    markAsRead: markGroupMessagesAsRead
   } = useGroupMessages(selectedChatType === 'group' ? selectedGroupId : null)
 
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId)
@@ -82,6 +84,21 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
     }
   }, [showNewConversation, showNewGroup])
 
+  // Mark group messages as read when viewing them
+  useEffect(() => {
+    if (selectedChatType === 'group' && groupMessages.length > 0 && !groupMessagesLoading) {
+      const unreadMessageIds = groupMessages
+        .filter(m => !m.isRead && m.senderId !== userId)
+        .map(m => m.id)
+
+      if (unreadMessageIds.length > 0) {
+        markGroupMessagesAsRead(unreadMessageIds).catch(err => {
+          console.error('Failed to mark group messages as read:', err)
+        })
+      }
+    }
+  }, [selectedChatType, groupMessages, groupMessagesLoading, userId, markGroupMessagesAsRead])
+
   const handleSelectConversation = (id: string) => {
     setSelectedConversationId(id)
     setSelectedGroupId(null)
@@ -94,18 +111,30 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
     setSelectedChatType('group')
   }
 
-  const handleSendMessage = async (payload: SendMessagePayload) => {
-    await sendMessage(payload)
-  }
-
-  const handleSendGroupMessage = async (payload: SendMessagePayload) => {
-    const groupPayload: SendGroupMessagePayload = {
-      content: payload.content,
-      contentType: payload.contentType,
-      mediaUrl: payload.mediaUrl,
+  const handleSendMessage = useCallback(async (payload: SendMessagePayload) => {
+    setSendError(null)
+    const { error } = await sendMessage(payload)
+    if (error) {
+      setSendError(error)
+      setTimeout(() => setSendError(null), 5000)
     }
-    await sendGroupMessage(groupPayload)
-  }
+  }, [sendMessage])
+
+  const handleSendGroupMessage = useCallback(async (payload: SendMessagePayload) => {
+    setSendError(null)
+    try {
+      const groupPayload: SendGroupMessagePayload = {
+        content: payload.content,
+        contentType: payload.contentType,
+        mediaUrl: payload.mediaUrl,
+      }
+      await sendGroupMessage(groupPayload)
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to send message'
+      setSendError(errorMessage)
+      setTimeout(() => setSendError(null), 5000)
+    }
+  }, [sendGroupMessage])
 
   const handleStartConversation = async (clientId: string) => {
     setCreatingConversation(true)
@@ -334,6 +363,13 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
               />
             )}
 
+            {/* Error display */}
+            {sendError && (
+              <div className="mx-4 mb-2 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm">
+                {sendError}
+              </div>
+            )}
+
             {/* Input */}
             <MessageInput
               conversationId={selectedConversation.id}
@@ -369,6 +405,13 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
                 isCoach={true}
                 showSenderName={true}
               />
+            )}
+
+            {/* Error display */}
+            {sendError && (
+              <div className="mx-4 mb-2 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm">
+                {sendError}
+              </div>
             )}
 
             {/* Input */}

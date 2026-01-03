@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 
 // GET /api/group-chats - List user's group chats
@@ -26,6 +26,10 @@ export async function GET() {
       )
     `)
     .eq('user_id', user.id)
+
+  console.log('Fetching group chats for user:', user.id)
+  console.log('Memberships found:', memberships)
+  console.log('Error:', error)
 
   if (error) {
     console.error('Error fetching group chats:', error)
@@ -162,8 +166,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'At least one member is required' }, { status: 400 })
   }
 
+  // Use admin client to bypass RLS for group creation
+  // We've already verified the user is a coach above
+  const adminClient = createAdminClient()
+
   // Create group chat
-  const { data: groupChat, error: createError } = await supabase
+  const { data: groupChat, error: createError } = await adminClient
     .from('group_chats')
     .insert({
       name,
@@ -188,14 +196,14 @@ export async function POST(request: NextRequest) {
     })),
   ]
 
-  const { error: membersError } = await supabase
+  const { error: membersError } = await adminClient
     .from('group_chat_members')
     .insert(members)
 
   if (membersError) {
     console.error('Error adding group members:', membersError)
     // Rollback group creation
-    await supabase.from('group_chats').delete().eq('id', groupChat.id)
+    await adminClient.from('group_chats').delete().eq('id', groupChat.id)
     return NextResponse.json({ error: membersError.message }, { status: 500 })
   }
 

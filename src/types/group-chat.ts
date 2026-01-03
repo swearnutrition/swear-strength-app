@@ -37,6 +37,7 @@ export interface GroupMessage {
   senderName?: string
   senderAvatar?: string | null
   readBy?: string[]
+  isRead?: boolean
 }
 
 export interface GroupMessageRead {

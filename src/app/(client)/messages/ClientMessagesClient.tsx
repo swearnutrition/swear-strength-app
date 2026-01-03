@@ -1,11 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useMessages } from '@/hooks/useMessages'
+import { useGroupChats } from '@/hooks/useGroupChats'
+import { useGroupMessages } from '@/hooks/useGroupMessages'
 import { MessageThread } from '@/components/messaging/MessageThread'
 import { MessageInput } from '@/components/messaging/MessageInput'
 import type { SendMessagePayload } from '@/types/messaging'
+import type { Message } from '@/types/messaging'
+import type { SendGroupMessagePayload } from '@/types/group-chat'
 
 interface ClientMessagesClientProps {
   userId: string
@@ -30,7 +34,49 @@ export function ClientMessagesClient({ userId, userName, conversationId, hasGrou
   const [activeTab, setActiveTab] = useState<TabType>('coach')
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [announcementsLoading, setAnnouncementsLoading] = useState(true)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const { messages, loading, sendMessage, deleteMessage } = useMessages(conversationId)
+  const { groupChats, loading: groupChatsLoading } = useGroupChats()
+  const {
+    messages: groupMessages,
+    loading: groupMessagesLoading,
+    sendMessage: sendGroupMessage,
+    deleteMessage: deleteGroupMessage,
+    markAsRead: markGroupMessagesAsRead
+  } = useGroupMessages(selectedGroupId)
+
+  const selectedGroup = groupChats.find(g => g.id === selectedGroupId)
+
+  // Transform group messages to Message type for MessageThread
+  const transformedGroupMessages: Message[] = groupMessages.map(m => ({
+    id: m.id,
+    senderId: m.senderId,
+    senderName: m.senderName || 'Unknown',
+    senderAvatar: m.senderAvatar || null,
+    senderRole: 'client' as const, // In group chats, we show sender name so role doesn't matter
+    content: m.content,
+    contentType: m.contentType,
+    mediaUrl: m.mediaUrl,
+    isDeleted: m.isDeleted,
+    readAt: m.isRead ? new Date().toISOString() : null,
+    createdAt: m.createdAt,
+  }))
+
+  // Mark group messages as read when viewing them
+  useEffect(() => {
+    if (selectedGroupId && groupMessages.length > 0 && !groupMessagesLoading) {
+      const unreadMessageIds = groupMessages
+        .filter(m => !m.isRead && m.senderId !== userId)
+        .map(m => m.id)
+
+      if (unreadMessageIds.length > 0) {
+        markGroupMessagesAsRead(unreadMessageIds).catch(err => {
+          console.error('Failed to mark group messages as read:', err)
+        })
+      }
+    }
+  }, [selectedGroupId, groupMessages, groupMessagesLoading, userId, markGroupMessagesAsRead])
 
   // Fetch announcements
   useEffect(() => {
@@ -49,9 +95,31 @@ export function ClientMessagesClient({ userId, userName, conversationId, hasGrou
     fetchAnnouncements()
   }, [])
 
-  const handleSendMessage = async (payload: SendMessagePayload) => {
-    await sendMessage(payload)
-  }
+  const handleSendMessage = useCallback(async (payload: SendMessagePayload) => {
+    setSendError(null)
+    const { error } = await sendMessage(payload)
+    if (error) {
+      setSendError(error)
+      // Clear error after 5 seconds
+      setTimeout(() => setSendError(null), 5000)
+    }
+  }, [sendMessage])
+
+  const handleSendGroupMessage = useCallback(async (payload: SendMessagePayload) => {
+    setSendError(null)
+    try {
+      const groupPayload: SendGroupMessagePayload = {
+        content: payload.content,
+        contentType: payload.contentType,
+        mediaUrl: payload.mediaUrl,
+      }
+      await sendGroupMessage(groupPayload)
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to send message'
+      setSendError(errorMessage)
+      setTimeout(() => setSendError(null), 5000)
+    }
+  }, [sendGroupMessage])
 
   // Mark announcement as read
   const markAnnouncementRead = async (recipientId: string) => {
@@ -227,6 +295,11 @@ export function ClientMessagesClient({ userId, userName, conversationId, hasGrou
                   onDeleteMessage={deleteMessage}
                   isCoach={false}
                 />
+                {sendError && (
+                  <div className="mx-4 mb-2 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm">
+                    {sendError}
+                  </div>
+                )}
                 <MessageInput
                   conversationId={conversationId}
                   onSend={handleSendMessage}
@@ -238,15 +311,111 @@ export function ClientMessagesClient({ userId, userName, conversationId, hasGrou
 
         {/* Group Tab */}
         {activeTab === 'group' && hasGroupChats && (
-          <div className="flex-1 flex items-center justify-center p-4">
-            <div className="text-center text-slate-500">
-              <svg className="w-16 h-16 mx-auto mb-4 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-              <p className="text-lg font-medium">Group Chats</p>
-              <p className="text-sm mt-1">Coming soon!</p>
-            </div>
-          </div>
+          <>
+            {!selectedGroupId ? (
+              // Group list
+              <div className="flex-1 overflow-y-auto">
+                {groupChatsLoading ? (
+                  <div className="flex items-center justify-center p-8">
+                    <svg className="animate-spin h-8 w-8 text-purple-500" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  </div>
+                ) : groupChats.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center p-4">
+                    <div className="text-center text-slate-500">
+                      <svg className="w-16 h-16 mx-auto mb-4 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                      <p className="text-lg font-medium">No Group Chats</p>
+                      <p className="text-sm mt-1">You haven&apos;t been added to any group chats yet.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-800">
+                    {groupChats.map(group => (
+                      <button
+                        key={group.id}
+                        onClick={() => setSelectedGroupId(group.id)}
+                        className="w-full p-4 flex items-center gap-3 hover:bg-slate-800/50 transition-colors text-left"
+                      >
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-semibold text-lg">
+                          {group.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <h3 className="font-medium text-white truncate">{group.name}</h3>
+                            {(group.unreadCount ?? 0) > 0 && (
+                              <span className="ml-2 w-5 h-5 bg-purple-600 text-white text-xs rounded-full flex items-center justify-center">
+                                {group.unreadCount}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-slate-400 truncate">
+                            {group.lastMessage?.content || group.description || `${group.memberCount} members`}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Group chat view
+              <>
+                {/* Group header with back button */}
+                <div className="flex items-center gap-3 p-4 border-b border-slate-800">
+                  <button
+                    onClick={() => setSelectedGroupId(null)}
+                    className="p-2 -ml-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-semibold">
+                    {selectedGroup?.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <h2 className="font-semibold text-white">{selectedGroup?.name}</h2>
+                    <p className="text-sm text-slate-400">{selectedGroup?.memberCount} members</p>
+                  </div>
+                </div>
+
+                {/* Group Messages */}
+                {groupMessagesLoading ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <svg className="animate-spin h-8 w-8 text-purple-500" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  </div>
+                ) : (
+                  <MessageThread
+                    messages={transformedGroupMessages}
+                    currentUserId={userId}
+                    onDeleteMessage={deleteGroupMessage}
+                    isCoach={false}
+                    showSenderName={true}
+                  />
+                )}
+
+                {/* Error display */}
+                {sendError && (
+                  <div className="mx-4 mb-2 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm">
+                    {sendError}
+                  </div>
+                )}
+
+                {/* Input */}
+                <MessageInput
+                  conversationId={selectedGroupId}
+                  onSend={handleSendGroupMessage}
+                />
+              </>
+            )}
+          </>
         )}
       </div>
     </div>
