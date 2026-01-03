@@ -105,10 +105,10 @@ export async function POST(
 
   const isCoach = profile?.role === 'coach'
 
-  // Verify access to conversation
+  // Verify access to conversation (include coach_id for push notifications)
   const { data: conversation, error: convError } = await supabase
     .from('conversations')
-    .select('id, client_id')
+    .select('id, client_id, coach_id')
     .eq('id', id)
     .single()
 
@@ -160,17 +160,17 @@ export async function POST(
 
   // Send push notification to the recipient
   // Coach messages go to client, client messages go to coach
-  const recipientId = isCoach ? conversation.client_id : null
+  const recipientId = isCoach ? conversation.client_id : conversation.coach_id
   if (recipientId) {
-    // Only send push when coach messages client
     const messagePreview = contentType === 'text'
       ? (content.length > 50 ? content.substring(0, 50) + '...' : content)
       : contentType === 'gif' ? 'Sent a GIF' : `Sent ${contentType}`
 
+    const senderLabel = isCoach ? 'Coach' : 'Client'
     sendPushToUsers([recipientId], {
-      title: `Message from ${profile?.name || 'Coach'}`,
+      title: `Message from ${profile?.name || senderLabel}`,
       body: messagePreview,
-      url: '/messages',
+      url: isCoach ? '/messages' : '/coach/messages',
     }).catch((err) => {
       console.error('Error sending message push:', err)
     })
