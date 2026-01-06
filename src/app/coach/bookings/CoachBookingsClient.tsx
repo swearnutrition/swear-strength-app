@@ -1,18 +1,29 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useBookings } from '@/hooks/useBookings'
 import { useSessionPackages } from '@/hooks/useSessionPackages'
 import { Avatar } from '@/components/ui/Avatar'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import type { BookingWithDetails, BookingStatus } from '@/types/booking'
+import { BookSessionModal } from '@/components/booking/BookSessionModal'
+import { createClient } from '@/lib/supabase/client'
+import type { BookingWithDetails, BookingStatus, SessionPackage, ClientCheckinUsage } from '@/types/booking'
 
 interface Client {
   id: string
   name: string
   email: string
   avatar_url: string | null
+}
+
+interface ClientWithPackage {
+  id: string
+  name: string
+  email: string
+  avatarUrl: string | null
+  activePackage: SessionPackage | null
+  checkinUsage: ClientCheckinUsage | null
 }
 
 interface CoachBookingsClientProps {
@@ -75,6 +86,8 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
   const [showBookSessionModal, setShowBookSessionModal] = useState(false)
   const [showBlockTimeModal, setShowBlockTimeModal] = useState(false)
   const [selectedBooking, setSelectedBooking] = useState<BookingWithDetails | null>(null)
+  const [clientsWithPackages, setClientsWithPackages] = useState<ClientWithPackage[]>([])
+  const supabase = createClient()
 
   // Calculate date range based on view mode
   const dateRange = useMemo(() => {
@@ -96,7 +109,57 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
     to: dateRange.to,
   })
 
-  const { packages, loading: packagesLoading } = useSessionPackages()
+  const { packages, loading: packagesLoading, refetch: refetchPackages } = useSessionPackages()
+
+  // Fetch clients with their packages and check-in usage
+  useEffect(() => {
+    async function fetchClientsWithPackages() {
+      const currentMonth = new Date()
+      currentMonth.setDate(1)
+      const monthStr = currentMonth.toISOString().split('T')[0]
+
+      const clientsData: ClientWithPackage[] = await Promise.all(
+        clients.map(async (client) => {
+          // Get active package for this client
+          const activePackage = packages.find(
+            (pkg) => pkg.clientId === client.id && pkg.remainingSessions > 0
+          ) || null
+
+          // Get check-in usage for this month
+          const { data: checkinData } = await supabase
+            .from('client_checkin_usage')
+            .select('*')
+            .eq('client_id', client.id)
+            .eq('month', monthStr)
+            .single()
+
+          const checkinUsage: ClientCheckinUsage | null = checkinData ? {
+            id: checkinData.id,
+            clientId: checkinData.client_id,
+            coachId: checkinData.coach_id,
+            month: checkinData.month,
+            used: checkinData.used,
+            bookingId: checkinData.booking_id,
+          } : null
+
+          return {
+            id: client.id,
+            name: client.name,
+            email: client.email,
+            avatarUrl: client.avatar_url,
+            activePackage,
+            checkinUsage,
+          }
+        })
+      )
+
+      setClientsWithPackages(clientsData)
+    }
+
+    if (!packagesLoading && clients.length > 0) {
+      fetchClientsWithPackages()
+    }
+  }, [clients, packages, packagesLoading, supabase])
 
   // Get today's and tomorrow's bookings for sidebar
   const today = new Date()
@@ -676,20 +739,15 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
         )}
       </Modal>
 
-      {/* Book Session Modal (placeholder) */}
-      <Modal
+      {/* Book Session Modal */}
+      <BookSessionModal
         isOpen={showBookSessionModal}
         onClose={() => setShowBookSessionModal(false)}
-        title="Book Session"
-      >
-        <div className="text-slate-400 text-center py-8">
-          <svg className="w-12 h-12 mx-auto mb-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-          <p>Booking form coming soon</p>
-          <p className="text-sm text-slate-500 mt-1">Select a client and time to book a session</p>
-        </div>
-      </Modal>
+        clients={clientsWithPackages}
+        onSuccess={() => {
+          refetchPackages()
+        }}
+      />
 
       {/* Block Time Modal (placeholder) */}
       <Modal
