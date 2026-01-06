@@ -66,6 +66,18 @@ const navigation: NavSection[] = [
           </svg>
         ),
       },
+      {
+        name: 'Bookings',
+        href: '/coach/bookings',
+        icon: (
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        ),
+        children: [
+          { name: 'Availability', href: '/coach/settings/availability' },
+        ],
+      },
     ],
   },
   {
@@ -117,7 +129,7 @@ const navigation: NavSection[] = [
 
 export function CoachSidebar({ isOpen, onToggle }: CoachSidebarProps) {
   const pathname = usePathname()
-  const [expandedItems, setExpandedItems] = useState<string[]>(['Programs', 'Habits'])
+  const [expandedItems, setExpandedItems] = useState<string[]>(['Programs', 'Habits', 'Bookings'])
 
   const isActive = (href: string) => {
     if (href === '/coach') {
