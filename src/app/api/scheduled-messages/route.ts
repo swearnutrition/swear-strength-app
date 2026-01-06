@@ -84,6 +84,18 @@ export async function GET(request: NextRequest) {
         result.recipientNames = recipients?.map(r => r.name) || []
       }
 
+      // Get group chat name
+      if (msg.message_type === 'group_chat' && msg.group_chat_id) {
+        const { data: groupChat } = await supabase
+          .from('group_chats')
+          .select('name')
+          .eq('id', msg.group_chat_id)
+          .single()
+
+        result.groupChatId = msg.group_chat_id
+        result.groupChatName = groupChat?.name || 'Unknown Group'
+      }
+
       return result
     })
   )
@@ -112,7 +124,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { messageType, content, contentType, mediaUrl, conversationId, recipientIds, scheduledFor } = body
+  const { messageType, content, contentType, mediaUrl, conversationId, recipientIds, groupChatId, scheduledFor } = body
 
   // Validate required fields
   if (!messageType || !content || !scheduledFor) {
@@ -125,6 +137,9 @@ export async function POST(request: NextRequest) {
   }
   if (messageType === 'mass_dm' && (!recipientIds || recipientIds.length === 0)) {
     return NextResponse.json({ error: 'recipientIds required for mass DM' }, { status: 400 })
+  }
+  if (messageType === 'group_chat' && !groupChatId) {
+    return NextResponse.json({ error: 'groupChatId required for group chat message' }, { status: 400 })
   }
 
   // Validate scheduled time is in the future
@@ -144,6 +159,7 @@ export async function POST(request: NextRequest) {
       media_url: mediaUrl || null,
       conversation_id: conversationId || null,
       recipient_ids: recipientIds || null,
+      group_chat_id: groupChatId || null,
       scheduled_for: scheduledFor,
     })
     .select()
@@ -164,6 +180,7 @@ export async function POST(request: NextRequest) {
       mediaUrl: message.media_url,
       conversationId: message.conversation_id,
       recipientIds: message.recipient_ids,
+      groupChatId: message.group_chat_id,
       scheduledFor: message.scheduled_for,
       status: message.status,
       sentAt: message.sent_at,

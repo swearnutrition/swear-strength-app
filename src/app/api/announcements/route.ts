@@ -3,13 +3,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { sendPushToUsers } from '@/lib/push-server'
 
 // GET /api/announcements - List announcements
-export async function GET() {
+export async function GET(request: NextRequest) {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  // Get query params
+  const { searchParams } = new URL(request.url)
+  const showArchived = searchParams.get('archived') === 'true'
 
   // Get user role
   const { data: profile } = await supabase
@@ -21,8 +25,9 @@ export async function GET() {
   const isCoach = profile?.role === 'coach'
 
   if (isCoach) {
-    // Coach sees all announcements with read counts
-    const { data: announcements, error } = await supabase
+    // Coach sees announcements with read counts
+    // Filter by archived status
+    let query = supabase
       .from('announcements')
       .select(`
         id,
@@ -32,10 +37,14 @@ export async function GET() {
         send_push,
         target_type,
         created_at,
+        archived,
         announcement_recipients(id, client_id, read_at)
       `)
+      .eq('archived', showArchived)
       .order('is_pinned', { ascending: false })
       .order('created_at', { ascending: false })
+
+    const { data: announcements, error } = await query
 
     if (error) {
       console.error('Error fetching announcements:', error)
@@ -55,6 +64,7 @@ export async function GET() {
         sendPush: a.send_push,
         targetType: a.target_type,
         createdAt: a.created_at,
+        archived: a.archived,
         readCount,
         totalCount,
       }

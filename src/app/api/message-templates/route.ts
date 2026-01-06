@@ -1,13 +1,42 @@
-// src/app/api/announcements/[id]/route.ts
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-// PATCH /api/announcements/[id] - Archive/unarchive announcement (coach only)
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params
+// GET /api/message-templates - List templates for current coach
+export async function GET() {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Verify user is coach
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  if (profile?.role !== 'coach') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  const { data: templates, error } = await supabase
+    .from('message_templates')
+    .select('id, name, content, created_at, updated_at')
+    .eq('coach_id', user.id)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error('Error fetching templates:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ templates: templates || [] })
+}
+
+// POST /api/message-templates - Create a new template
+export async function POST(request: NextRequest) {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -27,60 +56,30 @@ export async function PATCH(
   }
 
   const body = await request.json()
-  const { archived } = body
+  const { name, content } = body
 
-  if (typeof archived !== 'boolean') {
-    return NextResponse.json({ error: 'archived must be a boolean' }, { status: 400 })
+  if (!name?.trim()) {
+    return NextResponse.json({ error: 'Name is required' }, { status: 400 })
   }
 
-  const { data: announcement, error } = await supabase
-    .from('announcements')
-    .update({ archived })
-    .eq('id', id)
-    .select('id, archived')
+  if (!content?.trim()) {
+    return NextResponse.json({ error: 'Content is required' }, { status: 400 })
+  }
+
+  const { data: template, error } = await supabase
+    .from('message_templates')
+    .insert({
+      coach_id: user.id,
+      name: name.trim(),
+      content: content.trim(),
+    })
+    .select('id, name, content, created_at, updated_at')
     .single()
 
   if (error) {
-    console.error('Error updating announcement:', error)
+    console.error('Error creating template:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ announcement })
-}
-
-// DELETE /api/announcements/[id] - Delete announcement (coach only)
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params
-  const supabase = await createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  // Verify user is coach
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (profile?.role !== 'coach') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
-
-  const { error } = await supabase
-    .from('announcements')
-    .delete()
-    .eq('id', id)
-
-  if (error) {
-    console.error('Error deleting announcement:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ template })
 }

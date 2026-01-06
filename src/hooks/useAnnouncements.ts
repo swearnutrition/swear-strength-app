@@ -10,11 +10,12 @@ interface UseAnnouncementsReturn {
   error: string | null
   createAnnouncement: (payload: CreateAnnouncementPayload) => Promise<Announcement | null>
   deleteAnnouncement: (id: string) => Promise<boolean>
+  archiveAnnouncement: (id: string, archived: boolean) => Promise<boolean>
   markAsRead: (id: string) => Promise<void>
   refetch: () => Promise<void>
 }
 
-export function useAnnouncements(isCoach: boolean): UseAnnouncementsReturn {
+export function useAnnouncements(isCoach: boolean, showArchived: boolean = false): UseAnnouncementsReturn {
   const [announcements, setAnnouncements] = useState<Announcement[] | ClientAnnouncement[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -22,7 +23,8 @@ export function useAnnouncements(isCoach: boolean): UseAnnouncementsReturn {
 
   const fetchAnnouncements = useCallback(async () => {
     try {
-      const res = await fetch('/api/announcements')
+      const url = showArchived ? '/api/announcements?archived=true' : '/api/announcements'
+      const res = await fetch(url)
       if (!res.ok) {
         throw new Error('Failed to fetch announcements')
       }
@@ -35,7 +37,7 @@ export function useAnnouncements(isCoach: boolean): UseAnnouncementsReturn {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [showArchived])
 
   useEffect(() => {
     fetchAnnouncements()
@@ -117,6 +119,25 @@ export function useAnnouncements(isCoach: boolean): UseAnnouncementsReturn {
     }
   }
 
+  const archiveAnnouncement = async (id: string, archived: boolean): Promise<boolean> => {
+    if (!isCoach) return false
+
+    try {
+      const res = await fetch(`/api/announcements/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archived }),
+      })
+      if (res.ok) {
+        await fetchAnnouncements()
+      }
+      return res.ok
+    } catch (err) {
+      console.error('Error archiving announcement:', err)
+      return false
+    }
+  }
+
   const markAsRead = async (id: string): Promise<void> => {
     try {
       await fetch(`/api/announcements/${id}/read`, {
@@ -134,6 +155,7 @@ export function useAnnouncements(isCoach: boolean): UseAnnouncementsReturn {
     error,
     createAnnouncement,
     deleteAnnouncement,
+    archiveAnnouncement,
     markAsRead,
     refetch: fetchAnnouncements,
   }

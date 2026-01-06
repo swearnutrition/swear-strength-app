@@ -55,9 +55,31 @@ export async function GET(request: NextRequest) {
     const { data: overrides, error: overridesError } = await overridesQuery
     if (overridesError) throw overridesError
 
+    // Transform snake_case to camelCase
+    const transformedTemplates = (templates || []).map((t: Record<string, unknown>) => ({
+      id: t.id,
+      coachId: t.coach_id,
+      availabilityType: t.availability_type,
+      dayOfWeek: t.day_of_week,
+      startTime: t.start_time,
+      endTime: t.end_time,
+      maxConcurrentClients: t.max_concurrent_clients,
+    }))
+
+    const transformedOverrides = (overrides || []).map((o: Record<string, unknown>) => ({
+      id: o.id,
+      coachId: o.coach_id,
+      availabilityType: o.availability_type,
+      overrideDate: o.override_date,
+      startTime: o.start_time,
+      endTime: o.end_time,
+      isBlocked: o.is_blocked,
+      maxConcurrentClients: o.max_concurrent_clients,
+    }))
+
     return NextResponse.json({
-      templates: templates || [],
-      overrides: overrides || [],
+      templates: transformedTemplates,
+      overrides: transformedOverrides,
     })
   } catch (error) {
     console.error('Error fetching availability:', error)

@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendPushToUsers } from '@/lib/push-server'
+import { replaceVariables } from '@/lib/replaceVariables'
 
 // GET /api/messages/conversations/[id] - Get messages for a conversation
 export async function GET(
@@ -106,9 +107,10 @@ export async function POST(
   const isCoach = profile?.role === 'coach'
 
   // Verify access to conversation (include coach_id for push notifications)
+  // Also get client name for variable replacement
   const { data: conversation, error: convError } = await supabase
     .from('conversations')
-    .select('id, client_id, coach_id')
+    .select('id, client_id, coach_id, client:profiles!conversations_client_id_fkey(name)')
     .eq('id', id)
     .single()
 
@@ -122,7 +124,7 @@ export async function POST(
   }
 
   const body = await request.json()
-  const content = body.content
+  let content = body.content
   const contentType = body.contentType || body.content_type || 'text'
   const mediaUrl = body.mediaUrl || body.media_url
 
@@ -132,6 +134,12 @@ export async function POST(
   }
   if (['image', 'gif', 'video'].includes(contentType) && !mediaUrl) {
     return NextResponse.json({ error: 'Media URL is required for media messages' }, { status: 400 })
+  }
+
+  // Replace variables if coach is sending a text message
+  if (isCoach && content && contentType === 'text') {
+    const client = Array.isArray(conversation.client) ? conversation.client[0] : conversation.client
+    content = replaceVariables(content, { name: client?.name })
   }
 
   // Insert message

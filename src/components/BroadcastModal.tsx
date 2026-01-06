@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { ScheduleModal } from './ScheduleModal'
+import { TemplateDropdown } from '@/components/messaging/TemplateDropdown'
+import { ManageTemplatesModal } from '@/components/messaging/ManageTemplatesModal'
+import { useMessageTemplates } from '@/hooks/useMessageTemplates'
 
 interface Client {
   id: string
@@ -27,9 +30,17 @@ export function BroadcastModal({
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [showScheduleModal, setShowScheduleModal] = useState(false)
+  const [showManageTemplates, setShowManageTemplates] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 
   const supabase = createClient()
+  const {
+    templates,
+    loading: templatesLoading,
+    createTemplate,
+    updateTemplate,
+    deleteTemplate,
+  } = useMessageTemplates()
 
   useEffect(() => {
     if (isOpen) {
@@ -130,16 +141,27 @@ export function BroadcastModal({
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
             {/* Message input */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Message
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Message
+                </label>
+                <TemplateDropdown
+                  templates={templates}
+                  loading={templatesLoading}
+                  onSelect={(templateContent) => setContent(templateContent)}
+                  onManage={() => setShowManageTemplates(true)}
+                />
+              </div>
               <textarea
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                placeholder="Type your message..."
+                placeholder="Type your message... Use {firstname} or {name} for personalization"
                 rows={3}
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
               />
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Use <code className="text-purple-500">{'{firstname}'}</code> or <code className="text-purple-500">{'{name}'}</code> for personalization
+              </p>
             </div>
 
             {/* Client selection */}
@@ -264,6 +286,16 @@ export function BroadcastModal({
         onClose={() => setShowScheduleModal(false)}
         onSchedule={handleSchedule}
         title="Schedule Broadcast"
+      />
+
+      <ManageTemplatesModal
+        isOpen={showManageTemplates}
+        onClose={() => setShowManageTemplates(false)}
+        templates={templates}
+        loading={templatesLoading}
+        onCreate={createTemplate}
+        onUpdate={updateTemplate}
+        onDelete={deleteTemplate}
       />
     </>
   )

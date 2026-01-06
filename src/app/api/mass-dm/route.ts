@@ -1,6 +1,7 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendPushToUsers } from '@/lib/push-server'
+import { replaceVariables } from '@/lib/replaceVariables'
 
 // POST /api/mass-dm - Send mass DM immediately to multiple clients
 export async function POST(request: NextRequest) {
@@ -36,22 +37,32 @@ export async function POST(request: NextRequest) {
   const adminClient = createAdminClient()
   const results: { clientId: string; success: boolean; error?: string }[] = []
 
+  // Get client names for variable replacement
+  const { data: clientProfiles } = await adminClient
+    .from('profiles')
+    .select('id, name')
+    .in('id', recipientIds)
+
+  const clientNameMap = new Map<string, string>()
+  for (const p of clientProfiles || []) {
+    clientNameMap.set(p.id, p.name || '')
+  }
+
   // Send to each recipient
   for (const clientId of recipientIds) {
     try {
-      // Find existing conversation
+      // Find existing conversation (single coach model - no coach_id in conversations table)
       let { data: conversation } = await supabase
         .from('conversations')
         .select('id')
         .eq('client_id', clientId)
-        .eq('coach_id', user.id)
         .maybeSingle()
 
       // Create if doesn't exist
       if (!conversation) {
         const { data: newConv, error: createError } = await adminClient
           .from('conversations')
-          .insert({ client_id: clientId, coach_id: user.id })
+          .insert({ client_id: clientId })
           .select('id')
           .single()
 
@@ -62,13 +73,17 @@ export async function POST(request: NextRequest) {
         conversation = newConv
       }
 
+      // Replace variables for this recipient
+      const clientName = clientNameMap.get(clientId) || ''
+      const personalizedContent = replaceVariables(content, { name: clientName })
+
       // Insert message
       const { error: msgError } = await adminClient
         .from('messages')
         .insert({
           conversation_id: conversation.id,
           sender_id: user.id,
-          content,
+          content: personalizedContent,
           content_type: contentType || 'text',
           media_url: mediaUrl || null,
         })
@@ -86,7 +101,7 @@ export async function POST(request: NextRequest) {
 
       // Send push notification
       const messagePreview = (contentType || 'text') === 'text'
-        ? (content.length > 50 ? content.substring(0, 50) + '...' : content)
+        ? (personalizedContent.length > 50 ? personalizedContent.substring(0, 50) + '...' : personalizedContent)
         : contentType === 'gif' ? 'Sent a GIF' : `Sent ${contentType}`
 
       sendPushToUsers([clientId], {

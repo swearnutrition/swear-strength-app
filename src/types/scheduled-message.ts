@@ -1,4 +1,4 @@
-export type ScheduledMessageType = 'dm' | 'mass_dm' | 'announcement'
+export type ScheduledMessageType = 'dm' | 'mass_dm' | 'announcement' | 'group_chat'
 export type ScheduledMessageStatus = 'pending' | 'sent' | 'cancelled' | 'failed'
 export type ScheduledContentType = 'text' | 'image' | 'gif' | 'video'
 
@@ -11,6 +11,7 @@ export interface ScheduledMessage {
   mediaUrl: string | null
   conversationId: string | null
   recipientIds: string[] | null
+  groupChatId: string | null
   scheduledFor: string
   status: ScheduledMessageStatus
   sentAt: string | null
@@ -20,6 +21,7 @@ export interface ScheduledMessage {
   // Joined data for display
   recipientNames?: string[]
   conversationClientName?: string
+  groupChatName?: string
 }
 
 export interface CreateScheduledMessagePayload {
@@ -29,6 +31,7 @@ export interface CreateScheduledMessagePayload {
   mediaUrl?: string
   conversationId?: string
   recipientIds?: string[]
+  groupChatId?: string
   scheduledFor: string
 }
 

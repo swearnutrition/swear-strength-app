@@ -78,6 +78,17 @@ export async function POST(
         scheduled.media_url,
         profile.name
       )
+    } else if (scheduled.message_type === 'group_chat') {
+      // Send to group chat
+      await sendGroupChatMessage(
+        adminClient,
+        scheduled.group_chat_id!,
+        user.id,
+        scheduled.content,
+        scheduled.content_type,
+        scheduled.media_url,
+        profile.name
+      )
     }
 
     // Mark as sent
@@ -162,21 +173,20 @@ async function sendMassDirectMessages(
   mediaUrl: string | null,
   senderName: string
 ) {
-  // Get or create conversations for each recipient
+  // Get or create conversations for each recipient (single coach model)
   for (const clientId of recipientIds) {
     // Find existing conversation
     let { data: conversation } = await supabase
       .from('conversations')
       .select('id')
       .eq('client_id', clientId)
-      .eq('coach_id', senderId)
       .maybeSingle()
 
     // Create if doesn't exist
     if (!conversation) {
       const { data: newConv, error: createError } = await adminClient
         .from('conversations')
-        .insert({ client_id: clientId, coach_id: senderId })
+        .insert({ client_id: clientId })
         .select('id')
         .single()
 
@@ -236,6 +246,62 @@ async function sendAnnouncement(
       title: `Announcement from ${coachName || 'Coach'}`,
       body: messagePreview,
       url: '/announcements',
+    }).catch(err => console.error('Push error:', err))
+  }
+}
+
+async function sendGroupChatMessage(
+  adminClient: ReturnType<typeof createAdminClient>,
+  groupChatId: string,
+  senderId: string,
+  content: string,
+  contentType: string,
+  mediaUrl: string | null,
+  senderName: string
+) {
+  // Insert message into group_messages
+  const { error } = await adminClient
+    .from('group_messages')
+    .insert({
+      group_chat_id: groupChatId,
+      sender_id: senderId,
+      content,
+      content_type: contentType,
+      media_url: mediaUrl,
+    })
+
+  if (error) throw error
+
+  // Update group_chats.updated_at
+  await adminClient
+    .from('group_chats')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', groupChatId)
+
+  // Get group name and members for push notification
+  const { data: groupChat } = await adminClient
+    .from('group_chats')
+    .select('name')
+    .eq('id', groupChatId)
+    .single()
+
+  const { data: members } = await adminClient
+    .from('group_chat_members')
+    .select('user_id')
+    .eq('group_chat_id', groupChatId)
+    .eq('notifications_enabled', true)
+    .neq('user_id', senderId)
+
+  if (members && members.length > 0) {
+    const memberIds = members.map(m => m.user_id)
+    const messagePreview = contentType === 'text'
+      ? (content.length > 50 ? content.substring(0, 50) + '...' : content)
+      : contentType === 'gif' ? 'Sent a GIF' : `Sent ${contentType}`
+
+    sendPushToUsers(memberIds, {
+      title: groupChat?.name || 'Group Chat',
+      body: `${senderName || 'Coach'}: ${messagePreview}`,
+      url: '/messages',
     }).catch(err => console.error('Push error:', err))
   }
 }

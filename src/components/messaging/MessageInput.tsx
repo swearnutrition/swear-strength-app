@@ -3,6 +3,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { GifPicker } from '@/components/GifPicker'
 import { MediaUploader } from '@/components/MediaUploader'
+import { TemplateDropdown } from '@/components/messaging/TemplateDropdown'
+import { ManageTemplatesModal } from '@/components/messaging/ManageTemplatesModal'
+import { useMessageTemplates } from '@/hooks/useMessageTemplates'
 import type { SendMessagePayload } from '@/types/messaging'
 
 interface MessageInputProps {
@@ -10,13 +13,24 @@ interface MessageInputProps {
   onSend: (payload: SendMessagePayload) => Promise<void>
   onSchedule?: (payload: SendMessagePayload) => void
   disabled?: boolean
+  showTemplates?: boolean // Only show for DM conversations (coach only)
 }
 
-export function MessageInput({ conversationId, onSend, onSchedule, disabled }: MessageInputProps) {
+export function MessageInput({ conversationId, onSend, onSchedule, disabled, showTemplates = false }: MessageInputProps) {
   const [message, setMessage] = useState('')
   const [showGifPicker, setShowGifPicker] = useState(false)
   const [sending, setSending] = useState(false)
+  const [showManageTemplates, setShowManageTemplates] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Only load templates if showTemplates is true
+  const {
+    templates,
+    loading: templatesLoading,
+    createTemplate,
+    updateTemplate,
+    deleteTemplate,
+  } = useMessageTemplates()
 
   // Auto-resize textarea
   useEffect(() => {
@@ -97,6 +111,16 @@ export function MessageInput({ conversationId, onSend, onSchedule, disabled }: M
           />
         </div>
 
+        {/* Template button (only for DMs) */}
+        {showTemplates && (
+          <TemplateDropdown
+            templates={templates}
+            loading={templatesLoading}
+            onSelect={(content) => setMessage(content)}
+            onManage={() => setShowManageTemplates(true)}
+          />
+        )}
+
         {/* Text input */}
         <div className="flex-1 relative">
           <textarea
@@ -148,6 +172,19 @@ export function MessageInput({ conversationId, onSend, onSchedule, disabled }: M
           )}
         </button>
       </div>
+
+      {/* Manage Templates Modal */}
+      {showTemplates && (
+        <ManageTemplatesModal
+          isOpen={showManageTemplates}
+          onClose={() => setShowManageTemplates(false)}
+          templates={templates}
+          loading={templatesLoading}
+          onCreate={createTemplate}
+          onUpdate={updateTemplate}
+          onDelete={deleteTemplate}
+        />
+      )}
     </div>
   )
 }

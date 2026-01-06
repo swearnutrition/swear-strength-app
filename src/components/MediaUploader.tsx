@@ -2,7 +2,6 @@
 
 import { useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import imageCompression from 'browser-image-compression'
 
 interface MediaUploaderProps {
   conversationId: string
@@ -50,8 +49,9 @@ export function MediaUploader({ conversationId, onUploadComplete, onError }: Med
           )
         }
 
-        // Compress image
+        // Compress image (dynamically import to reduce bundle size)
         setProgress(20)
+        const imageCompression = (await import('browser-image-compression')).default
         processedFile = await imageCompression(processedFile, {
           maxSizeMB: 1,
           maxWidthOrHeight: 1920,

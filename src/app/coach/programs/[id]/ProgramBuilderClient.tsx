@@ -2,12 +2,49 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import type { Program, WorkoutDay, Exercise, ExerciseBlock, RoutineTemplate } from './types'
 import { parseRestInput, formatRestTime } from './utils/parseRest'
 import { WorkoutCard } from './components/WorkoutCard'
-import { ProgramPDFExport } from './components/ProgramPDFExport'
-import { VolumeAnalysis } from './components/VolumeAnalysis'
+
+// Lazy load ProgramPDFExport since it uses html2pdf.js (6.9MB)
+const ProgramPDFExport = dynamic(
+  () => import('./components/ProgramPDFExport').then(mod => ({ default: mod.ProgramPDFExport })),
+  {
+    loading: () => (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+        <div className="bg-slate-900 rounded-xl p-8 flex flex-col items-center gap-4">
+          <svg className="animate-spin h-8 w-8 text-purple-500" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-slate-400">Loading PDF export...</span>
+        </div>
+      </div>
+    ),
+    ssr: false
+  }
+)
+
+// Lazy load VolumeAnalysis since it includes recharts (7.7MB)
+const VolumeAnalysis = dynamic(
+  () => import('./components/VolumeAnalysis').then(mod => ({ default: mod.VolumeAnalysis })),
+  {
+    loading: () => (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+        <div className="bg-slate-900 rounded-xl p-8 flex flex-col items-center gap-4">
+          <svg className="animate-spin h-8 w-8 text-purple-500" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-slate-400">Loading analysis...</span>
+        </div>
+      </div>
+    ),
+    ssr: false
+  }
+)
 
 interface Props {
   program: Program

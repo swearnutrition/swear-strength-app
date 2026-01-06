@@ -1,14 +1,13 @@
-// src/app/api/announcements/[id]/route.ts
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-// PATCH /api/announcements/[id] - Archive/unarchive announcement (coach only)
+// PATCH /api/message-templates/[id] - Update a template
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params
   const supabase = await createClient()
+  const { id } = await params
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
@@ -27,34 +26,46 @@ export async function PATCH(
   }
 
   const body = await request.json()
-  const { archived } = body
+  const updates: { name?: string; content?: string } = {}
 
-  if (typeof archived !== 'boolean') {
-    return NextResponse.json({ error: 'archived must be a boolean' }, { status: 400 })
+  if (body.name?.trim()) {
+    updates.name = body.name.trim()
+  }
+  if (body.content?.trim()) {
+    updates.content = body.content.trim()
   }
 
-  const { data: announcement, error } = await supabase
-    .from('announcements')
-    .update({ archived })
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
+  }
+
+  const { data: template, error } = await supabase
+    .from('message_templates')
+    .update(updates)
     .eq('id', id)
-    .select('id, archived')
+    .eq('coach_id', user.id) // Ensure coach owns this template
+    .select('id, name, content, created_at, updated_at')
     .single()
 
   if (error) {
-    console.error('Error updating announcement:', error)
+    console.error('Error updating template:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ announcement })
+  if (!template) {
+    return NextResponse.json({ error: 'Template not found' }, { status: 404 })
+  }
+
+  return NextResponse.json({ template })
 }
 
-// DELETE /api/announcements/[id] - Delete announcement (coach only)
+// DELETE /api/message-templates/[id] - Delete a template
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params
   const supabase = await createClient()
+  const { id } = await params
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
@@ -73,12 +84,13 @@ export async function DELETE(
   }
 
   const { error } = await supabase
-    .from('announcements')
+    .from('message_templates')
     .delete()
     .eq('id', id)
+    .eq('coach_id', user.id) // Ensure coach owns this template
 
   if (error) {
-    console.error('Error deleting announcement:', error)
+    console.error('Error deleting template:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 

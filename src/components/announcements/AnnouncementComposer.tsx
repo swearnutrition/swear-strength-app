@@ -13,10 +13,11 @@ interface Client {
 
 interface AnnouncementComposerProps {
   onSubmit: (payload: CreateAnnouncementPayload) => Promise<void>
+  onSchedule?: (payload: CreateAnnouncementPayload, scheduledFor: string) => Promise<void>
   onCancel: () => void
 }
 
-export function AnnouncementComposer({ onSubmit, onCancel }: AnnouncementComposerProps) {
+export function AnnouncementComposer({ onSubmit, onSchedule, onCancel }: AnnouncementComposerProps) {
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [isPinned, setIsPinned] = useState(false)
@@ -26,6 +27,9 @@ export function AnnouncementComposer({ onSubmit, onCancel }: AnnouncementCompose
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(false)
   const [loadingClients, setLoadingClients] = useState(false)
+  const [showSchedule, setShowSchedule] = useState(false)
+  const [scheduleDate, setScheduleDate] = useState('')
+  const [scheduleTime, setScheduleTime] = useState('')
 
   // Fetch clients when targeting selected
   useEffect(() => {
@@ -55,6 +59,46 @@ export function AnnouncementComposer({ onSubmit, onCancel }: AnnouncementCompose
         targetType,
         selectedClientIds: targetType === 'selected' ? selectedClientIds : undefined,
       })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleScheduleSubmit = async () => {
+    if (!title.trim()) {
+      alert('Title is required')
+      return
+    }
+    if (!content.trim()) {
+      alert('Content is required')
+      return
+    }
+    if (!scheduleDate) {
+      alert('Date is required')
+      return
+    }
+    if (!scheduleTime) {
+      alert('Time is required')
+      return
+    }
+    if (!onSchedule) {
+      alert('Schedule handler not available')
+      return
+    }
+
+    const scheduledFor = new Date(`${scheduleDate}T${scheduleTime}`).toISOString()
+
+    setLoading(true)
+    try {
+      await onSchedule({
+        title: title.trim(),
+        content: content.trim(),
+        isPinned,
+        sendPush,
+        targetType,
+        selectedClientIds: targetType === 'selected' ? selectedClientIds : undefined,
+      }, scheduledFor)
+      setShowSchedule(false)
     } finally {
       setLoading(false)
     }
@@ -181,13 +225,67 @@ export function AnnouncementComposer({ onSubmit, onCancel }: AnnouncementCompose
         </label>
       </div>
 
+      {/* Schedule options */}
+      {showSchedule && onSchedule && (
+        <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700 space-y-3">
+          <h4 className="text-sm font-medium text-slate-300">Schedule for later</h4>
+          <div className="flex gap-3">
+            <input
+              type="date"
+              value={scheduleDate}
+              onChange={(e) => setScheduleDate(e.target.value)}
+              min={new Date().toISOString().split('T')[0]}
+              className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <input
+              type="time"
+              value={scheduleTime}
+              onChange={(e) => setScheduleTime(e.target.value)}
+              className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowSchedule(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleScheduleSubmit}
+              disabled={!scheduleDate || !scheduleTime || loading}
+              loading={loading}
+            >
+              Schedule
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
         <Button type="button" variant="ghost" onClick={onCancel} disabled={loading}>
           Cancel
         </Button>
-        <Button type="submit" disabled={!isValid || loading} loading={loading}>
-          Send Announcement
+        {onSchedule && !showSchedule && (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setShowSchedule(true)}
+            disabled={!isValid || loading}
+          >
+            <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Schedule
+          </Button>
+        )}
+        <Button type="submit" disabled={!isValid || loading || showSchedule} loading={loading}>
+          Send Now
         </Button>
       </div>
     </form>

@@ -49,6 +49,7 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
   const [showBroadcast, setShowBroadcast] = useState(false)
   const [showScheduleModal, setShowScheduleModal] = useState(false)
   const [pendingScheduleMessage, setPendingScheduleMessage] = useState<SendMessagePayload | null>(null)
+  const [pendingScheduleType, setPendingScheduleType] = useState<'dm' | 'group_chat'>('dm')
 
   const { conversations, loading: conversationsLoading, refetch } = useConversations()
   const { messages, loading: messagesLoading, sendMessage, deleteMessage, markAsRead } = useMessages(
@@ -246,21 +247,38 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
   }
 
   const handleScheduleMessage = async (scheduledFor: string) => {
-    if (!pendingScheduleMessage || !selectedConversationId) return
+    if (!pendingScheduleMessage) return
 
-    const { error } = await createScheduledMessage({
-      messageType: 'dm',
-      conversationId: selectedConversationId,
-      content: pendingScheduleMessage.content || '',
-      contentType: pendingScheduleMessage.contentType,
-      mediaUrl: pendingScheduleMessage.mediaUrl,
-      scheduledFor,
-    })
-
-    if (error) {
-      alert(`Failed to schedule message: ${error}`)
-    } else {
-      await refreshScheduled()
+    if (pendingScheduleType === 'dm') {
+      if (!selectedConversationId) return
+      const { error } = await createScheduledMessage({
+        messageType: 'dm',
+        conversationId: selectedConversationId,
+        content: pendingScheduleMessage.content || '',
+        contentType: pendingScheduleMessage.contentType,
+        mediaUrl: pendingScheduleMessage.mediaUrl,
+        scheduledFor,
+      })
+      if (error) {
+        alert(`Failed to schedule message: ${error}`)
+      } else {
+        await refreshScheduled()
+      }
+    } else if (pendingScheduleType === 'group_chat') {
+      if (!selectedGroupId) return
+      const { error } = await createScheduledMessage({
+        messageType: 'group_chat',
+        groupChatId: selectedGroupId,
+        content: pendingScheduleMessage.content || '',
+        contentType: pendingScheduleMessage.contentType,
+        mediaUrl: pendingScheduleMessage.mediaUrl,
+        scheduledFor,
+      })
+      if (error) {
+        alert(`Failed to schedule message: ${error}`)
+      } else {
+        await refreshScheduled()
+      }
     }
     setPendingScheduleMessage(null)
   }
@@ -458,6 +476,8 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
                           ? 'bg-orange-500/20 text-orange-400'
                           : msg.messageType === 'mass_dm'
                           ? 'bg-blue-500/20 text-blue-400'
+                          : msg.messageType === 'group_chat'
+                          ? 'bg-green-500/20 text-green-400'
                           : 'bg-purple-500/20 text-purple-400'
                       }`}>
                         {msg.messageType === 'announcement' ? (
@@ -465,6 +485,10 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
                           </svg>
                         ) : msg.messageType === 'mass_dm' ? (
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                          </svg>
+                        ) : msg.messageType === 'group_chat' ? (
                           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                           </svg>
@@ -478,13 +502,15 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
                         {/* Type label and recipient */}
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-medium text-slate-500 uppercase">
-                            {msg.messageType === 'announcement' ? 'Announcement' : msg.messageType === 'mass_dm' ? 'Broadcast' : 'DM'}
+                            {msg.messageType === 'announcement' ? 'Announcement' : msg.messageType === 'mass_dm' ? 'Broadcast' : msg.messageType === 'group_chat' ? 'Group' : 'DM'}
                           </span>
                           <span className="text-sm text-slate-400">
                             {msg.messageType === 'dm' && msg.conversationClientName
                               ? `to ${msg.conversationClientName}`
                               : msg.messageType === 'mass_dm' && msg.recipientNames
                               ? `to ${msg.recipientNames.length} clients`
+                              : msg.messageType === 'group_chat' && msg.groupChatName
+                              ? `to ${msg.groupChatName}`
                               : msg.messageType === 'announcement'
                               ? 'to all clients'
                               : ''}
@@ -577,8 +603,10 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
               onSend={handleSendMessage}
               onSchedule={(payload) => {
                 setPendingScheduleMessage(payload)
+                setPendingScheduleType('dm')
                 setShowScheduleModal(true)
               }}
+              showTemplates={true}
             />
           </>
         ) : selectedChatType === 'group' && selectedGroup ? (
@@ -623,6 +651,11 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
             <MessageInput
               conversationId={selectedGroup.id}
               onSend={handleSendGroupMessage}
+              onSchedule={(payload) => {
+                setPendingScheduleMessage(payload)
+                setPendingScheduleType('group_chat')
+                setShowScheduleModal(true)
+              }}
             />
           </>
         ) : (
