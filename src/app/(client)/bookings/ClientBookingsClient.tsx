@@ -721,9 +721,11 @@ export function ClientBookingsClient({
                   return (
                     <div
                       key={day.toISOString()}
-                      className={`p-2 border-r border-slate-800 last:border-r-0 ${
-                        isToday ? 'bg-purple-500/5' : isPast ? 'bg-slate-900/30' : ''
-                      }`}
+                      className="p-2 last:border-r-0"
+                      style={{
+                        borderRight: `1px solid ${colors.border}`,
+                        background: isToday ? colors.purpleLight : isPast ? colors.bgTertiary : 'transparent'
+                      }}
                     >
                       <div className="space-y-1 max-h-[280px] overflow-y-auto">
                         {/* Existing bookings */}
@@ -732,7 +734,8 @@ export function ClientBookingsClient({
                           .map(booking => (
                             <div
                               key={booking.id}
-                              className="w-full p-1.5 rounded-lg bg-blue-500/20 border border-blue-500/50 text-blue-300 text-xs"
+                              className="w-full p-1.5 rounded-lg text-xs"
+                              style={{ background: `${colors.blue}20`, border: `1px solid ${colors.blue}50`, color: colors.blue }}
                             >
                               <div className="font-medium">{formatTime(booking.startsAt)}</div>
                               <div className="opacity-75 truncate">Booked</div>
@@ -746,15 +749,15 @@ export function ClientBookingsClient({
                             <button
                               key={slot.startsAt}
                               onClick={() => handleQuickBookSlotSelect(day, slot)}
-                              className={`w-full p-1.5 rounded-lg border text-left transition-all text-xs ${
-                                isSelected
-                                  ? 'border-green-500 bg-green-500/20 text-green-300'
-                                  : 'border-dashed border-slate-600 hover:border-green-500/50 hover:bg-green-500/10 text-slate-400 hover:text-green-300'
-                              }`}
+                              className="w-full p-1.5 rounded-lg border text-left transition-all text-xs"
+                              style={isSelected
+                                ? { borderColor: colors.green, background: colors.greenLight, color: colors.green }
+                                : { borderStyle: 'dashed', borderColor: colors.border, color: colors.textMuted }
+                              }
                             >
                               <div className="font-medium flex items-center gap-1">
                                 {formatTime(slot.startsAt)}
-                                {slot.isFavorite && <span className="text-amber-400 text-[8px]">★</span>}
+                                {slot.isFavorite && <span className="text-[8px]" style={{ color: colors.amber }}>★</span>}
                               </div>
                               <div className="opacity-75">{isSelected ? 'Selected' : 'Available'}</div>
                             </button>
@@ -763,10 +766,10 @@ export function ClientBookingsClient({
 
                         {/* Empty state */}
                         {!isPast && availableSlots.length === 0 && upcomingBookings.filter(b => isSameDay(new Date(b.startsAt), day)).length === 0 && (
-                          <div className="text-center text-slate-600 text-xs py-4">No slots</div>
+                          <div className="text-center text-xs py-4" style={{ color: colors.textMuted }}>No slots</div>
                         )}
                         {isPast && (
-                          <div className="text-center text-slate-700 text-xs py-4">-</div>
+                          <div className="text-center text-xs py-4" style={{ color: colors.textMuted }}>-</div>
                         )}
                       </div>
                     </div>
@@ -914,31 +917,36 @@ export function ClientBookingsClient({
                     const hasFavorite = bookingStats?.favoriteTimes?.some(fav => fav.day === dayOfWeek) || false
                     const isDisabled = isPast || (isToday && isWithinNotice)
 
+                    const getButtonStyle = () => {
+                      if (isDisabled) {
+                        return { background: colors.bgTertiary, color: colors.textMuted, cursor: 'not-allowed' }
+                      }
+                      if (isSelected) {
+                        return { background: colors.purpleDark, color: 'white', boxShadow: `0 0 0 2px ${colors.purple}` }
+                      }
+                      if (hasSelectedSlots) {
+                        return { background: colors.purpleLight, color: colors.purple, boxShadow: `0 0 0 1px ${colors.purple}` }
+                      }
+                      if (hasBooking) {
+                        return { background: colors.greenLight, color: colors.green }
+                      }
+                      return { background: colors.bgTertiary, color: colors.textSecondary }
+                    }
+
                     cells.push(
                       <button
                         key={day}
                         onClick={() => !isDisabled && setSelectedDate(date)}
                         disabled={isDisabled}
-                        className={`
-                          h-9 rounded-md text-xs font-medium transition-all relative flex items-center justify-center
-                          ${isDisabled
-                            ? 'bg-slate-800/30 text-slate-600 cursor-not-allowed'
-                            : isSelected
-                              ? 'bg-purple-600 text-white ring-2 ring-purple-400'
-                              : hasSelectedSlots
-                                ? 'bg-purple-500/30 text-purple-300 ring-1 ring-purple-500'
-                                : hasBooking
-                                  ? 'bg-green-500/20 text-green-400'
-                                  : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700'
-                          }
-                        `}
+                        className="h-9 rounded-md text-xs font-medium transition-all relative flex items-center justify-center hover:opacity-80"
+                        style={getButtonStyle()}
                       >
                         {day}
                         {hasFavorite && !isDisabled && (
-                          <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-amber-400" />
+                          <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full" style={{ background: colors.amber }} />
                         )}
                         {isToday && (
-                          <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-blue-400" />
+                          <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full" style={{ background: colors.blue }} />
                         )}
                       </button>
                     )
@@ -949,10 +957,10 @@ export function ClientBookingsClient({
               </div>
 
               {/* Legend */}
-              <div className="hidden md:flex items-center justify-center gap-2 mt-1.5 pt-1.5 border-t border-slate-800 text-[9px] text-slate-500">
-                <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" />Fav</span>
-                <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full bg-green-500" />Booked</span>
-                <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full bg-purple-500" />Selected</span>
+              <div className="hidden md:flex items-center justify-center gap-2 mt-1.5 pt-1.5 text-[9px]" style={{ borderTop: `1px solid ${colors.border}`, color: colors.textMuted }}>
+                <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: colors.amber }} />Fav</span>
+                <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: colors.green }} />Booked</span>
+                <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: colors.purple }} />Selected</span>
               </div>
             </div>
           </div>
@@ -960,19 +968,72 @@ export function ClientBookingsClient({
           {/* Right Sidebar - Time Slots & Upcoming */}
           <div className="sidebar-section space-y-3" style={{ flex: 1, minWidth: 0 }}>
             {/* Time Slots */}
-            <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-3">
+            <div className="rounded-xl p-3" style={{ background: colors.bgCard, border: `1px solid ${colors.border}` }}>
               {selectedDate ? (
                 <>
-                  <h3 className="text-white font-medium text-sm mb-2">{formatDate(selectedDate)}</h3>
+                  <h3 className="font-medium text-sm mb-2" style={{ color: colors.text }}>{formatDate(selectedDate)}</h3>
+
+                  {/* Show existing bookings for selected date */}
+                  {(() => {
+                    const dateBookings = upcomingBookings.filter(b => isSameDay(new Date(b.startsAt), selectedDate))
+                    if (dateBookings.length > 0) {
+                      return (
+                        <div className="mb-3">
+                          <p className="text-xs font-medium mb-1.5" style={{ color: colors.textSecondary }}>Your Bookings</p>
+                          <div className="space-y-1.5">
+                            {dateBookings.map((booking) => (
+                              <div
+                                key={booking.id}
+                                className="flex items-center justify-between p-2 rounded-lg"
+                                style={{ background: colors.purpleLight, border: `1px solid ${colors.purple}40` }}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className="w-6 h-6 rounded flex items-center justify-center"
+                                    style={{ background: `${colors.purple}30`, color: colors.purple }}
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={booking.bookingType === 'checkin' ? "M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" : "M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"} />
+                                    </svg>
+                                  </div>
+                                  <div>
+                                    <span className="text-xs font-medium" style={{ color: colors.purple }}>{formatTime(booking.startsAt)}</span>
+                                    <span className="text-xs ml-1.5" style={{ color: colors.textSecondary }}>
+                                      {booking.bookingType === 'checkin' ? 'Check-in' : 'Training'}
+                                    </span>
+                                  </div>
+                                </div>
+                                {!isWithin12Hours(new Date(booking.startsAt)) && (
+                                  <button
+                                    onClick={() => { setSelectedBookingForAction(booking); setShowCancelModal(true) }}
+                                    className="p-1 rounded hover:opacity-70"
+                                    style={{ color: colors.textMuted }}
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    }
+                    return null
+                  })()}
+
+                  {/* Available slots */}
+                  <p className="text-xs font-medium mb-1.5" style={{ color: colors.textSecondary }}>Available Slots</p>
                   {loadingSlots ? (
                     <div className="flex items-center justify-center py-4">
-                      <svg className="animate-spin h-5 w-5 text-purple-500" viewBox="0 0 24 24">
+                      <svg className="animate-spin h-5 w-5" style={{ color: colors.purple }} viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                       </svg>
                     </div>
                   ) : availableSlots.length === 0 ? (
-                    <p className="text-slate-400 text-xs text-center py-3">No available slots</p>
+                    <p className="text-xs text-center py-3" style={{ color: colors.textMuted }}>No available slots</p>
                   ) : (
                     <div className="grid grid-cols-2 gap-1.5">
                       {availableSlots.map((slot, index) => {
@@ -981,30 +1042,28 @@ export function ClientBookingsClient({
                           <button
                             key={index}
                             onClick={() => handleSlotSelect(slot)}
-                            className={`
-                              py-1.5 px-2 rounded text-xs font-medium transition-all relative
-                              ${isSelected
-                                ? 'bg-purple-600 text-white'
-                                : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700 border border-slate-700'
-                              }
-                            `}
+                            className="py-1.5 px-2 rounded text-xs font-medium transition-all relative"
+                            style={isSelected
+                              ? { background: colors.purpleGradient, color: 'white' }
+                              : { background: colors.bgTertiary, color: colors.textSecondary, border: `1px solid ${colors.border}` }
+                            }
                           >
                             {formatTime(slot.startsAt)}
-                            {slot.isFavorite && <span className="absolute top-0 right-0.5 text-amber-400 text-[8px]">★</span>}
+                            {slot.isFavorite && <span className="absolute top-0 right-0.5 text-[8px]" style={{ color: colors.amber }}>★</span>}
                           </button>
                         )
                       })}
                     </div>
                   )}
                   {selectedSlots.length > 0 && (
-                    <div className="mt-2 pt-2 border-t border-slate-800">
+                    <div className="mt-2 pt-2" style={{ borderTop: `1px solid ${colors.border}` }}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-white text-xs font-medium">{selectedSlots.length} selected</span>
+                        <span className="text-xs font-medium" style={{ color: colors.text }}>{selectedSlots.length} selected</span>
                         <div className="flex gap-1.5">
                           <Button size="sm" onClick={() => setShowConfirmModal(true)} disabled={bookingInProgress} className="text-xs px-2 py-1">
                             Confirm
                           </Button>
-                          <button onClick={() => setSelectedSlots([])} className="text-slate-400 hover:text-white text-xs">Clear</button>
+                          <button onClick={() => setSelectedSlots([])} className="text-xs" style={{ color: colors.textMuted }}>Clear</button>
                         </div>
                       </div>
                     </div>
@@ -1012,48 +1071,59 @@ export function ClientBookingsClient({
                 </>
               ) : (
                 <div className="text-center py-4">
-                  <svg className="w-8 h-8 text-slate-600 mx-auto mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-8 h-8 mx-auto mb-1" style={{ color: colors.textMuted }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                  <p className="text-slate-500 text-xs">Select a date</p>
+                  <p className="text-xs" style={{ color: colors.textMuted }}>Select a date</p>
                 </div>
               )}
             </div>
 
             {/* Upcoming Bookings */}
-            <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-3">
-              <h3 className="text-white font-medium text-xs mb-2">Upcoming</h3>
+            <div className="rounded-xl p-3" style={{ background: colors.bgCard, border: `1px solid ${colors.border}` }}>
+              <h3 className="font-medium text-xs mb-2" style={{ color: colors.text }}>Upcoming</h3>
               {bookingsLoading ? (
                 <div className="flex items-center justify-center py-3">
-                  <svg className="animate-spin h-4 w-4 text-purple-500" viewBox="0 0 24 24">
+                  <svg className="animate-spin h-4 w-4" style={{ color: colors.purple }} viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
                 </div>
               ) : upcomingBookings.length === 0 ? (
-                <p className="text-slate-500 text-xs text-center py-2">No upcoming bookings</p>
+                <p className="text-xs text-center py-2" style={{ color: colors.textMuted }}>No upcoming bookings</p>
               ) : (
                 <div className="space-y-1.5">
                   {upcomingBookings.slice(0, 4).map((booking) => {
                     const bookingDate = new Date(booking.startsAt)
                     const canCancel = !isWithin12Hours(bookingDate)
                     return (
-                      <div key={booking.id} className="bg-slate-800/50 rounded p-1.5 flex items-center justify-between text-xs">
+                      <div
+                        key={booking.id}
+                        className="rounded p-1.5 flex items-center justify-between text-xs"
+                        style={{ background: colors.bgTertiary }}
+                      >
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${booking.bookingType === 'checkin' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                          <div
+                            className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0"
+                            style={{
+                              background: booking.bookingType === 'checkin' ? colors.purpleLight : `${colors.blue}20`,
+                              color: booking.bookingType === 'checkin' ? colors.purple : colors.blue
+                            }}
+                          >
                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={booking.bookingType === 'checkin' ? "M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" : "M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"} />
                             </svg>
                           </div>
                           <div className="min-w-0 truncate">
-                            <span className="text-white">{formatDate(bookingDate)}</span>
-                            <span className="text-slate-500 ml-1">{formatTime(booking.startsAt)}</span>
+                            <span style={{ color: colors.text }}>{formatDate(bookingDate)}</span>
+                            <span className="ml-1" style={{ color: colors.textMuted }}>{formatTime(booking.startsAt)}</span>
                           </div>
                         </div>
                         {canCancel && (
                           <button
                             onClick={() => { setSelectedBookingForAction(booking); setShowCancelModal(true) }}
-                            className="p-0.5 text-slate-500 hover:text-red-400 flex-shrink-0"
+                            className="p-0.5 hover:opacity-70 flex-shrink-0"
+                            style={{ color: colors.textMuted }}
                           >
                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1064,7 +1134,7 @@ export function ClientBookingsClient({
                     )
                   })}
                   {upcomingBookings.length > 4 && (
-                    <p className="text-slate-500 text-[10px] text-center">+{upcomingBookings.length - 4} more</p>
+                    <p className="text-[10px] text-center" style={{ color: colors.textMuted }}>+{upcomingBookings.length - 4} more</p>
                   )}
                 </div>
               )}
