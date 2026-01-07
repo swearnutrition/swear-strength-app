@@ -353,6 +353,15 @@ export async function POST(request: NextRequest) {
       : booking.client?.name || 'Client'
     const clientEmail = isOneOff ? undefined : booking.client?.email
 
+    console.log('[Create Booking] Creating calendar event:', {
+      coachId,
+      clientName,
+      clientEmail,
+      bookingType: payload.bookingType,
+      startsAt: payload.startsAt,
+      endsAt: payload.endsAt,
+    })
+
     const calendarEvent = await createCalendarEvent(coachId, {
       summary: `${payload.bookingType === 'checkin' ? 'Check-in' : 'Training Session'}: ${clientName}`,
       description: `${payload.bookingType === 'checkin' ? 'Monthly check-in' : 'Training session'} with ${clientName}${isOneOff ? ' (One-off booking)' : ''}`,
@@ -361,6 +370,12 @@ export async function POST(request: NextRequest) {
       attendeeEmail: clientEmail,
       attendeeName: clientName,
     })
+
+    if (calendarEvent) {
+      console.log('[Create Booking] Calendar event created:', calendarEvent.id)
+    } else {
+      console.log('[Create Booking] Calendar event NOT created - check Google credentials')
+    }
 
     // Update booking with Google Calendar info if event was created
     if (calendarEvent) {

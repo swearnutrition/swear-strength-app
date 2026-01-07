@@ -120,11 +120,13 @@ export async function createCalendarEvent(
   coachId: string,
   params: CalendarEventParams
 ): Promise<CalendarEvent | null> {
+  console.log('[Calendar] Creating event for coach:', coachId)
   const creds = await getGoogleCredentials(coachId)
   if (!creds) {
-    console.log('No valid Google credentials, skipping calendar event creation')
+    console.log('[Calendar] No valid Google credentials for coach:', coachId)
     return null
   }
+  console.log('[Calendar] Got credentials, creating event with attendee:', params.attendeeEmail)
 
   try {
     const event: Record<string, unknown> = {
@@ -172,18 +174,19 @@ export async function createCalendarEvent(
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('Failed to create Google Calendar event:', errorText)
+      console.error('[Calendar] Failed to create event:', response.status, errorText)
       return null
     }
 
     const data = await response.json()
+    console.log('[Calendar] Event created successfully:', data.id, 'Meet link:', data.hangoutLink)
     return {
       id: data.id,
       htmlLink: data.htmlLink,
       hangoutLink: data.hangoutLink,
     }
   } catch (err) {
-    console.error('Error creating Google Calendar event:', err)
+    console.error('[Calendar] Error creating event:', err)
     return null
   }
 }
