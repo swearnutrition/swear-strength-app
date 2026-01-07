@@ -163,9 +163,11 @@ export function ClientBookingsClient({
 
   // Filter upcoming confirmed bookings
   const upcomingBookings = useMemo(() => {
-    return bookings
-      .filter(b => b.status === 'confirmed' && new Date(b.startsAt) >= today)
-      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
+    const filtered = bookings.filter(b => b.status === 'confirmed' && new Date(b.startsAt) >= now)
+    console.log('Upcoming bookings:', filtered.length, 'of', bookings.length, 'total bookings')
+    return filtered.sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
   }, [bookings])
 
   // Generate calendar months (current + next 2)
@@ -942,7 +944,10 @@ export function ClientBookingsClient({
                         style={getButtonStyle()}
                       >
                         {day}
-                        {hasFavorite && !isDisabled && (
+                        {hasBooking && !isDisabled && (
+                          <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full" style={{ background: colors.green }} />
+                        )}
+                        {hasFavorite && !isDisabled && !hasBooking && (
                           <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full" style={{ background: colors.amber }} />
                         )}
                         {isToday && (
