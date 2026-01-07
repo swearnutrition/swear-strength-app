@@ -93,7 +93,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to submit inquiry' }, { status: 500 })
   }
 
-  // TODO: Send email notification (Task 7)
+  // Send email notification (fire and forget)
+  const notificationPayload = {
+    name: payload.name.trim(),
+    email: payload.email.trim().toLowerCase(),
+    phone: payload.phone?.trim() || null,
+    trainingExperience: payload.trainingExperience,
+    goals: payload.goals,
+    trainingFormat: payload.trainingFormat,
+    currentSituation: payload.currentSituation.trim(),
+    anythingElse: payload.anythingElse?.trim() || null,
+  }
+
+  // Don't await - let it run in background
+  fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-lead-notification`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+    body: JSON.stringify(notificationPayload),
+  }).catch((err) => {
+    console.error('Failed to send lead notification:', err)
+  })
 
   return NextResponse.json({ success: true, id: data.id }, { status: 201 })
 }
