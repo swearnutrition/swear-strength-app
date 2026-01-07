@@ -1086,7 +1086,9 @@ export function ClientBookingsClient({
 
             {/* Upcoming Bookings */}
             <div className="rounded-xl p-3" style={{ background: colors.bgCard, border: `1px solid ${colors.border}` }}>
-              <h3 className="font-medium text-xs mb-2" style={{ color: colors.text }}>Upcoming</h3>
+              <h3 className="font-medium text-xs mb-2" style={{ color: colors.text }}>
+                Upcoming ({upcomingBookings.length})
+              </h3>
               {bookingsLoading ? (
                 <div className="flex items-center justify-center py-3">
                   <svg className="animate-spin h-4 w-4" style={{ color: colors.purple }} viewBox="0 0 24 24">
