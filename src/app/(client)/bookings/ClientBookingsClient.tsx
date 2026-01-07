@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { useBookings } from '@/hooks/useBookings'
 import { useAvailability } from '@/hooks/useAvailability'
+import { useColors } from '@/hooks/useColors'
 import { Button } from '@/components/ui/Button'
 import { Modal, ModalFooter } from '@/components/ui/Modal'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
@@ -121,6 +122,8 @@ export function ClientBookingsClient({
   checkinUsage,
   hybridSessionUsage,
 }: ClientBookingsClientProps) {
+  const colors = useColors()
+
   // Default to 'checkin' for online clients, 'session' for training/hybrid
   const canBookSessions = clientType === 'training' || clientType === 'hybrid'
   const [bookingType, setBookingType] = useState<BookingType>(canBookSessions ? 'session' : 'checkin')
@@ -457,26 +460,26 @@ export function ClientBookingsClient({
   // No coach assigned
   if (!coachId) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: colors.bgGradient }}>
         <div className="text-center max-w-md">
-          <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: colors.bgCard }}>
+            <svg className="w-8 h-8" style={{ color: colors.textMuted }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold text-white mb-2">No Active Package</h2>
-          <p className="text-slate-400">You don&apos;t have an active session package yet. Contact your coach to get started.</p>
+          <h2 className="text-xl font-bold mb-2" style={{ color: colors.text }}>No Active Package</h2>
+          <p style={{ color: colors.textSecondary }}>You don&apos;t have an active session package yet. Contact your coach to get started.</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 pb-24 lg:pb-8">
+    <div className="min-h-screen pb-24 lg:pb-8" style={{ background: colors.bgGradient }}>
       {/* Desktop Container */}
       <div className="max-w-4xl mx-auto px-4 lg:px-6 pt-6 pb-4">
         {/* Header */}
-        <Link href="/dashboard" className="inline-flex items-center text-slate-400 hover:text-white mb-3 text-sm">
+        <Link href="/dashboard" className="inline-flex items-center hover:opacity-80 mb-3 text-sm" style={{ color: colors.textSecondary }}>
           <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
@@ -484,8 +487,8 @@ export function ClientBookingsClient({
         </Link>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white">Book Sessions</h1>
-            <p className="text-slate-400 text-sm mt-1">Schedule your training sessions and check-ins</p>
+            <h1 className="text-2xl font-bold" style={{ color: colors.text }}>Book Sessions</h1>
+            <p className="text-sm mt-1" style={{ color: colors.textSecondary }}>Schedule your training sessions and check-ins</p>
           </div>
           {canBookSessions && !isQuickBookMode && (
             <button
@@ -501,7 +504,8 @@ export function ClientBookingsClient({
           {isQuickBookMode && (
             <button
               onClick={exitQuickBookMode}
-              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 px-4 rounded-xl transition-all text-sm"
+              className="flex items-center gap-2 hover:opacity-80 font-medium py-2 px-4 rounded-xl transition-all text-sm"
+              style={{ background: colors.bgCard, color: colors.text, border: `1px solid ${colors.border}` }}
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -514,60 +518,60 @@ export function ClientBookingsClient({
 
       {/* Compact Stats Bar */}
       <div className="max-w-4xl mx-auto px-4 lg:px-6 mb-4">
-        <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-3">
+        <div className="rounded-xl p-3" style={{ background: colors.bgCard, border: `1px solid ${colors.border}` }}>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 lg:gap-x-8">
             {/* Sessions */}
             {canBookSessions && (
               <div className="flex items-center gap-2">
-                <span className="text-slate-400 text-xs font-medium">
+                <span className="text-xs font-medium" style={{ color: colors.textSecondary }}>
                   {clientType === 'hybrid' ? 'Monthly' : 'Sessions'}:
                 </span>
                 {clientType === 'hybrid' && hybridSessionUsage ? (
-                  <span className="text-white font-semibold">
+                  <span className="font-semibold" style={{ color: colors.text }}>
                     {hybridSessionUsage.limit - hybridSessionUsage.used}/{hybridSessionUsage.limit}
                   </span>
                 ) : sessionPackage ? (
-                  <span className="text-white font-semibold">
+                  <span className="font-semibold" style={{ color: colors.text }}>
                     {sessionPackage.remainingSessions}/{sessionPackage.totalSessions}
                   </span>
                 ) : (
-                  <span className="text-slate-500">—</span>
+                  <span style={{ color: colors.textMuted }}>—</span>
                 )}
               </div>
             )}
 
             {/* Expiration */}
             <div className="flex items-center gap-2">
-              <span className="text-slate-400 text-xs font-medium">
+              <span className="text-xs font-medium" style={{ color: colors.textSecondary }}>
                 {clientType === 'hybrid' ? 'Resets:' : 'Expires:'}
               </span>
               {clientType === 'hybrid' && hybridSessionUsage ? (
-                <span className="text-white font-semibold">{hybridSessionUsage.resetDate}</span>
+                <span className="font-semibold" style={{ color: colors.text }}>{hybridSessionUsage.resetDate}</span>
               ) : sessionPackage?.expiresAt ? (
-                <span className="text-white font-semibold">
+                <span className="font-semibold" style={{ color: colors.text }}>
                   {new Date(sessionPackage.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                 </span>
               ) : (
-                <span className="text-green-400 font-medium text-sm">No expiry</span>
+                <span className="font-medium text-sm" style={{ color: colors.green }}>No expiry</span>
               )}
             </div>
 
             {/* Streak */}
             {canBookSessions && (
               <div className="flex items-center gap-1.5">
-                <span className="text-amber-400">🔥</span>
-                <span className="text-white font-semibold">{bookingStats?.currentStreakWeeks || 0}</span>
-                <span className="text-slate-500 text-xs">weeks</span>
+                <span style={{ color: colors.amber }}>🔥</span>
+                <span className="font-semibold" style={{ color: colors.text }}>{bookingStats?.currentStreakWeeks || 0}</span>
+                <span className="text-xs" style={{ color: colors.textMuted }}>weeks</span>
               </div>
             )}
 
             {/* Check-in */}
             <div className="flex items-center gap-2">
-              <span className="text-slate-400 text-xs font-medium">Check-in:</span>
+              <span className="text-xs font-medium" style={{ color: colors.textSecondary }}>Check-in:</span>
               {checkinUsage?.used ? (
-                <span className="text-slate-500 text-sm">Resets {checkinUsage.resetDate}</span>
+                <span className="text-sm" style={{ color: colors.textMuted }}>Resets {checkinUsage.resetDate}</span>
               ) : (
-                <span className="text-green-400 font-medium text-sm">Available</span>
+                <span className="font-medium text-sm" style={{ color: colors.green }}>Available</span>
               )}
             </div>
           </div>
@@ -605,7 +609,7 @@ export function ClientBookingsClient({
 
           {canBookSessions && (
             <TabsContent value="session" className="mt-2">
-              <p className="text-slate-400 text-sm">
+              <p className="text-sm" style={{ color: colors.textSecondary }}>
                 {clientType === 'hybrid' && hybridSessionUsage ? (
                   <>Select up to {hybridSessionUsage.limit - hybridSessionUsage.used} time slots for your training sessions this month.</>
                 ) : sessionPackage ? (
@@ -619,7 +623,7 @@ export function ClientBookingsClient({
           )}
 
           <TabsContent value="checkin" className="mt-2">
-            <p className="text-slate-400 text-sm">
+            <p className="text-sm" style={{ color: colors.textSecondary }}>
               Book your monthly virtual check-in. Select a single 30-minute slot.
             </p>
           </TabsContent>
@@ -629,8 +633,8 @@ export function ClientBookingsClient({
       {/* Quick Book Week View */}
       {isQuickBookMode && (
         <div className="max-w-4xl mx-auto px-4 lg:px-6 mb-4">
-          <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 mb-4">
-            <p className="text-green-400 text-sm">
+          <div className="rounded-xl p-4 mb-4" style={{ background: colors.greenLight, border: `1px solid ${colors.green}30` }}>
+            <p className="text-sm" style={{ color: colors.green }}>
               <strong>Quick Book Mode:</strong> Click on available time slots below to select multiple sessions across different days.
               {getRemainingSessionsForBooking() > 0 && (
                 <span className="ml-1">You can book up to {getRemainingSessionsForBooking()} session{getRemainingSessionsForBooking() !== 1 ? 's' : ''}.</span>
@@ -643,18 +647,20 @@ export function ClientBookingsClient({
             <button
               onClick={goToPreviousWeek}
               disabled={quickBookWeekStart <= getStartOfWeek(new Date())}
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="p-2 rounded-lg hover:opacity-80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ background: colors.bgCard, color: colors.textSecondary }}
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
-            <h2 className="text-lg font-semibold text-white">
+            <h2 className="text-lg font-semibold" style={{ color: colors.text }}>
               {formatDate(quickBookWeekDays[0])} - {formatDate(quickBookWeekDays[6])}
             </h2>
             <button
               onClick={goToNextWeek}
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+              className="p-2 rounded-lg hover:opacity-80 transition-colors"
+              style={{ background: colors.bgCard, color: colors.textSecondary }}
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -665,27 +671,29 @@ export function ClientBookingsClient({
           {/* Week Grid */}
           {loadingWeekSlots ? (
             <div className="flex items-center justify-center py-12">
-              <svg className="animate-spin h-8 w-8 text-purple-500" viewBox="0 0 24 24">
+              <svg className="animate-spin h-8 w-8" style={{ color: colors.purple }} viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
             </div>
           ) : (
-            <div className="bg-slate-900/50 rounded-2xl border border-slate-800 overflow-hidden">
+            <div className="rounded-2xl overflow-hidden" style={{ background: colors.bgCard, border: `1px solid ${colors.border}` }}>
               {/* Week Header */}
-              <div className="grid grid-cols-7 border-b border-slate-800">
+              <div className="grid grid-cols-7" style={{ borderBottom: `1px solid ${colors.border}` }}>
                 {quickBookWeekDays.map((day) => {
                   const isToday = isSameDay(day, new Date())
                   const isPast = day < new Date(new Date().setHours(0, 0, 0, 0))
                   return (
                     <div
                       key={day.toISOString()}
-                      className={`p-3 text-center border-r border-slate-800 last:border-r-0 ${
-                        isToday ? 'bg-purple-500/10' : isPast ? 'bg-slate-900/50' : ''
-                      }`}
+                      className="p-3 text-center last:border-r-0"
+                      style={{
+                        borderRight: `1px solid ${colors.border}`,
+                        background: isToday ? colors.purpleLight : isPast ? colors.bgTertiary : 'transparent'
+                      }}
                     >
-                      <div className="text-xs text-slate-500">{day.toLocaleDateString('en-US', { weekday: 'short' })}</div>
-                      <div className={`text-lg font-semibold mt-0.5 ${isToday ? 'text-purple-400' : isPast ? 'text-slate-600' : 'text-white'}`}>
+                      <div className="text-xs" style={{ color: colors.textMuted }}>{day.toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                      <div className="text-lg font-semibold mt-0.5" style={{ color: isToday ? colors.purple : isPast ? colors.textMuted : colors.text }}>
                         {day.getDate()}
                       </div>
                     </div>
@@ -770,10 +778,10 @@ export function ClientBookingsClient({
 
           {/* Selected Slots Summary */}
           {quickBookSlots.length > 0 && (
-            <div className="mt-4 p-4 bg-green-500/10 border border-green-500/30 rounded-xl">
+            <div className="mt-4 p-4 rounded-xl" style={{ background: colors.greenLight, border: `1px solid ${colors.green}30` }}>
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
-                  <h4 className="text-sm font-medium text-green-400 mb-2">
+                  <h4 className="text-sm font-medium mb-2" style={{ color: colors.green }}>
                     {quickBookSlots.length} session{quickBookSlots.length !== 1 ? 's' : ''} selected
                   </h4>
                   <div className="flex flex-wrap gap-2">
@@ -782,13 +790,14 @@ export function ClientBookingsClient({
                       .map((slot) => (
                         <span
                           key={slot.startsAt}
-                          className="inline-flex items-center gap-1 px-2 py-1 bg-green-500/20 text-green-300 rounded-md text-xs"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs"
+                          style={{ background: `${colors.green}20`, color: colors.green }}
                         >
                           {new Date(slot.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} {formatTime(slot.startsAt)}
                           <button
                             type="button"
                             onClick={() => removeQuickBookSlot(slot)}
-                            className="hover:text-green-100 ml-1"
+                            className="hover:opacity-70 ml-1"
                           >
                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -798,7 +807,7 @@ export function ClientBookingsClient({
                       ))}
                   </div>
                   {sessionPackage && (
-                    <p className="text-xs text-slate-500 mt-2">
+                    <p className="text-xs mt-2" style={{ color: colors.textMuted }}>
                       After booking: {sessionPackage.remainingSessions - quickBookSlots.length} sessions remaining
                     </p>
                   )}
@@ -806,7 +815,8 @@ export function ClientBookingsClient({
                 <button
                   onClick={handleQuickBookConfirm}
                   disabled={bookingInProgress}
-                  className="flex items-center gap-2 bg-green-600 hover:bg-green-500 disabled:bg-green-800 disabled:cursor-not-allowed text-white font-medium py-2.5 px-5 rounded-xl transition-all"
+                  className="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-2.5 px-5 rounded-xl transition-all"
+                  style={{ background: colors.greenGradient }}
                 >
                   {bookingInProgress ? (
                     <>
@@ -842,19 +852,21 @@ export function ClientBookingsClient({
               <button
                 onClick={() => setCurrentMonth(prev => addMonths(prev, -1))}
                 disabled={currentMonth <= calendarMonths[0]}
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-1.5 rounded-lg hover:opacity-80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: colors.bgCard, color: colors.textSecondary }}
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
-              <h2 className="text-base font-semibold text-white">
+              <h2 className="text-base font-semibold" style={{ color: colors.text }}>
                 {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
               </h2>
               <button
                 onClick={() => setCurrentMonth(prev => addMonths(prev, 1))}
                 disabled={currentMonth >= calendarMonths[2]}
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-1.5 rounded-lg hover:opacity-80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: colors.bgCard, color: colors.textSecondary }}
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -863,11 +875,11 @@ export function ClientBookingsClient({
             </div>
 
             {/* Calendar Grid */}
-            <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-2 md:p-3">
+            <div className="rounded-xl p-2 md:p-3" style={{ background: colors.bgCard, border: `1px solid ${colors.border}` }}>
               {/* Day headers */}
               <div className="grid grid-cols-7 mb-1">
                 {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
-                  <div key={i} className="text-center text-[10px] md:text-xs font-medium text-slate-500 py-1">
+                  <div key={i} className="text-center text-[10px] md:text-xs font-medium py-1" style={{ color: colors.textMuted }}>
                     {day}
                   </div>
                 ))}
