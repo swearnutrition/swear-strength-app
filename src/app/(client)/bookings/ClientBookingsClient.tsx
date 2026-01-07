@@ -127,6 +127,10 @@ export function ClientBookingsClient({
   // Default to 'checkin' for online clients, 'session' for training/hybrid
   const canBookSessions = clientType === 'training' || clientType === 'hybrid'
   const [bookingType, setBookingType] = useState<BookingType>(canBookSessions ? 'session' : 'checkin')
+
+  // Local state for session counts (so they update immediately without page refresh)
+  const [remainingSessions, setRemainingSessions] = useState(sessionPackage?.remainingSessions ?? 0)
+  const [hybridUsed, setHybridUsed] = useState(hybridSessionUsage?.used ?? 0)
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [selectedSlots, setSelectedSlots] = useState<AvailableSlot[]>([])
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
@@ -355,6 +359,17 @@ export function ClientBookingsClient({
       }))
 
       await createMultipleBookings(payloads)
+
+      // Update local session count immediately
+      if (bookingType === 'session') {
+        const sessionsBooked = quickBookSlots.length
+        if (clientType === 'hybrid') {
+          setHybridUsed(prev => prev + sessionsBooked)
+        } else if (sessionPackage) {
+          setRemainingSessions(prev => Math.max(0, prev - sessionsBooked))
+        }
+      }
+
       setQuickBookSlots([])
       exitQuickBookMode()
       await refetch()
@@ -365,13 +380,13 @@ export function ClientBookingsClient({
     }
   }
 
-  // Calculate remaining sessions based on client type
+  // Calculate remaining sessions based on client type (using local state)
   const getRemainingSessionsForBooking = (): number => {
     if (clientType === 'hybrid' && hybridSessionUsage) {
-      return hybridSessionUsage.limit - hybridSessionUsage.used
+      return hybridSessionUsage.limit - hybridUsed
     }
     if (clientType === 'training' && sessionPackage) {
-      return sessionPackage.remainingSessions
+      return remainingSessions
     }
     return 0
   }
@@ -425,6 +440,17 @@ export function ClientBookingsClient({
       }))
 
       await createMultipleBookings(payloads)
+
+      // Update local session count immediately
+      if (bookingType === 'session') {
+        const sessionsBooked = selectedSlots.length
+        if (clientType === 'hybrid') {
+          setHybridUsed(prev => prev + sessionsBooked)
+        } else if (sessionPackage) {
+          setRemainingSessions(prev => Math.max(0, prev - sessionsBooked))
+        }
+      }
+
       setSelectedSlots([])
       setSelectedDate(null)
       setAvailableSlots([])
@@ -441,8 +467,17 @@ export function ClientBookingsClient({
   const handleCancelBooking = async () => {
     if (!selectedBookingForAction) return
 
+    const wasSession = selectedBookingForAction.bookingType === 'session'
     const success = await cancelBooking(selectedBookingForAction.id)
     if (success) {
+      // Update local session count immediately
+      if (wasSession) {
+        if (clientType === 'hybrid') {
+          setHybridUsed(prev => Math.max(0, prev - 1))
+        } else if (sessionPackage) {
+          setRemainingSessions(prev => prev + 1)
+        }
+      }
       setShowCancelModal(false)
       setSelectedBookingForAction(null)
     }
@@ -535,11 +570,11 @@ export function ClientBookingsClient({
                 </span>
                 {clientType === 'hybrid' && hybridSessionUsage ? (
                   <span className="font-semibold" style={{ color: colors.text }}>
-                    {hybridSessionUsage.limit - hybridSessionUsage.used}/{hybridSessionUsage.limit}
+                    {hybridSessionUsage.limit - hybridUsed}/{hybridSessionUsage.limit}
                   </span>
                 ) : sessionPackage ? (
                   <span className="font-semibold" style={{ color: colors.text }}>
-                    {sessionPackage.remainingSessions}/{sessionPackage.totalSessions}
+                    {remainingSessions}/{sessionPackage.totalSessions}
                   </span>
                 ) : (
                   <span style={{ color: colors.textMuted }}>—</span>
@@ -618,9 +653,9 @@ export function ClientBookingsClient({
             <TabsContent value="session" className="mt-2">
               <p className="text-sm" style={{ color: colors.textSecondary }}>
                 {clientType === 'hybrid' && hybridSessionUsage ? (
-                  <>Select up to {hybridSessionUsage.limit - hybridSessionUsage.used} time slots for your training sessions this month.</>
+                  <>Select up to {hybridSessionUsage.limit - hybridUsed} time slots for your training sessions this month.</>
                 ) : sessionPackage ? (
-                  <>Select up to {sessionPackage.remainingSessions} time slots for your training sessions.</>
+                  <>Select up to {remainingSessions} time slots for your training sessions.</>
                 ) : (
                   <>Select time slots for your training sessions.</>
                 )}
@@ -818,7 +853,7 @@ export function ClientBookingsClient({
                   </div>
                   {sessionPackage && (
                     <p className="text-xs mt-2" style={{ color: colors.textMuted }}>
-                      After booking: {sessionPackage.remainingSessions - quickBookSlots.length} sessions remaining
+                      After booking: {remainingSessions - quickBookSlots.length} sessions remaining
                     </p>
                   )}
                 </div>
@@ -1227,9 +1262,9 @@ export function ClientBookingsClient({
             <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3">
               <div className="text-purple-300 text-sm">
                 {clientType === 'hybrid' && hybridSessionUsage ? (
-                  <>This will use {selectedSlots.length} of your {hybridSessionUsage.limit - hybridSessionUsage.used} remaining monthly sessions.</>
+                  <>This will use {selectedSlots.length} of your {hybridSessionUsage.limit - hybridUsed} remaining monthly sessions.</>
                 ) : sessionPackage ? (
-                  <>This will use {selectedSlots.length} of your {sessionPackage.remainingSessions} remaining sessions.</>
+                  <>This will use {selectedSlots.length} of your {remainingSessions} remaining sessions.</>
                 ) : null}
               </div>
             </div>
