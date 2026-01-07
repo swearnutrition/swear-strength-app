@@ -1247,27 +1247,27 @@ export function ClientBookingsClient({
           setShowCancelModal(false)
           setSelectedBookingForAction(null)
         }}
-        title="Cancel Booking"
+        title="Manage Booking"
       >
         <div className="space-y-4">
-          <p className="text-slate-300">
-            Are you sure you want to cancel this booking?
+          <p style={{ color: colors.textSecondary }}>
+            What would you like to do with this booking?
           </p>
 
           {selectedBookingForAction && (
-            <div className="bg-slate-800/50 rounded-lg p-3">
-              <div className="text-white font-medium">
+            <div className="rounded-lg p-3" style={{ background: colors.bgTertiary }}>
+              <div className="font-medium" style={{ color: colors.text }}>
                 {selectedBookingForAction.bookingType === 'checkin' ? 'Virtual Check-in' : 'Training Session'}
               </div>
-              <div className="text-slate-400 text-sm">
+              <div className="text-sm" style={{ color: colors.textMuted }}>
                 {formatFullDate(new Date(selectedBookingForAction.startsAt))} at {formatTime(selectedBookingForAction.startsAt)}
               </div>
             </div>
           )}
 
-          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
-            <div className="text-amber-300 text-sm">
-              Cancellations within 12 hours of the session are not allowed. Your session credit will be restored.
+          <div className="rounded-lg p-3" style={{ background: colors.amberLight, border: `1px solid ${colors.amber}40` }}>
+            <div className="text-sm" style={{ color: colors.amber }}>
+              Cancellations must be made at least 12 hours in advance.
             </div>
           </div>
 
@@ -1278,8 +1278,17 @@ export function ClientBookingsClient({
             }}>
               Keep Booking
             </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowCancelModal(false)
+                setShowRescheduleModal(true)
+              }}
+            >
+              Reschedule
+            </Button>
             <Button variant="danger" onClick={handleCancelBooking}>
-              Cancel Booking
+              Cancel
             </Button>
           </ModalFooter>
         </div>
