@@ -166,7 +166,6 @@ export function ClientBookingsClient({
     const now = new Date()
     now.setHours(0, 0, 0, 0)
     const filtered = bookings.filter(b => b.status === 'confirmed' && new Date(b.startsAt) >= now)
-    console.log('Upcoming bookings:', filtered.length, 'of', bookings.length, 'total bookings')
     return filtered.sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
   }, [bookings])
 
@@ -1086,9 +1085,7 @@ export function ClientBookingsClient({
 
             {/* Upcoming Bookings */}
             <div className="rounded-xl p-3" style={{ background: colors.bgCard, border: `1px solid ${colors.border}` }}>
-              <h3 className="font-medium text-xs mb-2" style={{ color: colors.text }}>
-                Upcoming ({upcomingBookings.length})
-              </h3>
+              <h3 className="font-medium text-xs mb-2" style={{ color: colors.text }}>Upcoming</h3>
               {bookingsLoading ? (
                 <div className="flex items-center justify-center py-3">
                   <svg className="animate-spin h-4 w-4" style={{ color: colors.purple }} viewBox="0 0 24 24">

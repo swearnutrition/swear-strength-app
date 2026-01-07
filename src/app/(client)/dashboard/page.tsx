@@ -487,6 +487,28 @@ export default async function ClientDashboard() {
     isFlexibleMode,
   } : null
 
+  // Get client's upcoming booked appointments (training/hybrid clients)
+  const threeMonthsFromNow = new Date(today)
+  threeMonthsFromNow.setMonth(threeMonthsFromNow.getMonth() + 3)
+
+  const { data: bookings } = await supabase
+    .from('bookings')
+    .select('id, booking_type, starts_at, ends_at, status')
+    .eq('client_id', user.id)
+    .eq('status', 'confirmed')
+    .gte('starts_at', today.toISOString())
+    .lte('starts_at', threeMonthsFromNow.toISOString())
+    .order('starts_at', { ascending: true })
+
+  // Transform bookings to camelCase
+  const upcomingBookings = (bookings || []).map(b => ({
+    id: b.id,
+    bookingType: b.booking_type as 'session' | 'checkin',
+    startsAt: b.starts_at,
+    endsAt: b.ends_at,
+    status: b.status,
+  }))
+
   return (
     <DashboardClient
       userName={profile.name}
@@ -508,6 +530,7 @@ export default async function ClientDashboard() {
       scheduleInfo={scheduleInfo}
       programWorkoutDays={programWorkoutDays}
       clientType={profile.client_type || 'online'}
+      upcomingBookings={upcomingBookings}
     />
   )
 }

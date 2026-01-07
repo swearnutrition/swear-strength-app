@@ -123,6 +123,14 @@ interface ProgramWorkoutDay {
 
 type ClientType = 'online' | 'training' | 'hybrid'
 
+interface UpcomingBooking {
+  id: string
+  bookingType: 'session' | 'checkin'
+  startsAt: string
+  endsAt: string
+  status: string
+}
+
 interface DashboardClientProps {
   userName: string
   initials: string
@@ -143,6 +151,7 @@ interface DashboardClientProps {
   scheduleInfo?: ScheduleInfo | null
   programWorkoutDays?: ProgramWorkoutDay[] // All workout days from current week to reuse
   clientType?: ClientType
+  upcomingBookings?: UpcomingBooking[]
 }
 
 // Helper to handle Supabase returning array or single object or null
@@ -250,6 +259,7 @@ export function DashboardClient({
   scheduleInfo,
   programWorkoutDays,
   clientType = 'online',
+  upcomingBookings = [],
 }: DashboardClientProps) {
   const colors = useColors()
   const { resolvedTheme } = useTheme()
@@ -534,6 +544,14 @@ export function DashboardClient({
     const total = habits.length
     const completed = new Set(dayCompletions.map(c => c.client_habit_id)).size
     return { completed, total }
+  }
+
+  // Check if a date has booked appointments
+  const getBookingsForDay = (dateStr: string) => {
+    return upcomingBookings.filter(b => {
+      const bookingDate = new Date(b.startsAt).toLocaleDateString('en-CA')
+      return bookingDate === dateStr
+    })
   }
 
   // Get habit completions for the selected day
@@ -1846,6 +1864,8 @@ export function DashboardClient({
                 const hasWorkout = !!dayWorkout
                 const isWorkoutCompleted = dayWorkout?.completed || false
                 const isSelected = i === selectedDayIndex
+                const dayBookings = getBookingsForDay(dateStr)
+                const hasBooking = dayBookings.length > 0
 
                 return (
                   <div
@@ -1862,6 +1882,9 @@ export function DashboardClient({
                     <div className="week-day-dots">
                       {hasWorkout && (
                         <div className={`status-dot workout ${isWorkoutCompleted ? 'completed' : ''} ${day.isToday && !isWorkoutCompleted ? 'today' : ''}`} />
+                      )}
+                      {hasBooking && (
+                        <div className="status-dot" style={{ background: day.isToday ? 'white' : colors.blue }} />
                       )}
                       {habits.length > 0 && (
                         <div className={`status-dot habits ${
@@ -1882,6 +1905,12 @@ export function DashboardClient({
                 <div className="legend-dot" style={{ background: colors.purple }} />
                 <span className="legend-text">Workout</span>
               </div>
+              {(clientType === 'training' || clientType === 'hybrid') && (
+                <div className="legend-item">
+                  <div className="legend-dot" style={{ background: colors.blue }} />
+                  <span className="legend-text">Session</span>
+                </div>
+              )}
               <div className="legend-item">
                 <div className="legend-dot" style={{ background: colors.amber }} />
                 <span className="legend-text">Habits</span>
@@ -1952,6 +1981,89 @@ export function DashboardClient({
                   </div>
                 </div>
               ) : null}
+
+              {/* Booked Sessions Card */}
+              {(() => {
+                const selectedDayBookings = selectedDay ? getBookingsForDay(selectedDay.dateStr) : []
+                if (selectedDayBookings.length === 0) return null
+
+                return (
+                  <div
+                    style={{
+                      background: isDark
+                        ? `linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, ${colors.bgCard} 100%)`
+                        : 'linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, #ffffff 100%)',
+                      borderRadius: 16,
+                      padding: 16,
+                      marginBottom: 12,
+                      border: `1px solid ${isDark ? 'rgba(59, 130, 246, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                      <span style={{ fontSize: 14 }}>📅</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: colors.blue }}>
+                        {selectedDayBookings.length === 1 ? 'BOOKED SESSION' : 'BOOKED SESSIONS'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {selectedDayBookings.map((booking) => {
+                        const startTime = new Date(booking.startsAt)
+                        const endTime = new Date(booking.endsAt)
+                        const timeStr = `${startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} - ${endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+
+                        return (
+                          <div
+                            key={booking.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 14,
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: 40,
+                                height: 40,
+                                borderRadius: 10,
+                                background: `${colors.blue}20`,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: 18,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {booking.bookingType === 'checkin' ? '📹' : '💪'}
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 15, fontWeight: 600, color: colors.text }}>
+                                {booking.bookingType === 'checkin' ? 'Check-in Call' : 'Training Session'}
+                              </div>
+                              <div style={{ fontSize: 13, color: colors.textMuted }}>{timeStr}</div>
+                            </div>
+                            <Link href="/bookings">
+                              <button
+                                style={{
+                                  padding: '8px 14px',
+                                  borderRadius: 10,
+                                  border: `1px solid ${colors.border}`,
+                                  background: 'transparent',
+                                  fontSize: 13,
+                                  fontWeight: 500,
+                                  color: colors.textSecondary,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Manage
+                              </button>
+                            </Link>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* Habits Card */}
               {habits.length > 0 && (
