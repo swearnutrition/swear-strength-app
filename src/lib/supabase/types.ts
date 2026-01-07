@@ -7,6 +7,7 @@ export type Json =
   | Json[]
 
 export type UserRole = 'coach' | 'client'
+export type ClientType = 'online' | 'training' | 'hybrid'
 export type ProgramType = 'strength' | 'mobility' | 'cardio'
 export type ExerciseType = 'strength' | 'mobility' | 'cardio'
 export type WorkoutSection = 'warmup' | 'strength' | 'cooldown' | 'cardio'
@@ -28,6 +29,8 @@ export interface Database {
           invited_by: string | null
           invite_accepted_at: string | null
           preferred_weight_unit: WeightUnit
+          client_type: ClientType | null
+          hybrid_sessions_per_month: number | null
           created_at: string
           updated_at: string
         }
@@ -41,6 +44,8 @@ export interface Database {
           invited_by?: string | null
           invite_accepted_at?: string | null
           preferred_weight_unit?: WeightUnit
+          client_type?: ClientType | null
+          hybrid_sessions_per_month?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -54,6 +59,8 @@ export interface Database {
           invited_by?: string | null
           invite_accepted_at?: string | null
           preferred_weight_unit?: WeightUnit
+          client_type?: ClientType | null
+          hybrid_sessions_per_month?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -664,6 +671,7 @@ export interface Database {
     }
     Enums: {
       user_role: UserRole
+      client_type: ClientType
       program_type: ProgramType
       exercise_type: ExerciseType
       workout_section: WorkoutSection

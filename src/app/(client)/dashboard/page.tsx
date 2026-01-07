@@ -507,6 +507,7 @@ export default async function ClientDashboard() {
       rivalry={rivalry}
       scheduleInfo={scheduleInfo}
       programWorkoutDays={programWorkoutDays}
+      clientType={profile.client_type || 'online'}
     />
   )
 }

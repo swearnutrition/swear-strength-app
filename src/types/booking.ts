@@ -54,7 +54,7 @@ export interface AdjustSessionPackagePayload {
 // Bookings
 export interface Booking {
   id: string
-  clientId: string
+  clientId: string | null // Null for one-off bookings
   coachId: string
   packageId: string | null
   bookingType: BookingType
@@ -65,6 +65,7 @@ export interface Booking {
   googleMeetLink: string | null
   rescheduledFromId: string | null
   cancelledAt: string | null
+  oneOffClientName: string | null // For one-off bookings without account
   createdAt: string
   updatedAt: string
   // Joined fields
@@ -73,17 +74,20 @@ export interface Booking {
     name: string
     email: string
     avatarUrl: string | null
-  }
+  } | null
   package?: SessionPackage
   formResponse?: CheckinFormResponse
 }
 
 export interface CreateBookingPayload {
-  clientId: string
+  clientId?: string | null // Null for one-off bookings
   bookingType: BookingType
   startsAt: string
   endsAt: string
-  packageId?: string // Required for sessions
+  packageId?: string // Required for regular sessions (not one-off)
+  // One-off booking fields
+  oneOffClientName?: string
+  isOneOff?: boolean
 }
 
 export interface RescheduleBookingPayload {

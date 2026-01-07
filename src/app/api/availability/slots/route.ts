@@ -15,43 +15,83 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  if (!coachId || !date) {
+  if (!date) {
     return NextResponse.json(
-      { error: 'coachId and date are required' },
+      { error: 'date is required' },
       { status: 400 }
     )
   }
 
+  // Use provided coachId, or if user is a coach, use their own ID
+  let targetCoachId = coachId
+  if (!targetCoachId) {
+    // Check if user is a coach - if so, use their ID
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.role === 'coach') {
+      targetCoachId = user.id
+    } else {
+      return NextResponse.json(
+        { error: 'coachId is required for clients' },
+        { status: 400 }
+      )
+    }
+  }
+
   try {
-    const targetDate = new Date(date)
+    // Parse date as local date to avoid timezone issues
+    // date format is YYYY-MM-DD
+    const [year, month, day] = date.split('-').map(Number)
+    const targetDate = new Date(year, month - 1, day) // month is 0-indexed
     const dayOfWeek = targetDate.getDay()
 
     // 1. Get templates for this day
     const { data: templates } = await supabase
       .from('coach_availability_templates')
       .select('*')
-      .eq('coach_id', coachId)
+      .eq('coach_id', targetCoachId)
       .eq('availability_type', type)
       .eq('day_of_week', dayOfWeek)
 
     // 2. Get overrides for this date
-    const { data: overrides } = await supabase
+    // We get overrides for THIS type, plus any BLOCKED overrides from other types
+    // (since a blocked day means the coach is unavailable regardless of type)
+    const { data: typeOverrides } = await supabase
       .from('coach_availability_overrides')
       .select('*')
-      .eq('coach_id', coachId)
+      .eq('coach_id', targetCoachId)
       .eq('availability_type', type)
       .eq('override_date', date)
 
+    // Also get blocked overrides from other types
+    const { data: blockedOverrides } = await supabase
+      .from('coach_availability_overrides')
+      .select('*')
+      .eq('coach_id', targetCoachId)
+      .neq('availability_type', type)
+      .eq('override_date', date)
+      .eq('is_blocked', true)
+
+    // Combine both sets of overrides
+    const overrides = [...(typeOverrides || []), ...(blockedOverrides || [])]
+
     // 3. Get existing bookings for this date
-    const dayStart = new Date(date)
-    dayStart.setHours(0, 0, 0, 0)
-    const dayEnd = new Date(date)
-    dayEnd.setHours(23, 59, 59, 999)
+    // IMPORTANT: We get ALL confirmed bookings (both sessions and check-ins)
+    // regardless of the type being queried. This ensures that:
+    // - Check-in slots respect training session bookings
+    // - Training session slots respect check-in bookings
+    // The coach can only be in one place at a time!
+    const dayStart = new Date(year, month - 1, day, 0, 0, 0, 0)
+    const dayEnd = new Date(year, month - 1, day, 23, 59, 59, 999)
 
     const { data: existingBookings } = await supabase
       .from('bookings')
-      .select('starts_at, ends_at')
-      .eq('coach_id', coachId)
+      .select('starts_at, ends_at, booking_type')
+      .eq('coach_id', targetCoachId)
       .eq('status', 'confirmed')
       .gte('starts_at', dayStart.toISOString())
       .lte('starts_at', dayEnd.toISOString())
@@ -61,10 +101,22 @@ export async function GET(request: NextRequest) {
       .from('client_booking_stats')
       .select('favorite_times')
       .eq('client_id', user.id)
-      .eq('coach_id', coachId)
+      .eq('coach_id', targetCoachId)
       .single()
 
     const favoriteTimes = clientStats?.favorite_times || []
+
+    // Debug: Log what we found
+    console.log('Slots API Debug:', {
+      date,
+      dayOfWeek,
+      type,
+      targetCoachId,
+      templatesFound: templates?.length || 0,
+      templates: templates?.map(t => ({ day: t.day_of_week, start: t.start_time, end: t.end_time })),
+      overridesFound: overrides?.length || 0,
+      overrides: overrides?.map(o => ({ type: o.availability_type, blocked: o.is_blocked, start: o.start_time, end: o.end_time })),
+    })
 
     // 5. Calculate available slots
     const slots: AvailableSlot[] = []
@@ -83,11 +135,8 @@ export async function GET(request: NextRequest) {
       const [endHour, endMin] = template.end_time.split(':').map(Number)
 
       // Generate 30-min interval slots
-      let slotStart = new Date(date)
-      slotStart.setHours(startHour, startMin, 0, 0)
-
-      const templateEnd = new Date(date)
-      templateEnd.setHours(endHour, endMin, 0, 0)
+      let slotStart = new Date(year, month - 1, day, startHour, startMin, 0, 0)
+      const templateEnd = new Date(year, month - 1, day, endHour, endMin, 0, 0)
 
       while (slotStart < templateEnd) {
         const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60000)
@@ -100,20 +149,33 @@ export async function GET(request: NextRequest) {
           if (!o.is_blocked || !o.start_time) return false
           const [oStartH, oStartM] = o.start_time.split(':').map(Number)
           const [oEndH, oEndM] = o.end_time!.split(':').map(Number)
-          const overrideStart = new Date(date)
-          overrideStart.setHours(oStartH, oStartM, 0, 0)
-          const overrideEnd = new Date(date)
-          overrideEnd.setHours(oEndH, oEndM, 0, 0)
+          const overrideStart = new Date(year, month - 1, day, oStartH, oStartM, 0, 0)
+          const overrideEnd = new Date(year, month - 1, day, oEndH, oEndM, 0, 0)
 
           return slotStart < overrideEnd && slotEnd > overrideStart
         })
 
         if (!isBlocked) {
-          // Count overlapping bookings
+          // Check for ANY overlapping booking of a DIFFERENT type - these fully block the slot
+          // (e.g., a training session blocks check-in availability and vice versa)
+          const hasCrossTypeBooking = (existingBookings || []).some((b) => {
+            const bStart = new Date(b.starts_at)
+            const bEnd = new Date(b.ends_at)
+            const overlaps = slotStart < bEnd && slotEnd > bStart
+            return overlaps && b.booking_type !== type
+          })
+
+          if (hasCrossTypeBooking) {
+            // Skip this slot - coach is busy with a different type of appointment
+            slotStart = new Date(slotStart.getTime() + 30 * 60000)
+            continue
+          }
+
+          // Count overlapping bookings of the SAME type (for concurrent client limits)
           const overlappingCount = (existingBookings || []).filter((b) => {
             const bStart = new Date(b.starts_at)
             const bEnd = new Date(b.ends_at)
-            return slotStart < bEnd && slotEnd > bStart
+            return slotStart < bEnd && slotEnd > bStart && b.booking_type === type
           }).length
 
           const maxCapacity = template.max_concurrent_clients
@@ -148,20 +210,31 @@ export async function GET(request: NextRequest) {
       const [startHour, startMin] = override.start_time.split(':').map(Number)
       const [endHour, endMin] = override.end_time!.split(':').map(Number)
 
-      let slotStart = new Date(date)
-      slotStart.setHours(startHour, startMin, 0, 0)
-
-      const overrideEnd = new Date(date)
-      overrideEnd.setHours(endHour, endMin, 0, 0)
+      let slotStart = new Date(year, month - 1, day, startHour, startMin, 0, 0)
+      const overrideEnd = new Date(year, month - 1, day, endHour, endMin, 0, 0)
 
       while (slotStart < overrideEnd) {
         const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60000)
         if (slotEnd > overrideEnd) break
 
+        // Check for cross-type bookings that fully block this slot
+        const hasCrossTypeBooking = (existingBookings || []).some((b) => {
+          const bStart = new Date(b.starts_at)
+          const bEnd = new Date(b.ends_at)
+          const overlaps = slotStart < bEnd && slotEnd > bStart
+          return overlaps && b.booking_type !== type
+        })
+
+        if (hasCrossTypeBooking) {
+          slotStart = new Date(slotStart.getTime() + 30 * 60000)
+          continue
+        }
+
+        // Count same-type bookings for concurrent limits
         const overlappingCount = (existingBookings || []).filter((b) => {
           const bStart = new Date(b.starts_at)
           const bEnd = new Date(b.ends_at)
-          return slotStart < bEnd && slotEnd > bStart
+          return slotStart < bEnd && slotEnd > bStart && b.booking_type === type
         }).length
 
         const maxCapacity = override.max_concurrent_clients || 2
@@ -188,7 +261,21 @@ export async function GET(request: NextRequest) {
     // Sort by time
     slots.sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
 
-    return NextResponse.json({ slots })
+    return NextResponse.json({
+      slots,
+      _debug: {
+        date,
+        dayOfWeek,
+        type,
+        templatesFound: templates?.length || 0,
+        templates: templates?.map(t => ({
+          day: t.day_of_week,
+          start: t.start_time,
+          end: t.end_time,
+          type: t.availability_type
+        })),
+      }
+    })
   } catch (error) {
     console.error('Error calculating slots:', error)
     return NextResponse.json(

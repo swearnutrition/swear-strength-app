@@ -52,9 +52,22 @@ export function AvailabilitySettingsClient() {
     dayOfWeek: '1',
     startTime: '09:00',
     endTime: '17:00',
-    maxConcurrentClients: '2',
+    maxConcurrentClients: '2', // Default for sessions, will update based on type
   })
   const [addingTemplate, setAddingTemplate] = useState(false)
+
+  // Update default max concurrent clients when type changes
+  useEffect(() => {
+    setTemplateForm((prev) => ({
+      ...prev,
+      maxConcurrentClients: selectedType === 'checkin' ? '1' : '2',
+    }))
+  }, [selectedType])
+
+  // Copy/paste availability state
+  const [copiedDay, setCopiedDay] = useState<number | null>(null)
+  const [copiedTemplates, setCopiedTemplates] = useState<AvailabilityTemplate[]>([])
+  const [pastingDay, setPastingDay] = useState<number | null>(null)
 
   // Override modal state
   const [showAddOverride, setShowAddOverride] = useState(false)
@@ -148,9 +161,15 @@ export function AvailabilitySettingsClient() {
   // Group overrides by month for calendar view
   const upcomingOverrides = useMemo(() => {
     const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     return overrides
-      .filter((o) => new Date(o.overrideDate) >= now)
-      .sort((a, b) => new Date(a.overrideDate).getTime() - new Date(b.overrideDate).getTime())
+      .filter((o) => {
+        // Parse override date as local date to avoid timezone issues
+        const [year, month, day] = o.overrideDate.split('-').map(Number)
+        const overrideDate = new Date(year, month - 1, day)
+        return overrideDate >= today
+      })
+      .sort((a, b) => a.overrideDate.localeCompare(b.overrideDate))
   }, [overrides])
 
   const handleAddTemplate = async () => {
@@ -172,6 +191,47 @@ export function AvailabilitySettingsClient() {
       })
     } finally {
       setAddingTemplate(false)
+    }
+  }
+
+  const handleDayClick = (dayOfWeek: number) => {
+    setTemplateForm({
+      ...templateForm,
+      dayOfWeek: dayOfWeek.toString(),
+    })
+    setShowAddTemplate(true)
+  }
+
+  const handleCopyDay = (dayOfWeek: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const dayTemplates = templatesByDay.get(dayOfWeek) || []
+    setCopiedDay(dayOfWeek)
+    setCopiedTemplates(dayTemplates)
+  }
+
+  const handleClearCopy = () => {
+    setCopiedDay(null)
+    setCopiedTemplates([])
+  }
+
+  const handlePasteToDay = async (targetDay: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (copiedTemplates.length === 0) return
+
+    setPastingDay(targetDay)
+    try {
+      // Create templates for the target day
+      for (const template of copiedTemplates) {
+        await createTemplate({
+          availabilityType: selectedType,
+          dayOfWeek: targetDay,
+          startTime: template.startTime,
+          endTime: template.endTime,
+          maxConcurrentClients: template.maxConcurrentClients,
+        })
+      }
+    } finally {
+      setPastingDay(null)
     }
   }
 
@@ -353,6 +413,26 @@ export function AvailabilitySettingsClient() {
             </Button>
           </div>
 
+          {/* Copy indicator bar */}
+          {copiedDay !== null && (
+            <div className="flex items-center justify-between bg-purple-500/10 border border-purple-500/20 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                </svg>
+                <span className="text-sm text-purple-300">
+                  Copied {copiedTemplates.length} time block{copiedTemplates.length !== 1 ? 's' : ''} from {getDayName(copiedDay)}
+                </span>
+              </div>
+              <button
+                onClick={handleClearCopy}
+                className="text-sm text-slate-400 hover:text-white transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+
           {/* Weekly schedule grid */}
           {loading ? (
             <div className="flex items-center justify-center py-12">
@@ -368,21 +448,60 @@ export function AvailabilitySettingsClient() {
                   key={day}
                   className="border-b border-slate-800 last:border-b-0"
                 >
-                  <div className="flex items-start gap-4 p-4">
-                    <div className="w-28 flex-shrink-0">
+                  <div
+                    className="flex items-start gap-4 p-4 cursor-pointer hover:bg-slate-800/30 transition-colors group"
+                    onClick={() => handleDayClick(day)}
+                  >
+                    <div className="w-28 flex-shrink-0 flex items-center gap-2">
                       <span className="text-sm font-medium text-white">{getDayName(day)}</span>
+                      <svg
+                        className="w-4 h-4 text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
                     </div>
                     <div className="flex-1">
                       {dayTemplates.length === 0 ? (
-                        <span className="text-sm text-slate-500">Not available</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-slate-500 group-hover:text-slate-400 transition-colors">
+                            Not available
+                            <span className="ml-2 text-xs text-slate-600 group-hover:text-purple-400">
+                              Click to add
+                            </span>
+                          </span>
+                          {/* Show paste button when something is copied and this day is different */}
+                          {copiedDay !== null && copiedDay !== day && (
+                            <button
+                              onClick={(e) => handlePasteToDay(day, e)}
+                              disabled={pastingDay === day}
+                              className="ml-auto flex items-center gap-1 px-2 py-1 text-xs font-medium text-purple-400 bg-purple-500/10 border border-purple-500/20 rounded-md hover:bg-purple-500/20 transition-colors disabled:opacity-50"
+                            >
+                              {pastingDay === day ? (
+                                <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
+                              ) : (
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                </svg>
+                              )}
+                              Paste
+                            </button>
+                          )}
+                        </div>
                       ) : (
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           {dayTemplates
                             .sort((a, b) => a.startTime.localeCompare(b.startTime))
                             .map((template) => (
                               <div
                                 key={template.id}
                                 className="flex items-center gap-2 bg-purple-500/10 border border-purple-500/20 rounded-lg px-3 py-1.5"
+                                onClick={(e) => e.stopPropagation()}
                               >
                                 <span className="text-sm text-purple-300">
                                   {formatTime(template.startTime)} - {formatTime(template.endTime)}
@@ -391,7 +510,10 @@ export function AvailabilitySettingsClient() {
                                   ({template.maxConcurrentClients} max)
                                 </span>
                                 <button
-                                  onClick={() => handleDeleteTemplate(template.id)}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleDeleteTemplate(template.id)
+                                  }}
                                   className="ml-1 text-slate-500 hover:text-red-400 transition-colors"
                                 >
                                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -400,6 +522,51 @@ export function AvailabilitySettingsClient() {
                                 </button>
                               </div>
                             ))}
+                          {/* Copy button for days with templates */}
+                          <button
+                            onClick={(e) => handleCopyDay(day, e)}
+                            className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                              copiedDay === day
+                                ? 'text-green-400 bg-green-500/10 border border-green-500/20'
+                                : 'text-slate-400 bg-slate-800/50 border border-slate-700 hover:text-white hover:border-slate-600'
+                            }`}
+                          >
+                            {copiedDay === day ? (
+                              <>
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                Copied
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                                Copy
+                              </>
+                            )}
+                          </button>
+                          {/* Paste button for days with templates (when something else is copied) */}
+                          {copiedDay !== null && copiedDay !== day && (
+                            <button
+                              onClick={(e) => handlePasteToDay(day, e)}
+                              disabled={pastingDay === day}
+                              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-purple-400 bg-purple-500/10 border border-purple-500/20 rounded-md hover:bg-purple-500/20 transition-colors disabled:opacity-50"
+                            >
+                              {pastingDay === day ? (
+                                <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
+                              ) : (
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                </svg>
+                              )}
+                              Paste
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -460,7 +627,10 @@ export function AvailabilitySettingsClient() {
           ) : (
             <div className="bg-slate-900/50 rounded-2xl border border-slate-800 overflow-hidden">
               {upcomingOverrides.map((override) => {
-                const date = new Date(override.overrideDate)
+                // Parse date string as local date to avoid timezone issues
+                // override.overrideDate is in YYYY-MM-DD format
+                const [year, month, day] = override.overrideDate.split('-').map(Number)
+                const date = new Date(year, month - 1, day) // month is 0-indexed
                 const isBlocked = override.isBlocked
                 const isFullDay = !override.startTime && !override.endTime
 

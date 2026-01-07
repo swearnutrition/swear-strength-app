@@ -35,7 +35,27 @@ export async function GET() {
 
     if (error) throw error
 
-    return NextResponse.json({ packages: packages || [] })
+    // Transform to camelCase for frontend
+    const transformedPackages = (packages || []).map((pkg) => ({
+      id: pkg.id,
+      clientId: pkg.client_id,
+      coachId: pkg.coach_id,
+      totalSessions: pkg.total_sessions,
+      remainingSessions: pkg.remaining_sessions,
+      sessionDurationMinutes: pkg.session_duration_minutes,
+      expiresAt: pkg.expires_at,
+      notes: pkg.notes,
+      createdAt: pkg.created_at,
+      updatedAt: pkg.updated_at,
+      client: pkg.client ? {
+        id: pkg.client.id,
+        name: pkg.client.name,
+        email: pkg.client.email,
+        avatarUrl: pkg.client.avatar_url,
+      } : null,
+    }))
+
+    return NextResponse.json({ packages: transformedPackages })
   } catch (error) {
     console.error('Error fetching session packages:', error)
     return NextResponse.json(
@@ -102,7 +122,27 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error
 
-    return NextResponse.json({ package: newPackage }, { status: 201 })
+    // Transform to camelCase for frontend
+    const transformedPackage = {
+      id: newPackage.id,
+      clientId: newPackage.client_id,
+      coachId: newPackage.coach_id,
+      totalSessions: newPackage.total_sessions,
+      remainingSessions: newPackage.remaining_sessions,
+      sessionDurationMinutes: newPackage.session_duration_minutes,
+      expiresAt: newPackage.expires_at,
+      notes: newPackage.notes,
+      createdAt: newPackage.created_at,
+      updatedAt: newPackage.updated_at,
+      client: newPackage.client ? {
+        id: newPackage.client.id,
+        name: newPackage.client.name,
+        email: newPackage.client.email,
+        avatarUrl: newPackage.client.avatar_url,
+      } : null,
+    }
+
+    return NextResponse.json({ package: transformedPackage }, { status: 201 })
   } catch (error) {
     console.error('Error creating session package:', error)
     return NextResponse.json(

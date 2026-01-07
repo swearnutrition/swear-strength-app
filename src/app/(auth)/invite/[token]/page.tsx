@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 
+type ClientType = 'online' | 'training' | 'hybrid'
+
 interface InviteData {
   email: string
   coach_name: string
@@ -15,6 +17,7 @@ export default function AcceptInvitePage() {
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [clientType, setClientType] = useState<ClientType>('online')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -105,6 +108,7 @@ export default function AcceptInvitePage() {
           data: {
             name,
             role: 'client',
+            client_type: clientType,
           },
         },
       })
@@ -126,10 +130,13 @@ export default function AcceptInvitePage() {
         .update({ accepted_at: new Date().toISOString() })
         .eq('token', token)
 
-      // Update profile with invite info
+      // Update profile with invite info and client type
       await supabase
         .from('profiles')
-        .update({ invite_accepted_at: new Date().toISOString() })
+        .update({
+          invite_accepted_at: new Date().toISOString(),
+          client_type: clientType,
+        })
         .eq('id', authData.user.id)
 
       router.push('/dashboard')
@@ -266,6 +273,36 @@ export default function AcceptInvitePage() {
                 className="w-full bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all"
                 placeholder="••••••••"
               />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-slate-300">
+                Training Type
+              </label>
+              <p className="text-xs text-slate-500 mb-3">
+                How will you be training with {inviteData?.coach_name}?
+              </p>
+              <div className="grid gap-2">
+                {[
+                  { value: 'online' as const, label: 'Online Only', desc: 'Monthly check-ins and remote coaching' },
+                  { value: 'training' as const, label: 'In-Person Training', desc: 'Regular training sessions with your coach' },
+                  { value: 'hybrid' as const, label: 'Hybrid', desc: 'Mix of in-person sessions and online coaching' },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setClientType(option.value)}
+                    className={`text-left p-3 rounded-xl border transition-all ${
+                      clientType === option.value
+                        ? 'bg-purple-500/20 border-purple-500 text-white'
+                        : 'bg-slate-800/30 border-slate-700 text-slate-300 hover:border-slate-600'
+                    }`}
+                  >
+                    <span className="font-medium block">{option.label}</span>
+                    <span className="text-xs text-slate-400">{option.desc}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <button

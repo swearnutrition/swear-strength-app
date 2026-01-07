@@ -121,6 +121,8 @@ interface ProgramWorkoutDay {
   dayNumber: number
 }
 
+type ClientType = 'online' | 'training' | 'hybrid'
+
 interface DashboardClientProps {
   userName: string
   initials: string
@@ -140,6 +142,7 @@ interface DashboardClientProps {
   rivalry?: Rivalry | null
   scheduleInfo?: ScheduleInfo | null
   programWorkoutDays?: ProgramWorkoutDay[] // All workout days from current week to reuse
+  clientType?: ClientType
 }
 
 // Helper to handle Supabase returning array or single object or null
@@ -246,6 +249,7 @@ export function DashboardClient({
   rivalry,
   scheduleInfo,
   programWorkoutDays,
+  clientType = 'online',
 }: DashboardClientProps) {
   const colors = useColors()
   const { resolvedTheme } = useTheme()
@@ -1658,6 +1662,31 @@ export function DashboardClient({
               </div>
             )}
 
+            {/* Book Session Card - Only for training/hybrid clients */}
+            {(clientType === 'training' || clientType === 'hybrid') && (
+              <Link href="/bookings" style={{ textDecoration: 'none' }}>
+                <div
+                  className="agenda-item"
+                  style={{ cursor: 'pointer', marginBottom: 16 }}
+                >
+                  <div className="agenda-item-content">
+                    <div className="item-icon" style={{ background: `${colors.green}20` }}>
+                      🗓️
+                    </div>
+                    <div className="item-details">
+                      <div className="item-title">Book Training Sessions</div>
+                      <div className="item-subtitle">
+                        {clientType === 'hybrid'
+                          ? 'Schedule your monthly sessions with your coach'
+                          : 'Schedule your sessions with your coach'}
+                      </div>
+                    </div>
+                    <Icons.chevronRight size={20} color={colors.textMuted} />
+                  </div>
+                </div>
+              </Link>
+            )}
+
             {/* Agenda Items */}
             {agendaItems.map(item => (
               <div key={item.id} className={`agenda-item ${item.rivalryData ? 'has-rivalry' : ''}`}>
@@ -2015,6 +2044,18 @@ export function DashboardClient({
           <Icons.calendar size={22} color={activeView === 'calendar' ? colors.purple : colors.textMuted} />
           <span className="nav-label" style={{ color: activeView === 'calendar' ? colors.purple : colors.textMuted }}>Calendar</span>
         </div>
+        {(clientType === 'training' || clientType === 'hybrid') && (
+          <Link href="/bookings" className="nav-item">
+            <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={colors.textMuted} strokeWidth="2" strokeLinecap="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+              <path d="M9 16l2 2 4-4" stroke={colors.textMuted} strokeWidth="2"/>
+            </svg>
+            <span className="nav-label" style={{ color: colors.textMuted }}>Book</span>
+          </Link>
+        )}
         <Link href="/workouts" className="nav-item">
           <Icons.dumbbell size={22} color={colors.textMuted} />
           <span className="nav-label" style={{ color: colors.textMuted }}>Plans</span>

@@ -16,7 +16,7 @@ export default async function ClientBookingsPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, role, name')
+    .select('id, role, name, client_type, hybrid_sessions_per_month')
     .eq('id', user.id)
     .single()
 
@@ -59,11 +59,29 @@ export default async function ClientBookingsPage() {
   const nextMonth = new Date(currentMonthStart)
   nextMonth.setMonth(nextMonth.getMonth() + 1)
 
+  // Get hybrid session usage for this month (for hybrid clients)
+  let hybridSessionUsage = null
+  if (profile.client_type === 'hybrid') {
+    const { data: hybridUsage } = await supabase
+      .from('client_monthly_session_usage')
+      .select('sessions_used')
+      .eq('client_id', user.id)
+      .eq('month', currentMonthStart.toISOString().split('T')[0])
+      .single()
+
+    hybridSessionUsage = {
+      used: hybridUsage?.sessions_used || 0,
+      limit: profile.hybrid_sessions_per_month || 4,
+      resetDate: nextMonth.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    }
+  }
+
   return (
     <ClientBookingsClient
       userId={user.id}
       userName={profile.name}
       coachId={coachId}
+      clientType={profile.client_type || 'online'}
       sessionPackage={sessionPackage ? {
         id: sessionPackage.id,
         totalSessions: sessionPackage.total_sessions,
@@ -80,6 +98,7 @@ export default async function ClientBookingsPage() {
         used: checkinUsage.used,
         resetDate: nextMonth.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       } : null}
+      hybridSessionUsage={hybridSessionUsage}
     />
   )
 }

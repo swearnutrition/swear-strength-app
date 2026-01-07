@@ -14,6 +14,9 @@ interface ClientWithPackage {
   checkinUsage: ClientCheckinUsage | null
 }
 
+// One-off booking option (pseudo-client for UI)
+const ONE_OFF_BOOKING_ID = '__one_off__'
+
 interface BookSessionModalProps {
   isOpen: boolean
   onClose: () => void
@@ -38,9 +41,14 @@ export function BookSessionModal({
   const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([])
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  // One-off booking fields
+  const [oneOffClientName, setOneOffClientName] = useState('')
+  const [oneOffDuration, setOneOffDuration] = useState(60)
 
   const { getAvailableSlots } = useAvailability({ type: bookingType })
   const { createMultipleBookings } = useBookings()
+
+  const isOneOffBooking = selectedClientId === ONE_OFF_BOOKING_ID
 
   // Get selected client info
   const selectedClient = useMemo(
@@ -63,6 +71,8 @@ export function BookSessionModal({
       setSelectedDate(preselectedDate || new Date().toISOString().split('T')[0])
       setSelectedSlots([])
       setAvailableSlots([])
+      setOneOffClientName('')
+      setOneOffDuration(60)
     }
   }, [isOpen, preselectedClientId, preselectedDate])
 
@@ -74,10 +84,17 @@ export function BookSessionModal({
       setLoadingSlots(true)
       setSelectedSlots([])
       try {
-        const duration = bookingType === 'checkin'
-          ? 30
-          : selectedClient?.activePackage?.sessionDurationMinutes || 60
+        let duration: number
+        if (bookingType === 'checkin') {
+          duration = 30
+        } else if (isOneOffBooking) {
+          duration = oneOffDuration
+        } else {
+          duration = selectedClient?.activePackage?.sessionDurationMinutes || 60
+        }
+        console.log('BookSessionModal: Fetching slots for date:', selectedDate, 'duration:', duration)
         const slots = await getAvailableSlots(selectedDate, duration)
+        console.log('BookSessionModal: Got slots:', slots.length)
         setAvailableSlots(slots)
       } catch (err) {
         console.error('Error fetching slots:', err)
@@ -88,7 +105,7 @@ export function BookSessionModal({
     }
 
     fetchSlots()
-  }, [selectedDate, bookingType, selectedClient?.activePackage?.sessionDurationMinutes, getAvailableSlots])
+  }, [selectedDate, bookingType, selectedClient?.activePackage?.sessionDurationMinutes, getAvailableSlots, isOneOffBooking, oneOffDuration])
 
   // Toggle slot selection
   const toggleSlot = (slot: AvailableSlot) => {
@@ -109,9 +126,15 @@ export function BookSessionModal({
     e.preventDefault()
     if (!selectedClientId || selectedSlots.length === 0) return
 
-    // Validate sessions available
-    if (bookingType === 'session') {
-      const remainingSessions = selectedClient?.activePackage?.remainingSessions || 0
+    // Validate one-off booking has client name
+    if (isOneOffBooking && !oneOffClientName.trim()) {
+      alert('Please enter a client name for the one-off booking.')
+      return
+    }
+
+    // Validate sessions available (only for existing clients with packages)
+    if (bookingType === 'session' && !isOneOffBooking && selectedClient?.activePackage) {
+      const remainingSessions = selectedClient.activePackage.remainingSessions
       if (selectedSlots.length > remainingSessions) {
         alert(`Not enough sessions remaining. Client has ${remainingSessions} sessions left.`)
         return
@@ -121,11 +144,14 @@ export function BookSessionModal({
     setSubmitting(true)
     try {
       const payloads = selectedSlots.map((slot) => ({
-        clientId: selectedClientId,
+        clientId: isOneOffBooking ? null : selectedClientId,
         bookingType,
         startsAt: slot.startsAt,
         endsAt: slot.endsAt,
-        packageId: bookingType === 'session' ? selectedClient?.activePackage?.id : undefined,
+        packageId: bookingType === 'session' && !isOneOffBooking ? selectedClient?.activePackage?.id : undefined,
+        // One-off booking fields
+        oneOffClientName: isOneOffBooking ? oneOffClientName.trim() : undefined,
+        isOneOff: isOneOffBooking,
       }))
 
       const results = await createMultipleBookings(payloads)
@@ -153,11 +179,24 @@ export function BookSessionModal({
     })
   }
 
-  const canSubmit =
-    selectedClientId &&
-    selectedSlots.length > 0 &&
-    !submitting &&
-    (bookingType === 'checkin' ? canBookCheckin : (selectedClient?.activePackage?.remainingSessions || 0) > 0)
+  const canSubmit = useMemo(() => {
+    if (!selectedClientId || selectedSlots.length === 0 || submitting) return false
+
+    // One-off booking: just need client name
+    if (isOneOffBooking) {
+      return oneOffClientName.trim().length > 0
+    }
+
+    // Check-in: needs available check-in
+    if (bookingType === 'checkin') {
+      return canBookCheckin
+    }
+
+    // Regular session: can book with or without package
+    // With package: deducts from remaining sessions
+    // Without package: one-off session
+    return true
+  }, [selectedClientId, selectedSlots.length, submitting, isOneOffBooking, oneOffClientName, bookingType, canBookCheckin])
 
   if (!isOpen) return null
 
@@ -192,18 +231,64 @@ export function BookSessionModal({
               onChange={(e) => {
                 setSelectedClientId(e.target.value)
                 setSelectedSlots([])
+                // Reset booking type to session for one-off
+                if (e.target.value === ONE_OFF_BOOKING_ID) {
+                  setBookingType('session')
+                }
               }}
               required
               className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">Select a client</option>
-              {clients.map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.name} - {client.activePackage ? `${client.activePackage.remainingSessions} sessions` : 'No package'}
-                </option>
-              ))}
+              <option value={ONE_OFF_BOOKING_ID}>One-off booking (no account)</option>
+              <optgroup label="Existing Clients">
+                {clients.map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {client.name} - {client.activePackage ? `${client.activePackage.remainingSessions} sessions` : 'No package'}
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </div>
+
+          {/* One-off booking fields */}
+          {isOneOffBooking && (
+            <div className="space-y-4 bg-amber-50 dark:bg-amber-500/10 rounded-xl p-4 border border-amber-200 dark:border-amber-500/30">
+              <h3 className="text-sm font-medium text-amber-800 dark:text-amber-300">One-off Booking Details</h3>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Client Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={oneOffClientName}
+                  onChange={(e) => setOneOffClientName(e.target.value)}
+                  placeholder="Enter client name"
+                  required
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Session Duration
+                </label>
+                <select
+                  value={oneOffDuration}
+                  onChange={(e) => {
+                    setOneOffDuration(Number(e.target.value))
+                    setSelectedSlots([])
+                  }}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value={30}>30 minutes</option>
+                  <option value={45}>45 minutes</option>
+                  <option value={60}>60 minutes</option>
+                  <option value={90}>90 minutes</option>
+                  <option value={120}>2 hours</option>
+                </select>
+              </div>
+            </div>
+          )}
 
           {/* Client package info */}
           {selectedClient && (
@@ -226,7 +311,7 @@ export function BookSessionModal({
                 </div>
               ) : (
                 <p className="text-sm text-amber-600 dark:text-amber-400">
-                  No active session package. Create a package first to book sessions.
+                  No active session package. Session will be booked without deducting from a package.
                 </p>
               )}
               <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
@@ -238,59 +323,60 @@ export function BookSessionModal({
             </div>
           )}
 
-          {/* Booking type */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Booking Type <span className="text-red-500">*</span>
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setBookingType('session')
-                  setSelectedSlots([])
-                }}
-                disabled={!selectedClient?.activePackage || selectedClient.activePackage.remainingSessions === 0}
-                className={`px-4 py-3 rounded-xl border-2 font-medium transition-all ${
-                  bookingType === 'session'
-                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                    : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                <div className="flex items-center justify-center gap-2">
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Session
-                </div>
-                {selectedClient?.activePackage && (
-                  <p className="text-xs mt-1 opacity-75">{selectedClient.activePackage.remainingSessions} left</p>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setBookingType('checkin')
-                  setSelectedSlots([])
-                }}
-                disabled={!canBookCheckin}
-                className={`px-4 py-3 rounded-xl border-2 font-medium transition-all ${
-                  bookingType === 'checkin'
-                    ? 'border-green-500 bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300'
-                    : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                <div className="flex items-center justify-center gap-2">
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Check-in
-                </div>
-                <p className="text-xs mt-1 opacity-75">{canBookCheckin ? '1 available' : 'Used'}</p>
-              </button>
+          {/* Booking type - hide for one-off bookings (only sessions available) */}
+          {!isOneOffBooking && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Booking Type <span className="text-red-500">*</span>
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBookingType('session')
+                    setSelectedSlots([])
+                  }}
+                  className={`px-4 py-3 rounded-xl border-2 font-medium transition-all ${
+                    bookingType === 'session'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Session
+                  </div>
+                  {selectedClient?.activePackage && (
+                    <p className="text-xs mt-1 opacity-75">{selectedClient.activePackage.remainingSessions} left</p>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBookingType('checkin')
+                    setSelectedSlots([])
+                  }}
+                  disabled={!canBookCheckin}
+                  className={`px-4 py-3 rounded-xl border-2 font-medium transition-all ${
+                    bookingType === 'checkin'
+                      ? 'border-green-500 bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Check-in
+                  </div>
+                  <p className="text-xs mt-1 opacity-75">{canBookCheckin ? '1 available' : 'Used'}</p>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Date picker */}
           <div>

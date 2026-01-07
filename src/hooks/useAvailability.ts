@@ -192,17 +192,26 @@ export function useAvailability(
     }
   }
 
-  const getAvailableSlots = async (
+  const getAvailableSlots = useCallback(async (
     date: string,
     durationMinutes = 60
   ): Promise<AvailableSlot[]> => {
+    // Don't fetch if no date provided
+    if (!date) {
+      return []
+    }
+
     try {
       const params = new URLSearchParams({
-        coachId: options.coachId || '',
         date,
         type: options.type || 'session',
         duration: durationMinutes.toString(),
       })
+
+      // Only add coachId if provided (otherwise API uses authenticated user)
+      if (options.coachId) {
+        params.set('coachId', options.coachId)
+      }
 
       const res = await fetch(`/api/availability/slots?${params}`)
 
@@ -212,12 +221,16 @@ export function useAvailability(
       }
 
       const data = await res.json()
+      // Log debug info if available
+      if (data._debug) {
+        console.log('Slots API Response Debug:', data._debug)
+      }
       return data.slots || []
     } catch (err) {
       console.error('Error fetching slots:', err)
       return []
     }
-  }
+  }, [options.coachId, options.type])
 
   return {
     templates,

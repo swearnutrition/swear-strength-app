@@ -1,14 +1,31 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useBookings } from '@/hooks/useBookings'
 import { useSessionPackages } from '@/hooks/useSessionPackages'
+import { useAvailability } from '@/hooks/useAvailability'
 import { Avatar } from '@/components/ui/Avatar'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { BookSessionModal } from '@/components/booking/BookSessionModal'
 import { createClient } from '@/lib/supabase/client'
-import type { BookingWithDetails, BookingStatus, SessionPackage, ClientCheckinUsage } from '@/types/booking'
+import type { BookingWithDetails, BookingStatus, SessionPackage, ClientCheckinUsage, Booking, AvailableSlot } from '@/types/booking'
+
+// Helper to get the display name for a booking (supports one-off bookings)
+function getBookingClientName(booking: Booking | BookingWithDetails): string {
+  if (booking.client?.name) {
+    return booking.client.name
+  }
+  if ('oneOffClientName' in booking && booking.oneOffClientName) {
+    return booking.oneOffClientName
+  }
+  // Check snake_case version from raw API response
+  const rawBooking = booking as unknown as Record<string, unknown>
+  if (rawBooking.one_off_client_name) {
+    return rawBooking.one_off_client_name as string
+  }
+  return 'Unknown'
+}
 
 interface Client {
   id: string
@@ -80,14 +97,33 @@ function isSameDay(d1: Date, d2: Date): boolean {
   return d1.toDateString() === d2.toDateString()
 }
 
+// Extended slot with date info for multi-select
+interface SlotWithDate extends AvailableSlot {
+  date: string // ISO date string
+}
+
 export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('week')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [showBookSessionModal, setShowBookSessionModal] = useState(false)
-  const [showBlockTimeModal, setShowBlockTimeModal] = useState(false)
   const [selectedBooking, setSelectedBooking] = useState<BookingWithDetails | null>(null)
   const [clientsWithPackages, setClientsWithPackages] = useState<ClientWithPackage[]>([])
-  const supabase = createClient()
+  const [preselectedDate, setPreselectedDate] = useState<string | undefined>(undefined)
+  const [preselectedSlot, setPreselectedSlot] = useState<AvailableSlot | undefined>(undefined)
+  const [slotsByDate, setSlotsByDate] = useState<Map<string, AvailableSlot[]>>(new Map())
+
+  // Multi-select booking mode
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false)
+  const [multiSelectClientId, setMultiSelectClientId] = useState<string>('')
+  const [selectedSlots, setSelectedSlots] = useState<SlotWithDate[]>([])
+  const [isBookingMultiple, setIsBookingMultiple] = useState(false)
+
+  // Drag-and-drop reschedule state
+  const [draggedBooking, setDraggedBooking] = useState<BookingWithDetails | null>(null)
+  const [bookingToReschedule, setBookingToReschedule] = useState<BookingWithDetails | null>(null) // Separate from draggedBooking to persist through dragEnd
+  const [showRescheduleConfirm, setShowRescheduleConfirm] = useState(false)
+  const [rescheduleTarget, setRescheduleTarget] = useState<{ slot: AvailableSlot; date: Date } | null>(null)
+  const [isRescheduling, setIsRescheduling] = useState(false)
 
   // Calculate date range based on view mode
   const dateRange = useMemo(() => {
@@ -104,16 +140,32 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
     }
   }, [currentDate, viewMode])
 
-  const { bookings, loading: bookingsLoading, cancelBooking, updateStatus } = useBookings({
+  const { bookings, loading: bookingsLoading, cancelBooking, deleteBooking, updateStatus, createMultipleBookings, autoCompletePastSessions, rescheduleBooking } = useBookings({
     from: dateRange.from,
     to: dateRange.to,
   })
 
+  // Auto-complete past sessions on initial load
+  const [hasAutoCompleted, setHasAutoCompleted] = useState(false)
+  useEffect(() => {
+    if (!bookingsLoading && !hasAutoCompleted) {
+      autoCompletePastSessions().then((count) => {
+        if (count > 0) {
+          console.log(`Auto-completed ${count} past session(s)`)
+        }
+      })
+      setHasAutoCompleted(true)
+    }
+  }, [bookingsLoading, hasAutoCompleted, autoCompletePastSessions])
+
   const { packages, loading: packagesLoading, refetch: refetchPackages } = useSessionPackages()
+
+  const { getAvailableSlots } = useAvailability({ type: 'session' })
 
   // Fetch clients with their packages and check-in usage
   useEffect(() => {
     async function fetchClientsWithPackages() {
+      const supabase = createClient()
       const currentMonth = new Date()
       currentMonth.setDate(1)
       const monthStr = currentMonth.toISOString().split('T')[0]
@@ -131,7 +183,7 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
             .select('*')
             .eq('client_id', client.id)
             .eq('month', monthStr)
-            .single()
+            .maybeSingle()
 
           const checkinUsage: ClientCheckinUsage | null = checkinData ? {
             id: checkinData.id,
@@ -159,7 +211,7 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
     if (!packagesLoading && clients.length > 0) {
       fetchClientsWithPackages()
     }
-  }, [clients, packages, packagesLoading, supabase])
+  }, [clients, packages, packagesLoading])
 
   // Get today's and tomorrow's bookings for sidebar
   const today = new Date()
@@ -206,6 +258,33 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
       return date
     })
   }, [currentDate])
+
+  // Fetch availability slots for week view
+  useEffect(() => {
+    if (viewMode !== 'week') return
+
+    const fetchWeekSlots = async () => {
+      const newSlotsByDate = new Map<string, AvailableSlot[]>()
+
+      // Fetch slots for each day in the week
+      await Promise.all(
+        weekDays.map(async (day) => {
+          const dateStr = day.toISOString().split('T')[0]
+          // Only fetch for today and future dates
+          const todayDate = new Date()
+          todayDate.setHours(0, 0, 0, 0)
+          if (day >= todayDate) {
+            const slots = await getAvailableSlots(dateStr, 60)
+            newSlotsByDate.set(day.toDateString(), slots)
+          }
+        })
+      )
+
+      setSlotsByDate(newSlotsByDate)
+    }
+
+    fetchWeekSlots()
+  }, [viewMode, weekDays, getAvailableSlots])
 
   // Generate month days for calendar
   const monthDays = useMemo(() => {
@@ -281,6 +360,170 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
     setSelectedBooking(null)
   }
 
+  const handleDeleteBooking = async (bookingId: string) => {
+    if (!confirm('Are you sure you want to permanently delete this booking? This action cannot be undone.')) return
+    await deleteBooking(bookingId)
+    setSelectedBooking(null)
+  }
+
+  // Get selected client for multi-select mode
+  const multiSelectClient = useMemo(
+    () => clientsWithPackages.find((c) => c.id === multiSelectClientId),
+    [clientsWithPackages, multiSelectClientId]
+  )
+
+  const handleSlotClick = (day: Date, slot: AvailableSlot) => {
+    if (isMultiSelectMode) {
+      // In multi-select mode, toggle slot selection
+      const dateStr = day.toISOString().split('T')[0]
+      const slotWithDate: SlotWithDate = { ...slot, date: dateStr }
+
+      setSelectedSlots((prev) => {
+        const exists = prev.some((s) => s.startsAt === slot.startsAt)
+        if (exists) {
+          return prev.filter((s) => s.startsAt !== slot.startsAt)
+        }
+        return [...prev, slotWithDate]
+      })
+    } else {
+      // Normal mode - open modal
+      const dateStr = day.toISOString().split('T')[0]
+      setPreselectedDate(dateStr)
+      setPreselectedSlot(slot)
+      setShowBookSessionModal(true)
+    }
+  }
+
+  const handleOpenBookModal = () => {
+    setPreselectedDate(undefined)
+    setPreselectedSlot(undefined)
+    setShowBookSessionModal(true)
+  }
+
+  const handleEnterMultiSelectMode = () => {
+    setIsMultiSelectMode(true)
+    setSelectedSlots([])
+    setMultiSelectClientId('')
+  }
+
+  const handleExitMultiSelectMode = () => {
+    setIsMultiSelectMode(false)
+    setSelectedSlots([])
+    setMultiSelectClientId('')
+  }
+
+  const handleBookSelectedSlots = async () => {
+    if (!multiSelectClientId || selectedSlots.length === 0) return
+
+    const client = clientsWithPackages.find((c) => c.id === multiSelectClientId)
+    if (!client) return
+
+    // Check if client has enough sessions
+    if (client.activePackage && selectedSlots.length > client.activePackage.remainingSessions) {
+      alert(`Not enough sessions remaining. Client has ${client.activePackage.remainingSessions} sessions left.`)
+      return
+    }
+
+    setIsBookingMultiple(true)
+    try {
+      const payloads = selectedSlots.map((slot) => ({
+        clientId: multiSelectClientId,
+        bookingType: 'session' as const,
+        startsAt: slot.startsAt,
+        endsAt: slot.endsAt,
+        packageId: client.activePackage?.id,
+      }))
+
+      const results = await createMultipleBookings(payloads)
+
+      if (results.length > 0) {
+        refetchPackages()
+        handleExitMultiSelectMode()
+      }
+    } finally {
+      setIsBookingMultiple(false)
+    }
+  }
+
+  const removeSelectedSlot = (slot: SlotWithDate) => {
+    setSelectedSlots((prev) => prev.filter((s) => s.startsAt !== slot.startsAt))
+  }
+
+  // Drag-and-drop handlers
+  const handleDragStart = (e: React.DragEvent, booking: BookingWithDetails) => {
+    // Only allow dragging confirmed bookings
+    if (booking.status !== 'confirmed') {
+      e.preventDefault()
+      return
+    }
+    setDraggedBooking(booking)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', booking.id)
+  }
+
+  const handleDragEnd = () => {
+    // Always clear draggedBooking - bookingToReschedule is used for the modal
+    setDraggedBooking(null)
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (draggedBooking) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+    }
+  }
+
+  const handleDropOnSlot = (e: React.DragEvent, slot: AvailableSlot, day: Date) => {
+    e.preventDefault()
+    if (!draggedBooking) return
+
+    // Don't allow drop on the same slot
+    const draggedStart = new Date(draggedBooking.startsAt)
+    const targetStart = new Date(slot.startsAt)
+    if (draggedStart.getTime() === targetStart.getTime()) {
+      return
+    }
+
+    // Store booking for modal (separate from draggedBooking which gets cleared by dragEnd)
+    setBookingToReschedule(draggedBooking)
+    setRescheduleTarget({ slot, date: day })
+    setShowRescheduleConfirm(true)
+  }
+
+  const handleConfirmReschedule = async () => {
+    if (!bookingToReschedule || !rescheduleTarget) return
+
+    setIsRescheduling(true)
+    try {
+      // Calculate duration from original booking
+      const originalStart = new Date(bookingToReschedule.startsAt)
+      const originalEnd = new Date(bookingToReschedule.endsAt)
+      const durationMs = originalEnd.getTime() - originalStart.getTime()
+
+      // Calculate new end time
+      const newStart = new Date(rescheduleTarget.slot.startsAt)
+      const newEnd = new Date(newStart.getTime() + durationMs)
+
+      await rescheduleBooking({
+        bookingId: bookingToReschedule.id,
+        newStartsAt: newStart.toISOString(),
+        newEndsAt: newEnd.toISOString(),
+      })
+
+      setShowRescheduleConfirm(false)
+      setRescheduleTarget(null)
+      setBookingToReschedule(null)
+    } finally {
+      setIsRescheduling(false)
+    }
+  }
+
+  const handleCancelReschedule = () => {
+    setShowRescheduleConfirm(false)
+    setRescheduleTarget(null)
+    setBookingToReschedule(null)
+  }
+
   const getStatusBadge = (status: BookingStatus) => {
     const styles: Record<BookingStatus, string> = {
       confirmed: 'bg-blue-500/20 text-blue-400',
@@ -312,26 +555,81 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
             </div>
             <div className="flex items-center gap-3">
               {/* Quick Actions */}
-              <button
-                onClick={() => setShowBookSessionModal(true)}
-                className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-medium py-2.5 px-4 rounded-xl transition-all"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Book Session
-              </button>
-              <button
-                onClick={() => setShowBlockTimeModal(true)}
-                className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white font-medium py-2.5 px-4 rounded-xl transition-all"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                </svg>
-                Block Time
-              </button>
+              {!isMultiSelectMode ? (
+                <>
+                  <button
+                    onClick={handleEnterMultiSelectMode}
+                    className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-medium py-2.5 px-4 rounded-xl transition-all"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                    Quick Book
+                  </button>
+                  <button
+                    onClick={handleOpenBookModal}
+                    className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-medium py-2.5 px-4 rounded-xl transition-all"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Book Session
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={handleExitMultiSelectMode}
+                  className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-medium py-2.5 px-4 rounded-xl transition-all"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Cancel
+                </button>
+              )}
             </div>
           </div>
+
+          {/* Multi-Select Mode Bar */}
+          {isMultiSelectMode && (
+            <div className="mb-4 p-4 bg-green-500/10 border border-green-500/30 rounded-xl">
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-green-400 mb-1">
+                    Select a client to book sessions for:
+                  </label>
+                  <select
+                    value={multiSelectClientId}
+                    onChange={(e) => setMultiSelectClientId(e.target.value)}
+                    className="w-full max-w-md px-4 py-2 rounded-lg border border-slate-600 bg-slate-800 text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="">Select a client...</option>
+                    {clientsWithPackages.map((client) => (
+                      <option key={client.id} value={client.id}>
+                        {client.name} {client.activePackage ? `(${client.activePackage.remainingSessions} sessions)` : '(no package)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {multiSelectClient && (
+                  <div className="text-sm text-slate-400">
+                    {multiSelectClient.activePackage ? (
+                      <span>
+                        <span className="text-green-400 font-medium">{multiSelectClient.activePackage.remainingSessions}</span> sessions available
+                      </span>
+                    ) : (
+                      <span className="text-amber-400">No package - will book without deducting</span>
+                    )}
+                  </div>
+                )}
+              </div>
+              {multiSelectClientId && (
+                <p className="text-xs text-slate-500 mt-2">
+                  Click on available time slots below to select them. Selected slots will be highlighted in green.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Calendar Navigation */}
           <div className="flex items-center justify-between">
@@ -427,7 +725,18 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
               <div className="grid grid-cols-7 min-h-[400px]">
                 {weekDays.map((day) => {
                   const dayBookings = bookingsByDate.get(day.toDateString()) || []
+                  const daySlots = slotsByDate.get(day.toDateString()) || []
                   const isToday = isSameDay(day, new Date())
+                  const isPast = day < new Date(new Date().setHours(0, 0, 0, 0))
+
+                  // Get booked slot times to filter them out from available slots
+                  const bookedSlotTimes = new Set(
+                    dayBookings.map((b) => new Date(b.startsAt).getTime())
+                  )
+                  const availableSlots = daySlots.filter(
+                    (slot) => !bookedSlotTimes.has(new Date(slot.startsAt).getTime())
+                  )
+
                   return (
                     <div
                       key={day.toISOString()}
@@ -435,27 +744,101 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
                         isToday ? 'bg-purple-500/5' : ''
                       }`}
                     >
-                      {dayBookings.length === 0 ? (
-                        <div className="text-center text-slate-600 text-sm py-8">No bookings</div>
-                      ) : (
-                        <div className="space-y-2">
-                          {dayBookings
-                            .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
-                            .map((booking) => (
-                              <button
-                                key={booking.id}
-                                onClick={() => setSelectedBooking(booking)}
-                                className={`w-full p-2 rounded-lg border text-left transition-all hover:scale-[1.02] ${getBookingColor(booking)}`}
-                              >
-                                <div className="text-xs font-medium">{formatTime(booking.startsAt)}</div>
-                                <div className="text-sm font-semibold truncate">{booking.client?.name}</div>
-                                <div className="text-xs opacity-75 capitalize">
-                                  {booking.bookingType === 'checkin' ? 'Check-in' : 'Session'}
-                                </div>
-                              </button>
-                            ))}
-                        </div>
-                      )}
+                      <div className="space-y-1.5 max-h-[360px] overflow-y-auto">
+                        {/* Booked sessions */}
+                        {dayBookings
+                          .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
+                          .map((booking) => (
+                            <button
+                              key={booking.id}
+                              onClick={() => setSelectedBooking(booking)}
+                              draggable={booking.status === 'confirmed'}
+                              onDragStart={(e) => handleDragStart(e, booking)}
+                              onDragEnd={handleDragEnd}
+                              className={`w-full p-2 rounded-lg border text-left transition-all hover:scale-[1.02] ${getBookingColor(booking)} ${
+                                booking.status === 'confirmed' ? 'cursor-grab active:cursor-grabbing' : ''
+                              } ${draggedBooking?.id === booking.id ? 'opacity-50 ring-2 ring-purple-500' : ''}`}
+                            >
+                              <div className="text-xs font-medium">{formatTime(booking.startsAt)}</div>
+                              <div className="text-sm font-semibold truncate">
+                                {getBookingClientName(booking)}
+                                {!booking.client && <span className="text-amber-400 ml-1">(one-off)</span>}
+                              </div>
+                              <div className="text-xs opacity-75 capitalize flex items-center gap-1">
+                                {booking.bookingType === 'checkin' ? 'Check-in' : 'Session'}
+                                {booking.status === 'confirmed' && (
+                                  <svg className="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+                                  </svg>
+                                )}
+                              </div>
+                            </button>
+                          ))}
+
+                        {/* Available slots (only for today and future dates) */}
+                        {!isPast && availableSlots.length > 0 && (
+                          <>
+                            {dayBookings.length > 0 && (
+                              <div className="border-t border-slate-700/50 my-2" />
+                            )}
+                            {availableSlots.map((slot) => {
+                              const isSelected = selectedSlots.some((s) => s.startsAt === slot.startsAt)
+                              const canSelect = isMultiSelectMode && multiSelectClientId
+                              const isDragTarget = draggedBooking !== null
+
+                              return (
+                                <button
+                                  key={slot.startsAt}
+                                  onClick={() => !isDragTarget && handleSlotClick(day, slot)}
+                                  onDragOver={handleDragOver}
+                                  onDrop={(e) => handleDropOnSlot(e, slot, day)}
+                                  disabled={isMultiSelectMode && !multiSelectClientId && !isDragTarget}
+                                  className={`w-full p-2 rounded-lg border text-left transition-all group ${
+                                    isSelected
+                                      ? 'border-green-500 bg-green-500/20 text-green-300'
+                                      : isDragTarget
+                                        ? 'border-dashed border-purple-500 bg-purple-500/10 hover:bg-purple-500/20'
+                                        : isMultiSelectMode && !multiSelectClientId
+                                          ? 'border-dashed border-slate-700 text-slate-700 cursor-not-allowed'
+                                          : 'border-dashed border-slate-600 hover:border-green-500/50 hover:bg-green-500/10'
+                                  }`}
+                                >
+                                  <div className={`text-xs font-medium ${
+                                    isSelected
+                                      ? 'text-green-300'
+                                      : isDragTarget
+                                        ? 'text-purple-400'
+                                        : canSelect
+                                          ? 'text-slate-500 group-hover:text-green-400'
+                                          : 'text-slate-500'
+                                  }`}>
+                                    {formatTime(slot.startsAt)}
+                                  </div>
+                                  <div className={`text-xs ${
+                                    isSelected
+                                      ? 'text-green-400'
+                                      : isDragTarget
+                                        ? 'text-purple-300'
+                                        : canSelect
+                                          ? 'text-slate-600 group-hover:text-green-400/80'
+                                          : 'text-slate-600'
+                                  }`}>
+                                    {isSelected ? 'Selected' : isDragTarget ? 'Drop here' : 'Available'}
+                                  </div>
+                                </button>
+                              )
+                            })}
+                          </>
+                        )}
+
+                        {/* Empty state */}
+                        {dayBookings.length === 0 && availableSlots.length === 0 && !isPast && (
+                          <div className="text-center text-slate-600 text-sm py-8">No slots</div>
+                        )}
+                        {isPast && dayBookings.length === 0 && (
+                          <div className="text-center text-slate-700 text-sm py-8">-</div>
+                        )}
+                      </div>
                     </div>
                   )
                 })}
@@ -505,7 +888,7 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
                             onClick={() => setSelectedBooking(booking)}
                             className={`w-full px-1.5 py-0.5 rounded text-xs truncate text-left ${getBookingColor(booking)}`}
                           >
-                            {formatTime(booking.startsAt)} {booking.client?.name?.split(' ')[0]}
+                            {formatTime(booking.startsAt)} {getBookingClientName(booking).split(' ')[0]}
                           </button>
                         ))}
                         {dayBookings.length > 2 && (
@@ -515,6 +898,67 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
                     </div>
                   )
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* Multi-Select Floating Footer */}
+          {isMultiSelectMode && selectedSlots.length > 0 && (
+            <div className="mt-4 p-4 bg-green-500/10 border border-green-500/30 rounded-xl">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium text-green-400 mb-2">
+                    {selectedSlots.length} slot{selectedSlots.length !== 1 ? 's' : ''} selected for {multiSelectClient?.name}
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedSlots
+                      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
+                      .map((slot) => (
+                        <span
+                          key={slot.startsAt}
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-green-500/20 text-green-300 rounded-md text-sm"
+                        >
+                          {new Date(slot.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} {formatTime(slot.startsAt)}
+                          <button
+                            type="button"
+                            onClick={() => removeSelectedSlot(slot)}
+                            className="hover:text-green-100 ml-1"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </span>
+                      ))}
+                  </div>
+                  {multiSelectClient?.activePackage && (
+                    <p className="text-xs text-slate-500 mt-2">
+                      After booking: {multiSelectClient.activePackage.remainingSessions - selectedSlots.length} sessions remaining
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={handleBookSelectedSlots}
+                  disabled={isBookingMultiple}
+                  className="flex items-center gap-2 bg-green-600 hover:bg-green-500 disabled:bg-green-800 disabled:cursor-not-allowed text-white font-medium py-2.5 px-5 rounded-xl transition-all"
+                >
+                  {isBookingMultiple ? (
+                    <>
+                      <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Booking...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Book {selectedSlots.length} Session{selectedSlots.length !== 1 ? 's' : ''}
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           )}
@@ -538,12 +982,15 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
                 >
                   <div className="flex items-center gap-3">
                     <Avatar
-                      name={booking.client?.name || 'Unknown'}
+                      name={getBookingClientName(booking)}
                       src={booking.client?.avatarUrl}
                       size="sm"
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-white truncate">{booking.client?.name}</div>
+                      <div className="font-medium text-white truncate">
+                        {getBookingClientName(booking)}
+                        {!booking.client && <span className="text-amber-400 text-xs ml-1">(one-off)</span>}
+                      </div>
                       <div className="text-sm text-slate-400">
                         {formatTime(booking.startsAt)} - {formatTime(booking.endsAt)}
                       </div>
@@ -572,12 +1019,15 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
               {tomorrowBookings.slice(0, 3).map((booking) => (
                 <div key={booking.id} className="flex items-center gap-3 p-2">
                   <Avatar
-                    name={booking.client?.name || 'Unknown'}
+                    name={getBookingClientName(booking)}
                     src={booking.client?.avatarUrl}
                     size="sm"
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-white truncate">{booking.client?.name}</div>
+                    <div className="text-sm font-medium text-white truncate">
+                      {getBookingClientName(booking)}
+                      {!booking.client && <span className="text-amber-400 text-xs ml-1">(one-off)</span>}
+                    </div>
                     <div className="text-xs text-slate-500">{formatTime(booking.startsAt)}</div>
                   </div>
                 </div>
@@ -646,6 +1096,10 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
               <span className="w-3 h-3 rounded bg-red-500/50"></span>
               <span className="text-slate-400">Cancelled</span>
             </div>
+            <div className="flex items-center gap-2 col-span-2 pt-1 border-t border-slate-700/50 mt-1">
+              <span className="w-3 h-3 rounded border border-dashed border-slate-500"></span>
+              <span className="text-slate-400">Available (click to book)</span>
+            </div>
           </div>
         </div>
       </div>
@@ -661,13 +1115,20 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
             {/* Client Info */}
             <div className="flex items-center gap-4">
               <Avatar
-                name={selectedBooking.client?.name || 'Unknown'}
+                name={getBookingClientName(selectedBooking)}
                 src={selectedBooking.client?.avatarUrl}
                 size="lg"
               />
               <div>
-                <h3 className="text-lg font-semibold text-white">{selectedBooking.client?.name}</h3>
-                <p className="text-slate-400">{selectedBooking.client?.email}</p>
+                <h3 className="text-lg font-semibold text-white">
+                  {getBookingClientName(selectedBooking)}
+                  {!selectedBooking.client && (
+                    <span className="ml-2 text-sm font-normal text-amber-400">(one-off)</span>
+                  )}
+                </h3>
+                <p className="text-slate-400">
+                  {selectedBooking.client?.email || 'No account - one-off booking'}
+                </p>
               </div>
             </div>
 
@@ -735,6 +1196,20 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
                 </Button>
               </div>
             )}
+
+            {/* Delete button - always available */}
+            <div className="pt-4 border-t border-slate-700">
+              <Button
+                variant="secondary"
+                onClick={() => handleDeleteBooking(selectedBooking.id)}
+                className="w-full text-red-400 hover:text-red-300 hover:bg-red-500/10"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Delete Booking
+              </Button>
+            </div>
           </div>
         )}
       </Modal>
@@ -742,27 +1217,118 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
       {/* Book Session Modal */}
       <BookSessionModal
         isOpen={showBookSessionModal}
-        onClose={() => setShowBookSessionModal(false)}
+        onClose={() => {
+          setShowBookSessionModal(false)
+          setPreselectedDate(undefined)
+          setPreselectedSlot(undefined)
+        }}
         clients={clientsWithPackages}
+        preselectedDate={preselectedDate}
         onSuccess={() => {
           refetchPackages()
         }}
       />
 
-      {/* Block Time Modal (placeholder) */}
+      {/* Reschedule Confirmation Modal */}
       <Modal
-        isOpen={showBlockTimeModal}
-        onClose={() => setShowBlockTimeModal(false)}
-        title="Block Time"
+        isOpen={showRescheduleConfirm}
+        onClose={handleCancelReschedule}
+        title="Reschedule Session"
       >
-        <div className="text-slate-400 text-center py-8">
-          <svg className="w-12 h-12 mx-auto mb-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-          </svg>
-          <p>Block time form coming soon</p>
-          <p className="text-sm text-slate-500 mt-1">Block out times when you&apos;re unavailable</p>
-        </div>
+        {bookingToReschedule && rescheduleTarget && (
+          <div className="space-y-6">
+            <p className="text-slate-300">
+              Are you sure you want to reschedule this session?
+            </p>
+
+            {/* Client info */}
+            <div className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3">
+              <Avatar
+                src={bookingToReschedule.client?.avatarUrl}
+                name={getBookingClientName(bookingToReschedule)}
+                size="sm"
+              />
+              <div>
+                <p className="font-medium text-white">{getBookingClientName(bookingToReschedule)}</p>
+                <p className="text-sm text-slate-400 capitalize">{bookingToReschedule.bookingType}</p>
+              </div>
+            </div>
+
+            {/* Time comparison */}
+            <div className="space-y-4">
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                <div className="text-xs text-red-400 uppercase font-medium mb-1">From</div>
+                <div className="text-white font-medium">
+                  {new Date(bookingToReschedule.startsAt).toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </div>
+                <div className="text-slate-300">
+                  {formatTime(bookingToReschedule.startsAt)} - {formatTime(bookingToReschedule.endsAt)}
+                </div>
+              </div>
+
+              <div className="flex justify-center">
+                <svg className="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                </svg>
+              </div>
+
+              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+                <div className="text-xs text-green-400 uppercase font-medium mb-1">To</div>
+                <div className="text-white font-medium">
+                  {rescheduleTarget.date.toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </div>
+                <div className="text-slate-300">
+                  {formatTime(rescheduleTarget.slot.startsAt)} - {(() => {
+                    const originalStart = new Date(bookingToReschedule.startsAt)
+                    const originalEnd = new Date(bookingToReschedule.endsAt)
+                    const durationMs = originalEnd.getTime() - originalStart.getTime()
+                    const newEnd = new Date(new Date(rescheduleTarget.slot.startsAt).getTime() + durationMs)
+                    return newEnd.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3">
+              <Button
+                variant="secondary"
+                onClick={handleCancelReschedule}
+                className="flex-1"
+                disabled={isRescheduling}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmReschedule}
+                className="flex-1"
+                disabled={isRescheduling}
+              >
+                {isRescheduling ? (
+                  <>
+                    <svg className="w-4 h-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Rescheduling...
+                  </>
+                ) : (
+                  'Confirm Reschedule'
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
+
     </div>
   )
 }

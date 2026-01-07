@@ -26,7 +26,9 @@ interface UseBookingsReturn {
   createMultipleBookings: (payloads: CreateBookingPayload[]) => Promise<Booking[]>
   rescheduleBooking: (payload: RescheduleBookingPayload) => Promise<Booking | null>
   cancelBooking: (bookingId: string) => Promise<boolean>
+  deleteBooking: (bookingId: string) => Promise<boolean>
   updateStatus: (bookingId: string, status: BookingStatus) => Promise<boolean>
+  autoCompletePastSessions: () => Promise<number>
 }
 
 export function useBookings(options: UseBookingsOptions = {}): UseBookingsReturn {
@@ -53,6 +55,7 @@ export function useBookings(options: UseBookingsOptions = {}): UseBookingsReturn
       }
 
       const data = await res.json()
+      console.log('useBookings: Fetched', data.bookings?.length || 0, 'bookings for range', options.from, 'to', options.to)
       setBookings(data.bookings || [])
       setError(null)
     } catch (err) {
@@ -175,6 +178,26 @@ export function useBookings(options: UseBookingsOptions = {}): UseBookingsReturn
     }
   }
 
+  const deleteBooking = async (bookingId: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}`, {
+        method: 'DELETE',
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to delete booking')
+      }
+
+      await fetchBookings()
+      return true
+    } catch (err) {
+      console.error('Error deleting booking:', err)
+      alert(err instanceof Error ? err.message : 'Failed to delete booking')
+      return false
+    }
+  }
+
   const updateStatus = async (
     bookingId: string,
     status: BookingStatus
@@ -200,6 +223,28 @@ export function useBookings(options: UseBookingsOptions = {}): UseBookingsReturn
     }
   }
 
+  const autoCompletePastSessions = async (): Promise<number> => {
+    try {
+      const res = await fetch('/api/bookings/auto-complete', {
+        method: 'POST',
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to auto-complete sessions')
+      }
+
+      const data = await res.json()
+      if (data.updated > 0) {
+        await fetchBookings()
+      }
+      return data.updated
+    } catch (err) {
+      console.error('Error auto-completing sessions:', err)
+      return 0
+    }
+  }
+
   return {
     bookings,
     loading,
@@ -209,6 +254,8 @@ export function useBookings(options: UseBookingsOptions = {}): UseBookingsReturn
     createMultipleBookings,
     rescheduleBooking,
     cancelBooking,
+    deleteBooking,
     updateStatus,
+    autoCompletePastSessions,
   }
 }

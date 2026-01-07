@@ -28,13 +28,23 @@ interface CheckinUsageInfo {
   resetDate: string
 }
 
+interface HybridSessionUsageInfo {
+  used: number
+  limit: number
+  resetDate: string
+}
+
+type ClientType = 'online' | 'training' | 'hybrid'
+
 interface ClientBookingsClientProps {
   userId: string
   userName: string
   coachId: string | null
+  clientType: ClientType
   sessionPackage: SessionPackageInfo | null
   bookingStats: BookingStatsInfo | null
   checkinUsage: CheckinUsageInfo | null
+  hybridSessionUsage: HybridSessionUsageInfo | null
 }
 
 // Helper functions
@@ -87,15 +97,33 @@ function getFirstDayOfMonth(year: number, month: number): number {
   return new Date(year, month, 1).getDay()
 }
 
+function getStartOfWeek(date: Date): Date {
+  const d = new Date(date)
+  const day = d.getDay()
+  const diff = d.getDate() - day
+  d.setDate(diff)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+// Extended slot with date info for multi-select
+interface SlotWithDate extends AvailableSlot {
+  date: string // ISO date string
+}
+
 export function ClientBookingsClient({
   userId,
   userName,
   coachId,
+  clientType,
   sessionPackage,
   bookingStats,
   checkinUsage,
+  hybridSessionUsage,
 }: ClientBookingsClientProps) {
-  const [bookingType, setBookingType] = useState<BookingType>('session')
+  // Default to 'checkin' for online clients, 'session' for training/hybrid
+  const canBookSessions = clientType === 'training' || clientType === 'hybrid'
+  const [bookingType, setBookingType] = useState<BookingType>(canBookSessions ? 'session' : 'checkin')
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [selectedSlots, setSelectedSlots] = useState<AvailableSlot[]>([])
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
@@ -106,6 +134,13 @@ export function ClientBookingsClient({
   const [showRescheduleModal, setShowRescheduleModal] = useState(false)
   const [selectedBookingForAction, setSelectedBookingForAction] = useState<BookingWithDetails | null>(null)
   const [bookingInProgress, setBookingInProgress] = useState(false)
+
+  // Quick book mode state
+  const [isQuickBookMode, setIsQuickBookMode] = useState(false)
+  const [quickBookWeekStart, setQuickBookWeekStart] = useState(() => getStartOfWeek(new Date()))
+  const [quickBookSlots, setQuickBookSlots] = useState<SlotWithDate[]>([])
+  const [slotsByDate, setSlotsByDate] = useState<Map<string, AvailableSlot[]>>(new Map())
+  const [loadingWeekSlots, setLoadingWeekSlots] = useState(false)
 
   // Get upcoming bookings
   const today = new Date()
@@ -181,7 +216,155 @@ export function ClientBookingsClient({
     setSelectedSlots([])
     setSelectedDate(null)
     setAvailableSlots([])
+    setQuickBookSlots([])
   }, [bookingType])
+
+  // Generate week days for quick book mode
+  const quickBookWeekDays = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = new Date(quickBookWeekStart)
+      date.setDate(date.getDate() + i)
+      return date
+    })
+  }, [quickBookWeekStart])
+
+  // Fetch availability slots for quick book week view
+  useEffect(() => {
+    if (!isQuickBookMode || !coachId) return
+
+    const fetchWeekSlots = async () => {
+      setLoadingWeekSlots(true)
+      const newSlotsByDate = new Map<string, AvailableSlot[]>()
+      const duration = bookingType === 'session'
+        ? sessionPackage?.sessionDurationMinutes || 60
+        : 30
+
+      // Fetch slots for each day in the week
+      await Promise.all(
+        quickBookWeekDays.map(async (day) => {
+          const dateStr = day.toISOString().split('T')[0]
+          // Only fetch for today and future dates
+          const todayDate = new Date()
+          todayDate.setHours(0, 0, 0, 0)
+          if (day >= todayDate) {
+            const slots = await getAvailableSlots(dateStr, duration)
+            // Mark favorite times
+            const slotsWithFavorites = slots.map(slot => {
+              const slotDate = new Date(slot.startsAt)
+              const dayOfWeek = slotDate.getDay()
+              const slotTime = slotDate.toTimeString().slice(0, 5)
+              const isFavorite = bookingStats?.favoriteTimes?.some(
+                fav => fav.day === dayOfWeek && fav.time === slotTime
+              ) || false
+              return { ...slot, isFavorite }
+            })
+            newSlotsByDate.set(day.toDateString(), slotsWithFavorites)
+          }
+        })
+      )
+
+      setSlotsByDate(newSlotsByDate)
+      setLoadingWeekSlots(false)
+    }
+
+    fetchWeekSlots()
+  }, [isQuickBookMode, quickBookWeekDays, coachId, bookingType, sessionPackage, bookingStats, getAvailableSlots])
+
+  // Quick book week navigation
+  const goToPreviousWeek = () => {
+    const newStart = new Date(quickBookWeekStart)
+    newStart.setDate(newStart.getDate() - 7)
+    // Don't allow going before today's week
+    const todayWeekStart = getStartOfWeek(new Date())
+    if (newStart >= todayWeekStart) {
+      setQuickBookWeekStart(newStart)
+    }
+  }
+
+  const goToNextWeek = () => {
+    const newStart = new Date(quickBookWeekStart)
+    newStart.setDate(newStart.getDate() + 7)
+    // Limit to 3 months out
+    const maxDate = addMonths(new Date(), 3)
+    if (newStart < maxDate) {
+      setQuickBookWeekStart(newStart)
+    }
+  }
+
+  const enterQuickBookMode = () => {
+    setIsQuickBookMode(true)
+    setQuickBookSlots([])
+    setQuickBookWeekStart(getStartOfWeek(new Date()))
+  }
+
+  const exitQuickBookMode = () => {
+    setIsQuickBookMode(false)
+    setQuickBookSlots([])
+  }
+
+  // Handle quick book slot selection
+  const handleQuickBookSlotSelect = (day: Date, slot: AvailableSlot) => {
+    const dateStr = day.toISOString().split('T')[0]
+    const slotWithDate: SlotWithDate = { ...slot, date: dateStr }
+
+    setQuickBookSlots(prev => {
+      const exists = prev.some(s => s.startsAt === slot.startsAt)
+      if (exists) {
+        return prev.filter(s => s.startsAt !== slot.startsAt)
+      }
+      // Check session limit
+      const remainingSessions = getRemainingSessionsForBooking()
+      if (bookingType === 'session' && prev.length >= remainingSessions) {
+        if (clientType === 'hybrid') {
+          alert(`You have reached your monthly session limit of ${hybridSessionUsage?.limit} sessions.`)
+        } else {
+          alert('You have reached your session limit. Please purchase more sessions.')
+        }
+        return prev
+      }
+      return [...prev, slotWithDate]
+    })
+  }
+
+  const removeQuickBookSlot = (slot: SlotWithDate) => {
+    setQuickBookSlots(prev => prev.filter(s => s.startsAt !== slot.startsAt))
+  }
+
+  // Handle quick book confirmation
+  const handleQuickBookConfirm = async () => {
+    if (!coachId || quickBookSlots.length === 0) return
+
+    setBookingInProgress(true)
+    try {
+      const payloads = quickBookSlots.map(slot => ({
+        clientId: userId,
+        bookingType,
+        startsAt: slot.startsAt,
+        endsAt: slot.endsAt,
+        packageId: bookingType === 'session' ? sessionPackage?.id : undefined,
+      }))
+
+      await createMultipleBookings(payloads)
+      setQuickBookSlots([])
+      exitQuickBookMode()
+      await refetch()
+    } catch (error) {
+      console.error('Error creating bookings:', error)
+    } finally {
+      setBookingInProgress(false)
+    }
+  }
+
+  // Calculate remaining sessions based on client type
+  const getRemainingSessionsForBooking = (): number => {
+    if (clientType === 'hybrid' && hybridSessionUsage) {
+      return hybridSessionUsage.limit - hybridSessionUsage.used
+    }
+    if (clientType === 'training' && sessionPackage) {
+      return sessionPackage.remainingSessions
+    }
+    return 0
+  }
 
   // Handle slot selection
   const handleSlotSelect = (slot: AvailableSlot) => {
@@ -195,8 +378,13 @@ export function ClientBookingsClient({
         setSelectedSlots(prev => prev.filter(s => s.startsAt !== slot.startsAt))
       } else {
         // Check if they have enough sessions remaining
-        if (sessionPackage && selectedSlots.length >= sessionPackage.remainingSessions) {
-          alert('You have reached your session limit. Please purchase more sessions.')
+        const remainingSessions = getRemainingSessionsForBooking()
+        if (selectedSlots.length >= remainingSessions) {
+          if (clientType === 'hybrid') {
+            alert(`You have reached your monthly session limit of ${hybridSessionUsage?.limit} sessions.`)
+          } else {
+            alert('You have reached your session limit. Please purchase more sessions.')
+          }
           return
         }
         setSelectedSlots(prev => [...prev, slot])
@@ -284,97 +472,129 @@ export function ClientBookingsClient({
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 pb-24">
-      {/* Header */}
-      <div className="px-4 pt-6 pb-4">
-        <Link href="/dashboard" className="inline-flex items-center text-slate-400 hover:text-white mb-4">
-          <svg className="w-5 h-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <div className="min-h-screen bg-slate-950 pb-24 lg:pb-8">
+      {/* Desktop Container */}
+      <div className="max-w-4xl mx-auto px-4 lg:px-6 pt-6 pb-4">
+        {/* Header */}
+        <Link href="/dashboard" className="inline-flex items-center text-slate-400 hover:text-white mb-3 text-sm">
+          <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
           Back
         </Link>
-        <h1 className="text-2xl font-bold text-white">Book Sessions</h1>
-        <p className="text-slate-400 mt-1">Schedule your training sessions and check-ins</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-white">Book Sessions</h1>
+            <p className="text-slate-400 text-sm mt-1">Schedule your training sessions and check-ins</p>
+          </div>
+          {canBookSessions && !isQuickBookMode && (
+            <button
+              onClick={enterQuickBookMode}
+              className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-medium py-2 px-4 rounded-xl transition-all text-sm"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+              Quick Book
+            </button>
+          )}
+          {isQuickBookMode && (
+            <button
+              onClick={exitQuickBookMode}
+              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 px-4 rounded-xl transition-all text-sm"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Exit Quick Book
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Package Status Header */}
-      <div className="px-4 mb-6">
-        <div className="bg-slate-900/50 rounded-2xl border border-slate-800 p-4">
-          <div className="grid grid-cols-2 gap-4">
-            {/* Sessions Remaining */}
-            <div className="bg-slate-800/50 rounded-xl p-3">
-              <div className="text-slate-400 text-xs font-medium mb-1">Sessions</div>
-              {sessionPackage ? (
-                <div className="text-white font-bold text-lg">
-                  {sessionPackage.remainingSessions} <span className="text-slate-500 font-normal text-sm">of {sessionPackage.totalSessions}</span>
-                </div>
-              ) : (
-                <div className="text-slate-500">No package</div>
-              )}
-            </div>
-
-            {/* Expiration Date */}
-            <div className="bg-slate-800/50 rounded-xl p-3">
-              <div className="text-slate-400 text-xs font-medium mb-1">Expires</div>
-              {sessionPackage?.expiresAt ? (
-                <div className="text-white font-bold text-lg">
-                  {new Date(sessionPackage.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </div>
-              ) : (
-                <div className="text-green-400 font-medium">No expiry</div>
-              )}
-            </div>
-
-            {/* Booking Streak */}
-            <div className="bg-slate-800/50 rounded-xl p-3">
-              <div className="text-slate-400 text-xs font-medium mb-1">Streak</div>
-              <div className="flex items-center gap-1">
-                <span className="text-amber-400 text-lg">🔥</span>
-                <span className="text-white font-bold text-lg">
-                  {bookingStats?.currentStreakWeeks || 0}
+      {/* Compact Stats Bar */}
+      <div className="max-w-4xl mx-auto px-4 lg:px-6 mb-4">
+        <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-3">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 lg:gap-x-8">
+            {/* Sessions */}
+            {canBookSessions && (
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400 text-xs font-medium">
+                  {clientType === 'hybrid' ? 'Monthly' : 'Sessions'}:
                 </span>
-                <span className="text-slate-500 text-sm">weeks</span>
+                {clientType === 'hybrid' && hybridSessionUsage ? (
+                  <span className="text-white font-semibold">
+                    {hybridSessionUsage.limit - hybridSessionUsage.used}/{hybridSessionUsage.limit}
+                  </span>
+                ) : sessionPackage ? (
+                  <span className="text-white font-semibold">
+                    {sessionPackage.remainingSessions}/{sessionPackage.totalSessions}
+                  </span>
+                ) : (
+                  <span className="text-slate-500">—</span>
+                )}
               </div>
+            )}
+
+            {/* Expiration */}
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400 text-xs font-medium">
+                {clientType === 'hybrid' ? 'Resets:' : 'Expires:'}
+              </span>
+              {clientType === 'hybrid' && hybridSessionUsage ? (
+                <span className="text-white font-semibold">{hybridSessionUsage.resetDate}</span>
+              ) : sessionPackage?.expiresAt ? (
+                <span className="text-white font-semibold">
+                  {new Date(sessionPackage.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </span>
+              ) : (
+                <span className="text-green-400 font-medium text-sm">No expiry</span>
+              )}
             </div>
 
-            {/* Check-in Availability */}
-            <div className="bg-slate-800/50 rounded-xl p-3">
-              <div className="text-slate-400 text-xs font-medium mb-1">Check-in</div>
-              {checkinUsage ? (
-                checkinUsage.used ? (
-                  <div className="text-slate-500 text-sm">
-                    Resets {checkinUsage.resetDate}
-                  </div>
-                ) : (
-                  <div className="text-green-400 font-medium">1 available</div>
-                )
+            {/* Streak */}
+            {canBookSessions && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-amber-400">🔥</span>
+                <span className="text-white font-semibold">{bookingStats?.currentStreakWeeks || 0}</span>
+                <span className="text-slate-500 text-xs">weeks</span>
+              </div>
+            )}
+
+            {/* Check-in */}
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400 text-xs font-medium">Check-in:</span>
+              {checkinUsage?.used ? (
+                <span className="text-slate-500 text-sm">Resets {checkinUsage.resetDate}</span>
               ) : (
-                <div className="text-green-400 font-medium">1 available</div>
+                <span className="text-green-400 font-medium text-sm">Available</span>
               )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Booking Type Toggle */}
-      <div className="px-4 mb-6">
-        <Tabs defaultValue="session" onChange={(value) => setBookingType(value as BookingType)}>
-          <TabsList className="w-full">
-            <TabsTrigger value="session" className="flex-1">
-              <span className="flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                In-Person Session
-              </span>
-            </TabsTrigger>
+      {/* Booking Type Toggle - Compact */}
+      <div className="max-w-4xl mx-auto px-4 lg:px-6 mb-4">
+        <Tabs defaultValue={canBookSessions ? 'session' : 'checkin'} onChange={(value) => setBookingType(value as BookingType)}>
+          <TabsList className="w-full lg:w-auto lg:inline-flex">
+            {canBookSessions && (
+              <TabsTrigger value="session" className="flex-1 lg:flex-none lg:px-4">
+                <span className="flex items-center gap-2 text-sm">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  Training Session
+                </span>
+              </TabsTrigger>
+            )}
             <TabsTrigger
               value="checkin"
-              className="flex-1"
+              className="flex-1 lg:flex-none lg:px-4"
               disabled={checkinUsage?.used}
             >
-              <span className="flex items-center gap-2">
+              <span className="flex items-center gap-2 text-sm">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
@@ -383,14 +603,22 @@ export function ClientBookingsClient({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="session" className="mt-4">
-            <p className="text-slate-400 text-sm">
-              Select {sessionPackage ? `up to ${sessionPackage.remainingSessions} time slots` : 'time slots'} for your training sessions.
-              Sessions are {sessionPackage?.sessionDurationMinutes || 60} minutes.
-            </p>
-          </TabsContent>
+          {canBookSessions && (
+            <TabsContent value="session" className="mt-2">
+              <p className="text-slate-400 text-sm">
+                {clientType === 'hybrid' && hybridSessionUsage ? (
+                  <>Select up to {hybridSessionUsage.limit - hybridSessionUsage.used} time slots for your training sessions this month.</>
+                ) : sessionPackage ? (
+                  <>Select up to {sessionPackage.remainingSessions} time slots for your training sessions.</>
+                ) : (
+                  <>Select time slots for your training sessions.</>
+                )}
+                {' '}Sessions are {sessionPackage?.sessionDurationMinutes || 60} min.
+              </p>
+            </TabsContent>
+          )}
 
-          <TabsContent value="checkin" className="mt-4">
+          <TabsContent value="checkin" className="mt-2">
             <p className="text-slate-400 text-sm">
               Book your monthly virtual check-in. Select a single 30-minute slot.
             </p>
@@ -398,178 +626,460 @@ export function ClientBookingsClient({
         </Tabs>
       </div>
 
-      {/* Calendar View */}
-      <div className="px-4 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <button
-            onClick={() => setCurrentMonth(prev => addMonths(prev, -1))}
-            disabled={currentMonth <= calendarMonths[0]}
-            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <h2 className="text-lg font-semibold text-white">
-            {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-          </h2>
-          <button
-            onClick={() => setCurrentMonth(prev => addMonths(prev, 1))}
-            disabled={currentMonth >= calendarMonths[2]}
-            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Calendar Grid */}
-        <div className="bg-slate-900/50 rounded-2xl border border-slate-800 p-4">
-          {/* Day headers */}
-          <div className="grid grid-cols-7 mb-2">
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-              <div key={day} className="text-center text-xs font-medium text-slate-500 py-2">
-                {day}
-              </div>
-            ))}
+      {/* Quick Book Week View */}
+      {isQuickBookMode && (
+        <div className="max-w-4xl mx-auto px-4 lg:px-6 mb-4">
+          <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 mb-4">
+            <p className="text-green-400 text-sm">
+              <strong>Quick Book Mode:</strong> Click on available time slots below to select multiple sessions across different days.
+              {getRemainingSessionsForBooking() > 0 && (
+                <span className="ml-1">You can book up to {getRemainingSessionsForBooking()} session{getRemainingSessionsForBooking() !== 1 ? 's' : ''}.</span>
+              )}
+            </p>
           </div>
 
-          {/* Calendar days */}
-          <div className="grid grid-cols-7 gap-1">
-            {(() => {
-              const year = currentMonth.getFullYear()
-              const month = currentMonth.getMonth()
-              const daysInMonth = getDaysInMonth(year, month)
-              const firstDay = getFirstDayOfMonth(year, month)
-              const cells = []
-
-              // Empty cells for days before the month starts
-              for (let i = 0; i < firstDay; i++) {
-                cells.push(<div key={`empty-${i}`} className="aspect-square" />)
-              }
-
-              // Days of the month
-              for (let day = 1; day <= daysInMonth; day++) {
-                const date = new Date(year, month, day)
-                const isPast = date < today
-                const isToday = isSameDay(date, today)
-                const isWithinNotice = isWithin12Hours(date)
-                const isSelected = selectedDate && isSameDay(date, selectedDate)
-                const hasSelectedSlots = selectedSlots.some(slot =>
-                  isSameDay(new Date(slot.startsAt), date)
-                )
-                const hasBooking = upcomingBookings.some(b =>
-                  isSameDay(new Date(b.startsAt), date)
-                )
-
-                // Check if date has favorite times
-                const dayOfWeek = date.getDay()
-                const hasFavorite = bookingStats?.favoriteTimes?.some(fav => fav.day === dayOfWeek) || false
-
-                const isDisabled = isPast || (isToday && isWithinNotice)
-
-                cells.push(
-                  <button
-                    key={day}
-                    onClick={() => !isDisabled && setSelectedDate(date)}
-                    disabled={isDisabled}
-                    className={`
-                      aspect-square rounded-lg text-sm font-medium transition-all relative
-                      ${isDisabled
-                        ? 'bg-slate-800/30 text-slate-600 cursor-not-allowed'
-                        : isSelected
-                          ? 'bg-purple-600 text-white ring-2 ring-purple-400'
-                          : hasSelectedSlots
-                            ? 'bg-purple-500/30 text-purple-300 ring-1 ring-purple-500'
-                            : hasBooking
-                              ? 'bg-green-500/20 text-green-400'
-                              : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700'
-                      }
-                    `}
-                  >
-                    {day}
-                    {hasFavorite && !isDisabled && (
-                      <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-amber-400" />
-                    )}
-                    {isToday && (
-                      <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-blue-400" />
-                    )}
-                  </button>
-                )
-              }
-
-              return cells
-            })()}
+          {/* Week Navigation */}
+          <div className="flex items-center justify-between mb-4">
+            <button
+              onClick={goToPreviousWeek}
+              disabled={quickBookWeekStart <= getStartOfWeek(new Date())}
+              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <h2 className="text-lg font-semibold text-white">
+              {formatDate(quickBookWeekDays[0])} - {formatDate(quickBookWeekDays[6])}
+            </h2>
+            <button
+              onClick={goToNextWeek}
+              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
           </div>
 
-          {/* Legend */}
-          <div className="flex items-center justify-center gap-4 mt-4 pt-4 border-t border-slate-800">
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <span className="w-2 h-2 rounded-full bg-amber-400" />
-              Favorite
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <span className="w-2 h-2 rounded-full bg-green-500" />
-              Booked
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <span className="w-2 h-2 rounded-full bg-purple-500" />
-              Selected
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Time Slots for Selected Date */}
-      {selectedDate && (
-        <div className="px-4 mb-6">
-          <h3 className="text-white font-semibold mb-3">
-            Available Times - {formatDate(selectedDate)}
-          </h3>
-
-          {loadingSlots ? (
-            <div className="flex items-center justify-center py-8">
-              <svg className="animate-spin h-6 w-6 text-purple-500" viewBox="0 0 24 24">
+          {/* Week Grid */}
+          {loadingWeekSlots ? (
+            <div className="flex items-center justify-center py-12">
+              <svg className="animate-spin h-8 w-8 text-purple-500" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
             </div>
-          ) : availableSlots.length === 0 ? (
-            <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-6 text-center">
-              <p className="text-slate-400">No available slots for this date</p>
-            </div>
           ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {availableSlots.map((slot, index) => {
-                const isSelected = selectedSlots.some(s => s.startsAt === slot.startsAt)
-                return (
-                  <button
-                    key={index}
-                    onClick={() => handleSlotSelect(slot)}
-                    className={`
-                      py-3 px-2 rounded-xl text-sm font-medium transition-all relative
-                      ${isSelected
-                        ? 'bg-purple-600 text-white ring-2 ring-purple-400'
-                        : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700 border border-slate-700'
-                      }
-                    `}
-                  >
-                    {formatTime(slot.startsAt)}
-                    {slot.isFavorite && (
-                      <span className="absolute top-1 right-1 text-amber-400 text-xs">★</span>
-                    )}
-                  </button>
-                )
-              })}
+            <div className="bg-slate-900/50 rounded-2xl border border-slate-800 overflow-hidden">
+              {/* Week Header */}
+              <div className="grid grid-cols-7 border-b border-slate-800">
+                {quickBookWeekDays.map((day) => {
+                  const isToday = isSameDay(day, new Date())
+                  const isPast = day < new Date(new Date().setHours(0, 0, 0, 0))
+                  return (
+                    <div
+                      key={day.toISOString()}
+                      className={`p-3 text-center border-r border-slate-800 last:border-r-0 ${
+                        isToday ? 'bg-purple-500/10' : isPast ? 'bg-slate-900/50' : ''
+                      }`}
+                    >
+                      <div className="text-xs text-slate-500">{day.toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                      <div className={`text-lg font-semibold mt-0.5 ${isToday ? 'text-purple-400' : isPast ? 'text-slate-600' : 'text-white'}`}>
+                        {day.getDate()}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Week Body - Slots */}
+              <div className="grid grid-cols-7 min-h-[300px]">
+                {quickBookWeekDays.map((day) => {
+                  const daySlots = slotsByDate.get(day.toDateString()) || []
+                  const isPast = day < new Date(new Date().setHours(0, 0, 0, 0))
+                  const isToday = isSameDay(day, new Date())
+
+                  // Get booked slot times to filter them out
+                  const bookedSlotTimes = new Set(
+                    upcomingBookings
+                      .filter(b => isSameDay(new Date(b.startsAt), day))
+                      .map(b => new Date(b.startsAt).getTime())
+                  )
+                  const availableSlots = daySlots.filter(
+                    slot => !bookedSlotTimes.has(new Date(slot.startsAt).getTime())
+                  )
+
+                  return (
+                    <div
+                      key={day.toISOString()}
+                      className={`p-2 border-r border-slate-800 last:border-r-0 ${
+                        isToday ? 'bg-purple-500/5' : isPast ? 'bg-slate-900/30' : ''
+                      }`}
+                    >
+                      <div className="space-y-1 max-h-[280px] overflow-y-auto">
+                        {/* Existing bookings */}
+                        {upcomingBookings
+                          .filter(b => isSameDay(new Date(b.startsAt), day))
+                          .map(booking => (
+                            <div
+                              key={booking.id}
+                              className="w-full p-1.5 rounded-lg bg-blue-500/20 border border-blue-500/50 text-blue-300 text-xs"
+                            >
+                              <div className="font-medium">{formatTime(booking.startsAt)}</div>
+                              <div className="opacity-75 truncate">Booked</div>
+                            </div>
+                          ))}
+
+                        {/* Available slots */}
+                        {!isPast && availableSlots.map((slot) => {
+                          const isSelected = quickBookSlots.some(s => s.startsAt === slot.startsAt)
+                          return (
+                            <button
+                              key={slot.startsAt}
+                              onClick={() => handleQuickBookSlotSelect(day, slot)}
+                              className={`w-full p-1.5 rounded-lg border text-left transition-all text-xs ${
+                                isSelected
+                                  ? 'border-green-500 bg-green-500/20 text-green-300'
+                                  : 'border-dashed border-slate-600 hover:border-green-500/50 hover:bg-green-500/10 text-slate-400 hover:text-green-300'
+                              }`}
+                            >
+                              <div className="font-medium flex items-center gap-1">
+                                {formatTime(slot.startsAt)}
+                                {slot.isFavorite && <span className="text-amber-400 text-[8px]">★</span>}
+                              </div>
+                              <div className="opacity-75">{isSelected ? 'Selected' : 'Available'}</div>
+                            </button>
+                          )
+                        })}
+
+                        {/* Empty state */}
+                        {!isPast && availableSlots.length === 0 && upcomingBookings.filter(b => isSameDay(new Date(b.startsAt), day)).length === 0 && (
+                          <div className="text-center text-slate-600 text-xs py-4">No slots</div>
+                        )}
+                        {isPast && (
+                          <div className="text-center text-slate-700 text-xs py-4">-</div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Selected Slots Summary */}
+          {quickBookSlots.length > 0 && (
+            <div className="mt-4 p-4 bg-green-500/10 border border-green-500/30 rounded-xl">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium text-green-400 mb-2">
+                    {quickBookSlots.length} session{quickBookSlots.length !== 1 ? 's' : ''} selected
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {quickBookSlots
+                      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
+                      .map((slot) => (
+                        <span
+                          key={slot.startsAt}
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-green-500/20 text-green-300 rounded-md text-xs"
+                        >
+                          {new Date(slot.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} {formatTime(slot.startsAt)}
+                          <button
+                            type="button"
+                            onClick={() => removeQuickBookSlot(slot)}
+                            className="hover:text-green-100 ml-1"
+                          >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </span>
+                      ))}
+                  </div>
+                  {sessionPackage && (
+                    <p className="text-xs text-slate-500 mt-2">
+                      After booking: {sessionPackage.remainingSessions - quickBookSlots.length} sessions remaining
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={handleQuickBookConfirm}
+                  disabled={bookingInProgress}
+                  className="flex items-center gap-2 bg-green-600 hover:bg-green-500 disabled:bg-green-800 disabled:cursor-not-allowed text-white font-medium py-2.5 px-5 rounded-xl transition-all"
+                >
+                  {bookingInProgress ? (
+                    <>
+                      <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Booking...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Book {quickBookSlots.length} Session{quickBookSlots.length !== 1 ? 's' : ''}
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Selected Slots Summary */}
-      {selectedSlots.length > 0 && (
-        <div className="fixed bottom-20 left-0 right-0 px-4 z-40">
+      {/* Main Content - Calendar with inline time slots on desktop */}
+      {!isQuickBookMode && (
+      <div className="max-w-4xl mx-auto px-4 lg:px-6">
+        {/* Responsive layout: stacked on mobile, side-by-side on desktop */}
+        <div style={{ display: 'flex', flexDirection: 'column' }} className="desktop-row">
+          {/* Calendar Section */}
+          <div className="calendar-section mb-6" style={{ flexShrink: 0 }}>
+            <div className="flex items-center justify-between mb-3">
+              <button
+                onClick={() => setCurrentMonth(prev => addMonths(prev, -1))}
+                disabled={currentMonth <= calendarMonths[0]}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <h2 className="text-base font-semibold text-white">
+                {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </h2>
+              <button
+                onClick={() => setCurrentMonth(prev => addMonths(prev, 1))}
+                disabled={currentMonth >= calendarMonths[2]}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Calendar Grid */}
+            <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-2 md:p-3">
+              {/* Day headers */}
+              <div className="grid grid-cols-7 mb-1">
+                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
+                  <div key={i} className="text-center text-[10px] md:text-xs font-medium text-slate-500 py-1">
+                    {day}
+                  </div>
+                ))}
+              </div>
+
+              {/* Calendar days - compact */}
+              <div className="grid grid-cols-7 gap-0.5 md:gap-1">
+                {(() => {
+                  const year = currentMonth.getFullYear()
+                  const month = currentMonth.getMonth()
+                  const daysInMonth = getDaysInMonth(year, month)
+                  const firstDay = getFirstDayOfMonth(year, month)
+                  const cells = []
+
+                  for (let i = 0; i < firstDay; i++) {
+                    cells.push(<div key={`empty-${i}`} className="h-9" />)
+                  }
+
+                  for (let day = 1; day <= daysInMonth; day++) {
+                    const date = new Date(year, month, day)
+                    const isPast = date < today
+                    const isToday = isSameDay(date, today)
+                    const isWithinNotice = isWithin12Hours(date)
+                    const isSelected = selectedDate && isSameDay(date, selectedDate)
+                    const hasSelectedSlots = selectedSlots.some(slot =>
+                      isSameDay(new Date(slot.startsAt), date)
+                    )
+                    const hasBooking = upcomingBookings.some(b =>
+                      isSameDay(new Date(b.startsAt), date)
+                    )
+                    const dayOfWeek = date.getDay()
+                    const hasFavorite = bookingStats?.favoriteTimes?.some(fav => fav.day === dayOfWeek) || false
+                    const isDisabled = isPast || (isToday && isWithinNotice)
+
+                    cells.push(
+                      <button
+                        key={day}
+                        onClick={() => !isDisabled && setSelectedDate(date)}
+                        disabled={isDisabled}
+                        className={`
+                          h-9 rounded-md text-xs font-medium transition-all relative flex items-center justify-center
+                          ${isDisabled
+                            ? 'bg-slate-800/30 text-slate-600 cursor-not-allowed'
+                            : isSelected
+                              ? 'bg-purple-600 text-white ring-2 ring-purple-400'
+                              : hasSelectedSlots
+                                ? 'bg-purple-500/30 text-purple-300 ring-1 ring-purple-500'
+                                : hasBooking
+                                  ? 'bg-green-500/20 text-green-400'
+                                  : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700'
+                          }
+                        `}
+                      >
+                        {day}
+                        {hasFavorite && !isDisabled && (
+                          <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-amber-400" />
+                        )}
+                        {isToday && (
+                          <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-blue-400" />
+                        )}
+                      </button>
+                    )
+                  }
+
+                  return cells
+                })()}
+              </div>
+
+              {/* Legend */}
+              <div className="hidden md:flex items-center justify-center gap-2 mt-1.5 pt-1.5 border-t border-slate-800 text-[9px] text-slate-500">
+                <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" />Fav</span>
+                <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full bg-green-500" />Booked</span>
+                <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full bg-purple-500" />Selected</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Sidebar - Time Slots & Upcoming */}
+          <div className="sidebar-section space-y-3" style={{ flex: 1, minWidth: 0 }}>
+            {/* Time Slots */}
+            <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-3">
+              {selectedDate ? (
+                <>
+                  <h3 className="text-white font-medium text-sm mb-2">{formatDate(selectedDate)}</h3>
+                  {loadingSlots ? (
+                    <div className="flex items-center justify-center py-4">
+                      <svg className="animate-spin h-5 w-5 text-purple-500" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    </div>
+                  ) : availableSlots.length === 0 ? (
+                    <p className="text-slate-400 text-xs text-center py-3">No available slots</p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {availableSlots.map((slot, index) => {
+                        const isSelected = selectedSlots.some(s => s.startsAt === slot.startsAt)
+                        return (
+                          <button
+                            key={index}
+                            onClick={() => handleSlotSelect(slot)}
+                            className={`
+                              py-1.5 px-2 rounded text-xs font-medium transition-all relative
+                              ${isSelected
+                                ? 'bg-purple-600 text-white'
+                                : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700 border border-slate-700'
+                              }
+                            `}
+                          >
+                            {formatTime(slot.startsAt)}
+                            {slot.isFavorite && <span className="absolute top-0 right-0.5 text-amber-400 text-[8px]">★</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {selectedSlots.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-slate-800">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-white text-xs font-medium">{selectedSlots.length} selected</span>
+                        <div className="flex gap-1.5">
+                          <Button size="sm" onClick={() => setShowConfirmModal(true)} disabled={bookingInProgress} className="text-xs px-2 py-1">
+                            Confirm
+                          </Button>
+                          <button onClick={() => setSelectedSlots([])} className="text-slate-400 hover:text-white text-xs">Clear</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-center py-4">
+                  <svg className="w-8 h-8 text-slate-600 mx-auto mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-slate-500 text-xs">Select a date</p>
+                </div>
+              )}
+            </div>
+
+            {/* Upcoming Bookings */}
+            <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-3">
+              <h3 className="text-white font-medium text-xs mb-2">Upcoming</h3>
+              {bookingsLoading ? (
+                <div className="flex items-center justify-center py-3">
+                  <svg className="animate-spin h-4 w-4 text-purple-500" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                </div>
+              ) : upcomingBookings.length === 0 ? (
+                <p className="text-slate-500 text-xs text-center py-2">No upcoming bookings</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {upcomingBookings.slice(0, 4).map((booking) => {
+                    const bookingDate = new Date(booking.startsAt)
+                    const canCancel = !isWithin12Hours(bookingDate)
+                    return (
+                      <div key={booking.id} className="bg-slate-800/50 rounded p-1.5 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${booking.bookingType === 'checkin' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={booking.bookingType === 'checkin' ? "M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" : "M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"} />
+                            </svg>
+                          </div>
+                          <div className="min-w-0 truncate">
+                            <span className="text-white">{formatDate(bookingDate)}</span>
+                            <span className="text-slate-500 ml-1">{formatTime(booking.startsAt)}</span>
+                          </div>
+                        </div>
+                        {canCancel && (
+                          <button
+                            onClick={() => { setSelectedBookingForAction(booking); setShowCancelModal(true) }}
+                            className="p-0.5 text-slate-500 hover:text-red-400 flex-shrink-0"
+                          >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                  {upcomingBookings.length > 4 && (
+                    <p className="text-slate-500 text-[10px] text-center">+{upcomingBookings.length - 4} more</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      )}
+
+      {/* CSS for desktop side-by-side layout */}
+      <style jsx>{`
+        @media (min-width: 800px) {
+          .desktop-row {
+            flex-direction: row !important;
+            gap: 1.5rem;
+            align-items: flex-start;
+          }
+          .calendar-section {
+            width: 320px;
+            margin-bottom: 0 !important;
+          }
+        }
+      `}</style>
+
+      {/* Mobile Selected Slots Summary - Only show on mobile and not in quick book mode */}
+      {!isQuickBookMode && selectedSlots.length > 0 && (
+        <div className="min-[800px]:hidden fixed bottom-20 left-0 right-0 px-4 z-40">
           <div className="max-w-lg mx-auto bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl p-4">
             <div className="flex items-center justify-between mb-3">
               <div>
@@ -597,118 +1107,6 @@ export function ClientBookingsClient({
         </div>
       )}
 
-      {/* Upcoming Bookings */}
-      <div className="px-4 mb-6">
-        <h3 className="text-white font-semibold mb-3">Upcoming Bookings</h3>
-
-        {bookingsLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <svg className="animate-spin h-6 w-6 text-purple-500" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-          </div>
-        ) : upcomingBookings.length === 0 ? (
-          <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-6 text-center">
-            <svg className="w-12 h-12 text-slate-600 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <p className="text-slate-400">No upcoming bookings</p>
-            <p className="text-slate-500 text-sm mt-1">Select a date above to book a session</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {upcomingBookings.map((booking) => {
-              const bookingDate = new Date(booking.startsAt)
-              const canCancel = !isWithin12Hours(bookingDate)
-
-              return (
-                <div
-                  key={booking.id}
-                  className="bg-slate-900/50 rounded-xl border border-slate-800 p-4"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`
-                        w-10 h-10 rounded-xl flex items-center justify-center
-                        ${booking.bookingType === 'checkin'
-                          ? 'bg-purple-500/20 text-purple-400'
-                          : 'bg-blue-500/20 text-blue-400'
-                        }
-                      `}>
-                        {booking.bookingType === 'checkin' ? (
-                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                        ) : (
-                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                          </svg>
-                        )}
-                      </div>
-                      <div>
-                        <div className="text-white font-medium">
-                          {booking.bookingType === 'checkin' ? 'Virtual Check-in' : 'Training Session'}
-                        </div>
-                        <div className="text-slate-400 text-sm">
-                          {formatDate(bookingDate)} at {formatTime(booking.startsAt)}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {canCancel && (
-                        <>
-                          <button
-                            onClick={() => {
-                              setSelectedBookingForAction(booking)
-                              setShowRescheduleModal(true)
-                            }}
-                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-                          >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedBookingForAction(booking)
-                              setShowCancelModal(true)
-                            }}
-                            className="p-2 rounded-lg bg-slate-800 hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors"
-                          >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </>
-                      )}
-                      {!canCancel && (
-                        <span className="text-amber-400 text-xs">Within 12hrs</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {booking.googleMeetLink && (
-                    <a
-                      href={booking.googleMeetLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-3 flex items-center gap-2 text-sm text-purple-400 hover:text-purple-300"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                      Join Meeting
-                    </a>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
       {/* Confirm Booking Modal */}
       <Modal
         isOpen={showConfirmModal}
@@ -733,10 +1131,14 @@ export function ClientBookingsClient({
             ))}
           </div>
 
-          {bookingType === 'session' && sessionPackage && (
+          {bookingType === 'session' && canBookSessions && (
             <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3">
               <div className="text-purple-300 text-sm">
-                This will use {selectedSlots.length} of your {sessionPackage.remainingSessions} remaining sessions.
+                {clientType === 'hybrid' && hybridSessionUsage ? (
+                  <>This will use {selectedSlots.length} of your {hybridSessionUsage.limit - hybridSessionUsage.used} remaining monthly sessions.</>
+                ) : sessionPackage ? (
+                  <>This will use {selectedSlots.length} of your {sessionPackage.remainingSessions} remaining sessions.</>
+                ) : null}
               </div>
             </div>
           )}

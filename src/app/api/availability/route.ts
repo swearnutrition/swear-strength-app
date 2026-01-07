@@ -35,6 +35,18 @@ export async function GET(request: NextRequest) {
     const { data: templates, error: templatesError } = await templatesQuery
     if (templatesError) throw templatesError
 
+    console.log('Availability API Debug - Templates:', {
+      coachId: coachId || 'using user.id',
+      type,
+      templatesFound: templates?.length || 0,
+      templates: templates?.map(t => ({
+        day: t.day_of_week,
+        type: t.availability_type,
+        start: t.start_time,
+        end: t.end_time
+      })),
+    })
+
     // Get overrides
     let overridesQuery = supabase
       .from('coach_availability_overrides')

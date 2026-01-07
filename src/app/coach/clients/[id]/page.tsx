@@ -170,6 +170,36 @@ export default async function ClientDetailPage({ params }: PageProps) {
     .eq('is_archived', false)
     .order('name')
 
+  // Get all bookings for this client with this coach
+  const { data: clientBookings, error: bookingsError } = await supabase
+    .from('bookings')
+    .select(`
+      id,
+      coach_id,
+      client_id,
+      package_id,
+      booking_type,
+      starts_at,
+      ends_at,
+      status,
+      notes,
+      google_meet_link,
+      created_at
+    `)
+    .eq('client_id', id)
+    .eq('coach_id', user.id)
+    .order('starts_at', { ascending: false })
+
+
+  // Calculate in-person session stats
+  const completedInPersonSessions = (clientBookings || []).filter(
+    b => b.booking_type === 'session' && b.status === 'completed'
+  ).length
+
+  const upcomingInPersonSessions = (clientBookings || []).filter(
+    b => b.booking_type === 'session' && b.status === 'confirmed' && new Date(b.starts_at) > new Date()
+  ).length
+
   // Calculate volume by muscle from actual workout logs
   const volumeByMuscle: Record<string, number> = {}
   const thisWeekStart = new Date()
@@ -389,6 +419,8 @@ export default async function ClientDetailPage({ params }: PageProps) {
         avatar_url: client.avatar_url,
         created_at: client.created_at,
         last_login: client.last_login,
+        clientType: client.client_type || 'online',
+        hybridSessionsPerMonth: client.hybrid_sessions_per_month || 4,
       }}
       program={assignment ? {
         id: assignment.program?.id,
@@ -405,6 +437,9 @@ export default async function ClientDetailPage({ params }: PageProps) {
         volumeChange,
         fourWeekConsistency,
         fourWeekWorkouts: fourWeekLogs.length,
+        completedInPersonSessions,
+        upcomingInPersonSessions,
+        soloWorkouts: fourWeekLogs.length, // Solo workouts from the app
       }}
       weeklyVolume={weeklyVolume}
       volumeByMuscle={volumeByMuscle}
@@ -456,6 +491,16 @@ export default async function ClientDetailPage({ params }: PageProps) {
           startDate: h.start_date,
         }
       })}
+      bookedSessions={(clientBookings || []).map(b => ({
+        id: b.id,
+        bookingType: b.booking_type,
+        startsAt: b.starts_at,
+        endsAt: b.ends_at,
+        status: b.status,
+        notes: b.notes,
+        googleMeetLink: b.google_meet_link,
+        createdAt: b.created_at,
+      }))}
     />
   )
 }

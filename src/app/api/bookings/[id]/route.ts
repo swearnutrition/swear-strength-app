@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createCalendarEvent, deleteCalendarEvent } from '@/lib/google/calendar'
 import type { BookingStatus } from '@/types/booking'
 
 // GET single booking
@@ -153,7 +154,11 @@ export async function PATCH(
 
       if (error) throw error
 
-      // TODO: Update/delete Google Calendar event
+      // Delete Google Calendar event if cancelled
+      if (payload.status === 'cancelled' && currentBooking.google_event_id) {
+        await deleteCalendarEvent(currentBooking.coach_id, currentBooking.google_event_id)
+      }
+
       // TODO: Send notifications
 
       return NextResponse.json({ booking: updatedBooking })
@@ -173,6 +178,7 @@ export async function PATCH(
           ends_at: payload.endsAt,
           status: 'confirmed',
           rescheduled_from_id: id,
+          one_off_client_name: currentBooking.one_off_client_name,
         })
         .select(`
           *,
@@ -191,8 +197,41 @@ export async function PATCH(
         })
         .eq('id', id)
 
-      // TODO: Update Google Calendar event
-      // TODO: Send reschedule notification
+      // Handle Google Calendar: delete old event and create new one
+      // This sends cancellation email for old event and new invite for new event
+      if (currentBooking.google_event_id) {
+        await deleteCalendarEvent(currentBooking.coach_id, currentBooking.google_event_id)
+      }
+
+      // Create new Google Calendar event
+      const isOneOff = !!currentBooking.one_off_client_name
+      const clientName = isOneOff
+        ? currentBooking.one_off_client_name
+        : newBooking.client?.name || 'Client'
+      const clientEmail = isOneOff ? undefined : newBooking.client?.email
+
+      const calendarEvent = await createCalendarEvent(currentBooking.coach_id, {
+        summary: `${currentBooking.booking_type === 'checkin' ? 'Check-in' : 'Training Session'}: ${clientName} (Rescheduled)`,
+        description: `${currentBooking.booking_type === 'checkin' ? 'Monthly check-in' : 'Training session'} with ${clientName}${isOneOff ? ' (One-off booking)' : ''}\n\nRescheduled from original booking.`,
+        startTime: payload.startsAt,
+        endTime: payload.endsAt,
+        attendeeEmail: clientEmail,
+        attendeeName: clientName,
+      })
+
+      // Update new booking with Google Calendar info
+      if (calendarEvent) {
+        await supabase
+          .from('bookings')
+          .update({
+            google_event_id: calendarEvent.id,
+            google_meet_link: calendarEvent.hangoutLink || null,
+          })
+          .eq('id', newBooking.id)
+
+        newBooking.google_event_id = calendarEvent.id
+        newBooking.google_meet_link = calendarEvent.hangoutLink || null
+      }
 
       return NextResponse.json({ booking: newBooking })
     }
@@ -202,6 +241,95 @@ export async function PATCH(
     console.error('Error updating booking:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to update booking' },
+      { status: 500 }
+    )
+  }
+}
+
+// DELETE - Permanently delete a booking (coaches only)
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Only coaches can delete bookings
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  if (profile?.role !== 'coach') {
+    return NextResponse.json({ error: 'Only coaches can delete bookings' }, { status: 403 })
+  }
+
+  // Get current booking
+  const { data: booking, error: fetchError } = await supabase
+    .from('bookings')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  if (fetchError || !booking) {
+    return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
+  }
+
+  // Verify coach owns this booking
+  if (booking.coach_id !== user.id) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  try {
+    // Refund session if it was a confirmed session with a package
+    if (
+      booking.booking_type === 'session' &&
+      booking.package_id &&
+      booking.status === 'confirmed'
+    ) {
+      await supabase.rpc('increment_session', {
+        package_id: booking.package_id,
+      })
+    }
+
+    // Reset check-in usage if check-in type
+    if (booking.booking_type === 'checkin' && booking.client_id) {
+      const startOfMonth = new Date(booking.starts_at)
+      startOfMonth.setDate(1)
+      const monthStr = startOfMonth.toISOString().split('T')[0]
+
+      await supabase
+        .from('client_checkin_usage')
+        .update({ used: false, booking_id: null })
+        .eq('client_id', booking.client_id)
+        .eq('coach_id', booking.coach_id)
+        .eq('month', monthStr)
+    }
+
+    // Delete Google Calendar event if exists
+    if (booking.google_event_id) {
+      await deleteCalendarEvent(booking.coach_id, booking.google_event_id)
+    }
+
+    // Delete the booking
+    const { error: deleteError } = await supabase
+      .from('bookings')
+      .delete()
+      .eq('id', id)
+
+    if (deleteError) throw deleteError
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting booking:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to delete booking' },
       { status: 500 }
     )
   }
