@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
+import { setupCalendarWatch } from '@/lib/google/calendar-sync'
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 
@@ -118,7 +119,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${settingsUrl}?error=google_oauth_db_failed`)
     }
 
-    // 10. Redirect to settings with success
+    // 10. Set up calendar watch for webhook notifications
+    // This allows us to sync when events are deleted from Google Calendar
+    setupCalendarWatch(user.id)
+      .then(success => {
+        if (success) {
+          console.log('Calendar watch set up for coach:', user.id)
+        } else {
+          console.warn('Failed to set up calendar watch for coach:', user.id)
+        }
+      })
+      .catch(err => console.error('Error setting up calendar watch:', err))
+
+    // 11. Redirect to settings with success
     return NextResponse.redirect(`${settingsUrl}?google_connected=true`)
   } catch (err) {
     console.error('Google OAuth callback error:', err)

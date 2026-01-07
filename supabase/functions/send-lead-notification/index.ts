@@ -115,7 +115,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         from: 'Swear Strength <no-reply@swearstrength.com>',
-        to: ['coach@swearstrength.com'],
+        to: ['heather@swearnutrition.com'],
         subject: `New Training Inquiry from ${lead.name}`,
         html,
       }),

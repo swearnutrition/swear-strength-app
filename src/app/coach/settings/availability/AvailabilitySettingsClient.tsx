@@ -313,15 +313,10 @@ export function AvailabilitySettingsClient() {
 
     setDisconnectingGoogle(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { error } = await supabase
-        .from('google_calendar_credentials')
-        .delete()
-        .eq('coach_id', user.id)
-
-      if (error) throw error
+      const response = await fetch('/api/google/disconnect', { method: 'POST' })
+      if (!response.ok) {
+        throw new Error('Failed to disconnect')
+      }
       setGoogleConnected(false)
     } catch (err) {
       console.error('Error disconnecting Google:', err)
