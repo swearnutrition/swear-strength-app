@@ -20,6 +20,8 @@ interface Profile {
   created_at: string
   email_nudges: boolean
   email_weekly_summary: boolean
+  push_booking_reminders: boolean
+  client_type: 'online' | 'training' | 'hybrid' | null
 }
 
 // Convert HEIC/HEIF to JPEG
@@ -218,6 +220,7 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
   const [avatarUrl, setAvatarUrl] = useState<string | null>(profile.avatar_url)
   const [emailNudges, setEmailNudges] = useState(profile.email_nudges ?? true)
   const [emailWeeklySummary, setEmailWeeklySummary] = useState(profile.email_weekly_summary ?? true)
+  const [pushBookingReminders, setPushBookingReminders] = useState(profile.push_booking_reminders ?? true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
@@ -351,6 +354,7 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
           timezone,
           email_nudges: emailNudges,
           email_weekly_summary: emailWeeklySummary,
+          push_booking_reminders: pushBookingReminders,
           updated_at: new Date().toISOString(),
         })
         .eq('id', profile.id)
@@ -436,7 +440,8 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
     weightUnit !== profile.preferred_weight_unit ||
     timezone !== (profile.timezone || 'America/New_York') ||
     emailNudges !== (profile.email_nudges ?? true) ||
-    emailWeeklySummary !== (profile.email_weekly_summary ?? true)
+    emailWeeklySummary !== (profile.email_weekly_summary ?? true) ||
+    pushBookingReminders !== (profile.push_booking_reminders ?? true)
 
   const memberSince = new Date(profile.created_at).toLocaleDateString('en-US', {
     month: 'long',
@@ -1103,6 +1108,18 @@ export function SettingsClient({ profile, coachName, userEmail }: SettingsClient
                 style={{ opacity: groupNotificationsLoading ? 0.5 : 1, cursor: groupNotificationsLoading ? 'wait' : 'pointer' }}
               />
             </div>
+            {(profile.client_type === 'training' || profile.client_type === 'hybrid') && (
+              <div className="toggle-switch-row">
+                <div className="toggle-switch-content">
+                  <span className="toggle-switch-label">Booking Reminders</span>
+                  <span className="toggle-switch-desc">Remind me to book training sessions</span>
+                </div>
+                <div
+                  className={`toggle-switch ${pushBookingReminders ? 'on' : ''}`}
+                  onClick={() => setPushBookingReminders(!pushBookingReminders)}
+                />
+              </div>
+            )}
           </div>
         )}
 

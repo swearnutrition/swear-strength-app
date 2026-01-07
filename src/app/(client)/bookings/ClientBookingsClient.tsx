@@ -145,6 +145,12 @@ export function ClientBookingsClient({
   const [slotsByDate, setSlotsByDate] = useState<Map<string, AvailableSlot[]>>(new Map())
   const [loadingWeekSlots, setLoadingWeekSlots] = useState(false)
 
+  // Reschedule modal state
+  const [rescheduleDate, setRescheduleDate] = useState<Date | null>(null)
+  const [rescheduleSlots, setRescheduleSlots] = useState<AvailableSlot[]>([])
+  const [selectedRescheduleSlot, setSelectedRescheduleSlot] = useState<AvailableSlot | null>(null)
+  const [loadingRescheduleSlots, setLoadingRescheduleSlots] = useState(false)
+
   // Get upcoming bookings
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -1300,42 +1306,149 @@ export function ClientBookingsClient({
         onClose={() => {
           setShowRescheduleModal(false)
           setSelectedBookingForAction(null)
+          setRescheduleDate(null)
+          setRescheduleSlots([])
+          setSelectedRescheduleSlot(null)
         }}
         title="Reschedule Booking"
         size="lg"
       >
         <div className="space-y-4">
-          <p className="text-slate-300">
-            Select a new time for your {selectedBookingForAction?.bookingType === 'checkin' ? 'check-in' : 'session'}:
-          </p>
-
           {selectedBookingForAction && (
-            <div className="bg-slate-800/50 rounded-lg p-3 mb-4">
-              <div className="text-slate-400 text-xs mb-1">Current booking</div>
-              <div className="text-white font-medium">
-                {formatFullDate(new Date(selectedBookingForAction.startsAt))} at {formatTime(selectedBookingForAction.startsAt)}
+            <div className="rounded-lg p-3" style={{ background: colors.bgTertiary }}>
+              <div className="text-xs mb-1" style={{ color: colors.textMuted }}>Current booking</div>
+              <div className="font-medium" style={{ color: colors.text }}>
+                {selectedBookingForAction.bookingType === 'checkin' ? 'Check-in' : 'Training'} · {formatFullDate(new Date(selectedBookingForAction.startsAt))} at {formatTime(selectedBookingForAction.startsAt)}
               </div>
             </div>
           )}
 
-          <p className="text-slate-400 text-sm">
-            Select a date from the calendar above and choose a new time slot, then click &quot;Reschedule&quot; below.
-          </p>
+          {/* Date Selection */}
+          <div>
+            <label className="block text-sm font-medium mb-2" style={{ color: colors.textSecondary }}>
+              Select new date
+            </label>
+            <div className="grid grid-cols-7 gap-1">
+              {(() => {
+                const days = []
+                const startDate = new Date()
+                startDate.setHours(12, 0, 0, 0) // Avoid DST issues
+
+                for (let i = 0; i < 14; i++) {
+                  const date = new Date(startDate)
+                  date.setDate(startDate.getDate() + i)
+                  const dateStr = date.toLocaleDateString('en-CA')
+                  const isSelected = rescheduleDate?.toLocaleDateString('en-CA') === dateStr
+                  const isToday = i === 0
+                  const dayName = date.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 2)
+
+                  days.push(
+                    <button
+                      key={dateStr}
+                      onClick={async () => {
+                        setRescheduleDate(date)
+                        setSelectedRescheduleSlot(null)
+                        setLoadingRescheduleSlots(true)
+                        try {
+                          // Get duration based on booking type
+                          const duration = selectedBookingForAction?.bookingType === 'session'
+                            ? sessionPackage?.sessionDurationMinutes || 60
+                            : 30
+                          const slots = await getAvailableSlots(dateStr, duration)
+                          setRescheduleSlots(slots)
+                        } catch (error) {
+                          console.error('Error fetching reschedule slots:', error)
+                          setRescheduleSlots([])
+                        } finally {
+                          setLoadingRescheduleSlots(false)
+                        }
+                      }}
+                      className="p-2 rounded-lg text-center transition-all"
+                      style={{
+                        background: isSelected ? colors.purple : colors.bgCard,
+                        border: `1px solid ${isSelected ? colors.purple : colors.border}`,
+                        color: isSelected ? 'white' : colors.text,
+                      }}
+                    >
+                      <div className="text-[10px] opacity-70">{dayName}</div>
+                      <div className="text-sm font-medium">{date.getDate()}</div>
+                      {isToday && <div className="text-[8px] opacity-70">Today</div>}
+                    </button>
+                  )
+                }
+                return days
+              })()}
+            </div>
+          </div>
+
+          {/* Time Slots */}
+          {rescheduleDate && (
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: colors.textSecondary }}>
+                Available times for {rescheduleDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+              </label>
+              {loadingRescheduleSlots ? (
+                <div className="flex items-center justify-center py-6">
+                  <svg className="animate-spin h-6 w-6" style={{ color: colors.purple }} viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                </div>
+              ) : rescheduleSlots.length === 0 ? (
+                <p className="text-sm py-4 text-center" style={{ color: colors.textMuted }}>
+                  No available slots on this date
+                </p>
+              ) : (
+                <div className="grid grid-cols-3 gap-2 max-h-[200px] overflow-y-auto">
+                  {rescheduleSlots.map((slot) => {
+                    const isSelected = selectedRescheduleSlot?.startsAt === slot.startsAt
+                    return (
+                      <button
+                        key={slot.startsAt}
+                        onClick={() => setSelectedRescheduleSlot(slot)}
+                        className="p-2 rounded-lg text-sm font-medium transition-all"
+                        style={{
+                          background: isSelected ? colors.greenLight : colors.bgCard,
+                          border: `1px solid ${isSelected ? colors.green : colors.border}`,
+                          color: isSelected ? colors.green : colors.text,
+                        }}
+                      >
+                        {formatTime(slot.startsAt)}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Selected new time summary */}
+          {selectedRescheduleSlot && rescheduleDate && (
+            <div className="rounded-lg p-3" style={{ background: colors.greenLight, border: `1px solid ${colors.green}40` }}>
+              <div className="text-xs mb-1" style={{ color: colors.green }}>New time</div>
+              <div className="font-medium" style={{ color: colors.green }}>
+                {rescheduleDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} at {formatTime(selectedRescheduleSlot.startsAt)}
+              </div>
+            </div>
+          )}
 
           <ModalFooter>
             <Button variant="secondary" onClick={() => {
               setShowRescheduleModal(false)
               setSelectedBookingForAction(null)
+              setRescheduleDate(null)
+              setRescheduleSlots([])
+              setSelectedRescheduleSlot(null)
             }}>
               Cancel
             </Button>
             <Button
               onClick={() => {
-                if (selectedSlots.length > 0) {
-                  handleReschedule(selectedSlots[0])
+                if (selectedRescheduleSlot) {
+                  handleReschedule(selectedRescheduleSlot)
                 }
               }}
-              disabled={selectedSlots.length === 0}
+              disabled={!selectedRescheduleSlot}
             >
               Reschedule
             </Button>

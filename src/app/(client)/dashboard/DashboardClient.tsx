@@ -265,7 +265,8 @@ export function DashboardClient({
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === 'dark'
 
-  const [activeView, setActiveView] = useState<'agenda' | 'calendar'>('agenda')
+  // Check if client needs to book sessions (training/hybrid with no upcoming bookings)
+  const needsToBookSessions = (clientType === 'training' || clientType === 'hybrid') && upcomingBookings.length === 0
   const [completions, setCompletions] = useState<HabitCompletion[]>(todayCompletions)
   const [weekCompletions, setWeekCompletions] = useState<WeekHabitCompletion[]>(weekHabitCompletions)
   const [loading, setLoading] = useState<string | null>(null)
@@ -368,107 +369,11 @@ export function DashboardClient({
   // Show rivalry banner whenever there's an active rivalry (rivalry object only exists when active)
   const showRivalryBanner = !!rivalry
 
-  // Build agenda items
-  const agendaItems: Array<{
-    id: string
-    type: 'workout' | 'habit'
-    title: string
-    subtitle: string
-    icon: string
-    color: string
-    completed: boolean
-    rivalryData?: Rivalry | null
-  }> = []
-
-  // Add workout if scheduled for today
-  if (todayWorkout) {
-    agendaItems.push({
-      id: `workout-${todayWorkout.id}`,
-      type: 'workout',
-      title: todayWorkout.name,
-      subtitle: `Week ${todayWorkout.week} · ${todayWorkout.estimatedDuration} min · ${todayWorkout.exerciseCount} exercises`,
-      icon: '🏋️',
-      color: colors.purple,
-      completed: false,
-    })
-  }
-
-  // Add habits
-  habits.forEach(habit => {
-    const template = getHabitTemplate(habit)
-    const isCompleted = completions.some(c => c.client_habit_id === habit.id)
-    const icon = template.category ? habitIcons[template.category] : '✓'
-
-    // Check if this habit has the rivalry
-    const hasRivalry = rivalry && rivalry.habit_name === template.name
-
-    agendaItems.push({
-      id: habit.id,
-      type: 'habit',
-      title: template.name,
-      subtitle: 'Every day',
-      icon,
-      color: template.category === 'nutrition' ? colors.green :
-        template.category === 'mindset' ? colors.amber :
-          template.category === 'fitness' ? colors.purple : colors.green,
-      completed: isCompleted,
-      rivalryData: hasRivalry ? rivalry : null,
-    })
-  })
-
-  const completedCount = agendaItems.filter(item => item.completed).length
-  const progressPercent = agendaItems.length > 0 ? (completedCount / agendaItems.length) * 100 : 0
-
-  // Handle habit completion
-  const handleHabitComplete = async (habitId: string) => {
-    if (loading) return
-    setLoading(habitId)
-
-    const existingCompletion = completions.find(c => c.client_habit_id === habitId)
-
-    try {
-      if (existingCompletion) {
-        // Remove completion
-        await supabase
-          .from('habit_completions')
-          .delete()
-          .eq('id', existingCompletion.id)
-
-        setCompletions(prev => prev.filter(c => c.id !== existingCompletion.id))
-        setWeekCompletions(prev => prev.filter(c => c.id !== existingCompletion.id))
-      } else {
-        // Add completion
-        const { data, error } = await supabase
-          .from('habit_completions')
-          .insert({
-            client_id: userId,
-            client_habit_id: habitId,
-            completed_date: today,
-            value: 1,
-          })
-          .select()
-          .single()
-
-        if (error) throw error
-
-        setCompletions(prev => [...prev, data])
-        setWeekCompletions(prev => [...prev, { ...data, completed_date: today }])
-      }
-    } catch (err) {
-      console.error('Error toggling habit completion:', err)
-    } finally {
-      setLoading(null)
-    }
-  }
-
   // Get current date info
   const now = new Date()
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
   const shortDayNames = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-  const currentDayName = dayNames[now.getDay()]
-  const currentMonth = monthNames[now.getMonth()]
-  const currentDate = now.getDate()
 
   // Calculate week days based on offset (for week navigation)
   const getWeekDaysForOffset = (offset: number) => {
@@ -1611,550 +1516,433 @@ export function DashboardClient({
           </div>
         )}
 
-        {/* TODAY'S AGENDA VIEW */}
-        {activeView === 'agenda' && (
-          <>
-            {/* Rivalry Banner */}
-            {showRivalryBanner && rivalry && (
-              <div className="rivalry-banner rivalry-card">
-                <div className="rivalry-banner-content">
-                  <div className="rivalry-icon">
-                    <Icons.swords size={18} color="white" />
-                  </div>
-                  <div className="rivalry-info">
-                    <div className="rivalry-title-row">
-                      <span className="rivalry-title">{rivalry.habit_name}</span>
-                      <div className="rivalry-dot" style={{ width: 5, height: 5, borderRadius: '50%', background: '#f97316' }} />
-                    </div>
-                    <div className="rivalry-message">{getRivalryMessage()}</div>
-                  </div>
-                  <div className="rivalry-scores">
-                    <div className="rivalry-score-text">
-                      <span style={{ color: colors.green }}>{rivalry.my_score}%</span>
-                      <span style={{ color: colors.textMuted, margin: '0 4px', fontSize: 12 }}>vs</span>
-                      <span style={{ color: '#f97316' }}>{rivalry.opponent_score}%</span>
-                    </div>
-                    <div className="rivalry-days">{rivalry.days_left}d left</div>
-                  </div>
-                  <Link href={`/rivalry/${rivalry.id}`}>
-                    <Icons.chevronRight size={18} color={colors.textMuted} />
-                  </Link>
+        {/* Rivalry Banner */}
+        {showRivalryBanner && rivalry && (
+          <Link href={`/rivalry/${rivalry.id}`} style={{ textDecoration: 'none' }}>
+            <div className="rivalry-banner rivalry-card">
+              <div className="rivalry-banner-content">
+                <div className="rivalry-icon">
+                  <Icons.swords size={18} color="white" />
                 </div>
+                <div className="rivalry-info">
+                  <div className="rivalry-title-row">
+                    <span className="rivalry-title">{rivalry.habit_name}</span>
+                    <div className="rivalry-dot" style={{ width: 5, height: 5, borderRadius: '50%', background: '#f97316' }} />
+                  </div>
+                  <div className="rivalry-message">{getRivalryMessage()}</div>
+                </div>
+                <div className="rivalry-scores">
+                  <div className="rivalry-score-text">
+                    <span style={{ color: colors.green }}>{rivalry.my_score}%</span>
+                    <span style={{ color: colors.textMuted, margin: '0 4px', fontSize: 12 }}>vs</span>
+                    <span style={{ color: '#f97316' }}>{rivalry.opponent_score}%</span>
+                  </div>
+                  <div className="rivalry-days">{rivalry.days_left}d left</div>
+                </div>
+                <Icons.chevronRight size={18} color={colors.textMuted} />
               </div>
+            </div>
+          </Link>
+        )}
+
+        {/* Calendar Header with Week Navigation */}
+        <div className="calendar-header">
+          <div className="calendar-title-section">
+            <h2>{displayMonth} {displayYear}</h2>
+            {weekOffset !== 0 && (
+              <button
+                onClick={goToCurrentWeek}
+                style={{
+                  marginLeft: 12,
+                  padding: '4px 10px',
+                  borderRadius: 8,
+                  background: colors.purple,
+                  border: 'none',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: 'white',
+                  cursor: 'pointer',
+                }}
+              >
+                Today
+              </button>
             )}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={goToPrevWeek}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                background: colors.bgCard,
+                border: isDark ? 'none' : `1px solid ${colors.border}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <Icons.chevronLeft size={20} color={colors.textSecondary} />
+            </button>
+            <button
+              onClick={goToNextWeek}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                background: colors.bgCard,
+                border: isDark ? 'none' : `1px solid ${colors.border}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <Icons.chevronRight size={20} color={colors.textSecondary} />
+            </button>
+          </div>
+        </div>
 
-            {/* Agenda Header */}
-            <div className="agenda-header">
-              <div className="agenda-title-section">
-                <div className="agenda-icon">📋</div>
-                <div>
-                  <h2 className="agenda-title">Today&apos;s Agenda</h2>
-                  <div className="agenda-date">{currentDayName}, {currentMonth.slice(0, 3)} {currentDate}</div>
+        {/* Week Strip */}
+        <div className="week-strip">
+          {displayWeekDays.map((day, i) => {
+            const dateStr = day.dateStr || ''
+            const habitStatus = getHabitsStatusForDay(dateStr)
+            const dayWorkout = displayWeekWorkouts[i]
+            const hasWorkout = !!dayWorkout
+            const isWorkoutCompleted = dayWorkout?.completed || false
+            const isSelected = i === selectedDayIndex
+            const dayBookings = getBookingsForDay(dateStr)
+            const hasBooking = dayBookings.length > 0
+
+            return (
+              <div
+                key={i}
+                className={`week-day-cell ${day.isToday ? 'today' : ''} ${isSelected && !day.isToday ? 'selected' : ''}`}
+                onClick={() => setSelectedDayIndex(i)}
+                style={{ cursor: 'pointer' }}
+              >
+                <div className="week-day-name">{day.dayName}</div>
+                <div className="week-day-date">{day.dayNum}</div>
+                <div className="week-day-dots">
+                  {hasWorkout && (
+                    <div className={`status-dot workout ${isWorkoutCompleted ? 'completed' : ''} ${day.isToday && !isWorkoutCompleted ? 'today' : ''}`} />
+                  )}
+                  {hasBooking && (
+                    <div className="status-dot" style={{ background: day.isToday ? 'white' : colors.blue }} />
+                  )}
+                  {habits.length > 0 && (
+                    <div className={`status-dot habits ${
+                      habitStatus.completed === habitStatus.total && habitStatus.total > 0 ? 'complete' :
+                        habitStatus.completed > 0 ? 'partial' :
+                          day.isToday ? 'today-empty' : ''
+                    }`} />
+                  )}
                 </div>
               </div>
-              <div className="agenda-count">{completedCount}/{agendaItems.length} done</div>
-            </div>
+            )
+          })}
+        </div>
 
-            {/* Progress Bar */}
-            <div className="progress-bar-container">
-              <div className="progress-bar-fill" style={{ width: `${progressPercent}%` }} />
+        {/* Legend */}
+        <div className="legend">
+          <div className="legend-item">
+            <div className="legend-dot" style={{ background: colors.purple }} />
+            <span className="legend-text">Workout</span>
+          </div>
+          {(clientType === 'training' || clientType === 'hybrid') && (
+            <div className="legend-item">
+              <div className="legend-dot" style={{ background: colors.blue }} />
+              <span className="legend-text">Session</span>
             </div>
+          )}
+          <div className="legend-item">
+            <div className="legend-dot" style={{ background: colors.amber }} />
+            <span className="legend-text">Habits</span>
+          </div>
+          <div className="legend-item">
+            <div className="legend-dot" style={{ background: colors.green }} />
+            <span className="legend-text">Done</span>
+          </div>
+        </div>
 
-            {/* Set Schedule Prompt */}
-            {scheduleInfo && !currentSchedule && (
+        {/* Selected Day's Details */}
+        <div style={{ marginBottom: 16 }}>
+          <div className="section-label">
+            {selectedDayFullName.toUpperCase()}, {selectedMonthName.toUpperCase().slice(0, 3)} {selectedDateNum}
+            {isSelectedDayToday && ' — TODAY'}
+            {isSelectedDayPast && ' — PAST'}
+            {isSelectedDayFuture && ' — UPCOMING'}
+          </div>
+
+          {/* Set Schedule Prompt - Only show on current week when viewing today */}
+          {scheduleInfo && !currentSchedule && isSelectedDayToday && weekOffset === 0 && (
+            <div
+              className="agenda-item"
+              onClick={() => setShowScheduleModal(true)}
+              style={{ cursor: 'pointer', marginBottom: 12 }}
+            >
+              <div className="agenda-item-content">
+                <div className="item-icon" style={{ background: `${colors.purple}20` }}>
+                  📅
+                </div>
+                <div className="item-details">
+                  <div className="item-title">Set Your Workout Schedule</div>
+                  <div className="item-subtitle">Pick which days you&apos;ll work out each week</div>
+                </div>
+                <Icons.chevronRight size={20} color={colors.textMuted} />
+              </div>
+            </div>
+          )}
+
+          {/* Book Session Card - Only for training/hybrid clients with no upcoming bookings */}
+          {needsToBookSessions && isSelectedDayToday && weekOffset === 0 && (
+            <Link href="/bookings" style={{ textDecoration: 'none' }}>
               <div
                 className="agenda-item"
-                onClick={() => setShowScheduleModal(true)}
-                style={{ cursor: 'pointer', marginBottom: 16 }}
+                style={{ cursor: 'pointer', marginBottom: 12 }}
               >
                 <div className="agenda-item-content">
-                  <div className="item-icon" style={{ background: `${colors.purple}20` }}>
-                    📅
+                  <div className="item-icon" style={{ background: `${colors.green}20` }}>
+                    🗓️
                   </div>
                   <div className="item-details">
-                    <div className="item-title">Set Your Workout Schedule</div>
-                    <div className="item-subtitle">Pick which days you&apos;ll work out each week</div>
+                    <div className="item-title">Book Training Sessions</div>
+                    <div className="item-subtitle">
+                      {clientType === 'hybrid'
+                        ? 'Schedule your sessions with your coach'
+                        : 'Schedule your sessions with your coach'}
+                    </div>
                   </div>
                   <Icons.chevronRight size={20} color={colors.textMuted} />
                 </div>
               </div>
-            )}
+            </Link>
+          )}
 
-            {/* Book Session Card - Only for training/hybrid clients */}
-            {(clientType === 'training' || clientType === 'hybrid') && (
-              <Link href="/bookings" style={{ textDecoration: 'none' }}>
-                <div
-                  className="agenda-item"
-                  style={{ cursor: 'pointer', marginBottom: 16 }}
-                >
-                  <div className="agenda-item-content">
-                    <div className="item-icon" style={{ background: `${colors.green}20` }}>
-                      🗓️
-                    </div>
-                    <div className="item-details">
-                      <div className="item-title">Book Training Sessions</div>
-                      <div className="item-subtitle">
-                        {clientType === 'hybrid'
-                          ? 'Schedule your monthly sessions with your coach'
-                          : 'Schedule your sessions with your coach'}
-                      </div>
-                    </div>
-                    <Icons.chevronRight size={20} color={colors.textMuted} />
-                  </div>
-                </div>
-              </Link>
-            )}
-
-            {/* Agenda Items */}
-            {agendaItems.map(item => (
-              <div key={item.id} className={`agenda-item ${item.rivalryData ? 'has-rivalry' : ''}`}>
-                <div className="agenda-item-content">
-                  <div
-                    className={`checkbox ${item.completed ? 'completed' : ''} ${loading === item.id ? 'loading' : ''}`}
-                    onClick={() => item.type === 'habit' && handleHabitComplete(item.id)}
-                  >
-                    {item.completed && <Icons.check size={16} color="white" />}
-                  </div>
-                  <div
-                    className="item-icon"
-                    style={{ background: isDark ? `${item.color}20` : `${item.color}15` }}
-                  >
-                    {item.icon}
-                  </div>
-                  <div className="item-details">
-                    <div className="item-title">{item.title}</div>
-                    <div className="item-subtitle">{item.subtitle}</div>
-                  </div>
-                  {item.type === 'workout' && todayWorkout && (
-                    <Link href={`/workouts/${todayWorkout.id}`}>
-                      <button className="start-btn">Start</button>
-                    </Link>
-                  )}
-                  {item.type === 'habit' && !item.completed && (
-                    <button
-                      className="add-btn"
-                      onClick={() => handleHabitComplete(item.id)}
-                      disabled={loading === item.id}
-                    >
-                      <Icons.plus size={20} color={colors.textSecondary} />
-                    </button>
-                  )}
-                </div>
-
-                {/* Rivalry Badge on Habit */}
-                {item.rivalryData && (
-                  <div className="rivalry-badge">
-                    <span style={{ fontSize: 12 }}>⚔️</span>
-                    <span className="rivalry-badge-text">vs {item.rivalryData.opponent_name}</span>
-                    <span className="rivalry-badge-score">
-                      {item.rivalryData.my_score}%-{item.rivalryData.opponent_score}%
-                    </span>
-                    <span className="rivalry-badge-days">{item.rivalryData.days_left}d</span>
-                  </div>
+          {/* Workout Card */}
+          {selectedDayWorkout ? (
+            <div className="workout-detail-card">
+              <div className="workout-detail-header">
+                <span style={{ fontSize: 14 }}>🏋️</span>
+                <span className="workout-detail-label">WORKOUT</span>
+                {selectedDayWorkout.completed && (
+                  <span style={{ marginLeft: 'auto', fontSize: 11, color: colors.green, fontWeight: 600 }}>✓ DONE</span>
                 )}
               </div>
-            ))}
-
-            {/* Streak Card */}
-            {overallStreak > 0 && (
-              <div className="streak-card">
-                <div className="streak-icon">🔥</div>
-                <div className="streak-info">
-                  <div className="streak-title">Keep your streak alive!</div>
-                  <div className="streak-subtitle">Complete all tasks to hit day {overallStreak + 1}</div>
+              <div className="workout-detail-content">
+                <div className="workout-detail-info">
+                  <div className="workout-detail-title">{selectedDayWorkout.name}</div>
+                  <div className="workout-detail-subtitle">
+                    Week {selectedDayWorkout.week} · {selectedDayWorkout.estimatedDuration} min · {selectedDayWorkout.exerciseCount} exercises
+                  </div>
                 </div>
-                <div className="streak-count">{overallStreak}</div>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* CALENDAR VIEW */}
-        {activeView === 'calendar' && (
-          <>
-            {/* Calendar Header */}
-            <div className="calendar-header">
-              <div className="calendar-title-section">
-                <h2>{displayMonth} {displayYear}</h2>
-                {weekOffset !== 0 && (
+                {selectedDayWorkout.completed ? (
+                  <Link href={`/workouts/${selectedDayWorkout.id}`}>
+                    <button className="workout-start-btn">View</button>
+                  </Link>
+                ) : isSelectedDayFuture ? (
                   <button
-                    onClick={goToCurrentWeek}
-                    style={{
-                      marginLeft: 12,
-                      padding: '4px 10px',
-                      borderRadius: 8,
-                      background: colors.purple,
-                      border: 'none',
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: 'white',
-                      cursor: 'pointer',
-                    }}
+                    className="reschedule-btn"
+                    onClick={() => setShowRescheduleModal(true)}
                   >
-                    Today
+                    Reschedule
                   </button>
-                )}
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={goToPrevWeek}
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 12,
-                    background: colors.bgCard,
-                    border: isDark ? 'none' : `1px solid ${colors.border}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Icons.chevronLeft size={20} color={colors.textSecondary} />
-                </button>
-                <button
-                  onClick={goToNextWeek}
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 12,
-                    background: colors.bgCard,
-                    border: isDark ? 'none' : `1px solid ${colors.border}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Icons.chevronRight size={20} color={colors.textSecondary} />
-                </button>
-              </div>
-            </div>
-
-            {/* Rivalry Banner (Compact) */}
-            {showRivalryBanner && rivalry && (
-              <div className="rivalry-banner rivalry-card" style={{ padding: '12px 14px', marginBottom: 20 }}>
-                <div className="rivalry-banner-content" style={{ gap: 10 }}>
-                  <div className="rivalry-icon" style={{ width: 36, height: 36 }}>
-                    <Icons.swords size={16} color="white" />
-                  </div>
-                  <div className="rivalry-info">
-                    <div className="rivalry-title" style={{ fontSize: 13 }}>{rivalry.habit_name}</div>
-                    <div className="rivalry-message" style={{ fontSize: 11 }}>{getRivalryMessage()}</div>
-                  </div>
-                  <div className="rivalry-scores">
-                    <div className="rivalry-score-text" style={{ fontSize: 14 }}>
-                      <span style={{ color: colors.green }}>{rivalry.my_score}%</span>
-                      <span style={{ color: colors.textMuted, fontSize: 11 }}> vs </span>
-                      <span style={{ color: '#f97316' }}>{rivalry.opponent_score}%</span>
-                    </div>
-                  </div>
-                  <Icons.chevronRight size={16} color={colors.textMuted} />
-                </div>
-              </div>
-            )}
-
-            {/* Week Strip */}
-            <div className="week-strip">
-              {displayWeekDays.map((day, i) => {
-                const dateStr = day.dateStr || ''
-                const habitStatus = getHabitsStatusForDay(dateStr)
-                // Use displayWeekWorkouts which works for any week offset
-                const dayWorkout = displayWeekWorkouts[i]
-                const hasWorkout = !!dayWorkout
-                const isWorkoutCompleted = dayWorkout?.completed || false
-                const isSelected = i === selectedDayIndex
-                const dayBookings = getBookingsForDay(dateStr)
-                const hasBooking = dayBookings.length > 0
-
-                return (
-                  <div
-                    key={i}
-                    className={`week-day-cell ${day.isToday ? 'today' : ''} ${isSelected && !day.isToday ? 'selected' : ''}`}
-                    onClick={() => {
-                      // Just select the day - don't navigate away from the current week view
-                      setSelectedDayIndex(i)
-                    }}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <div className="week-day-name">{day.dayName}</div>
-                    <div className="week-day-date">{day.dayNum}</div>
-                    <div className="week-day-dots">
-                      {hasWorkout && (
-                        <div className={`status-dot workout ${isWorkoutCompleted ? 'completed' : ''} ${day.isToday && !isWorkoutCompleted ? 'today' : ''}`} />
-                      )}
-                      {hasBooking && (
-                        <div className="status-dot" style={{ background: day.isToday ? 'white' : colors.blue }} />
-                      )}
-                      {habits.length > 0 && (
-                        <div className={`status-dot habits ${
-                          habitStatus.completed === habitStatus.total && habitStatus.total > 0 ? 'complete' :
-                            habitStatus.completed > 0 ? 'partial' :
-                              day.isToday ? 'today-empty' : ''
-                        }`} />
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Legend */}
-            <div className="legend">
-              <div className="legend-item">
-                <div className="legend-dot" style={{ background: colors.purple }} />
-                <span className="legend-text">Workout</span>
-              </div>
-              {(clientType === 'training' || clientType === 'hybrid') && (
-                <div className="legend-item">
-                  <div className="legend-dot" style={{ background: colors.blue }} />
-                  <span className="legend-text">Session</span>
-                </div>
-              )}
-              <div className="legend-item">
-                <div className="legend-dot" style={{ background: colors.amber }} />
-                <span className="legend-text">Habits</span>
-              </div>
-              <div className="legend-item">
-                <div className="legend-dot" style={{ background: colors.green }} />
-                <span className="legend-text">Done</span>
-              </div>
-            </div>
-
-            {/* Selected Day's Details */}
-            <div style={{ marginBottom: 16 }}>
-              <div className="section-label">
-                {selectedDayFullName.toUpperCase()}, {selectedMonthName.toUpperCase().slice(0, 3)} {selectedDateNum}
-                {isSelectedDayToday && ' — TODAY'}
-                {isSelectedDayPast && ' — PAST'}
-                {isSelectedDayFuture && ' — UPCOMING'}
-              </div>
-
-              {/* Workout Card */}
-              {selectedDayWorkout ? (
-                <div className="workout-detail-card">
-                  <div className="workout-detail-header">
-                    <span style={{ fontSize: 14 }}>🏋️</span>
-                    <span className="workout-detail-label">WORKOUT</span>
-                    {selectedDayWorkout.completed && (
-                      <span style={{ marginLeft: 'auto', fontSize: 11, color: colors.green, fontWeight: 600 }}>✓ DONE</span>
-                    )}
-                  </div>
-                  <div className="workout-detail-content">
-                    <div className="workout-detail-info">
-                      <div className="workout-detail-title">{selectedDayWorkout.name}</div>
-                      <div className="workout-detail-subtitle">
-                        Week {selectedDayWorkout.week} · {selectedDayWorkout.estimatedDuration} min · {selectedDayWorkout.exerciseCount} exercises
-                      </div>
-                    </div>
-                    {selectedDayWorkout.completed ? (
-                      // Completed workout - just show View button
-                      <Link href={`/workouts/${selectedDayWorkout.id}`}>
-                        <button className="workout-start-btn">View</button>
-                      </Link>
-                    ) : isSelectedDayFuture ? (
-                      // Future workout - show Reschedule only
+                ) : (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {!isSelectedDayToday && (
                       <button
                         className="reschedule-btn"
                         onClick={() => setShowRescheduleModal(true)}
                       >
                         Reschedule
                       </button>
-                    ) : (
-                      // Today or past incomplete workout
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        {!isSelectedDayToday && (
-                          <button
-                            className="reschedule-btn"
-                            onClick={() => setShowRescheduleModal(true)}
-                          >
-                            Reschedule
-                          </button>
-                        )}
-                        <Link href={`/workouts/${selectedDayWorkout.id}`}>
-                          <button className="workout-start-btn">
-                            {isSelectedDayToday ? 'Start' : 'View'}
-                          </button>
-                        </Link>
-                      </div>
                     )}
+                    <Link href={`/workouts/${selectedDayWorkout.id}`}>
+                      <button className="workout-start-btn">
+                        {isSelectedDayToday ? 'Start' : 'View'}
+                      </button>
+                    </Link>
                   </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Booked Sessions Card */}
+          {(() => {
+            const selectedDayBookings = selectedDay ? getBookingsForDay(selectedDay.dateStr) : []
+            if (selectedDayBookings.length === 0) return null
+
+            return (
+              <div
+                style={{
+                  background: isDark
+                    ? `linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, ${colors.bgCard} 100%)`
+                    : 'linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, #ffffff 100%)',
+                  borderRadius: 16,
+                  padding: 16,
+                  marginBottom: 12,
+                  border: `1px solid ${isDark ? 'rgba(59, 130, 246, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <span style={{ fontSize: 14 }}>📅</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: colors.blue }}>
+                    {selectedDayBookings.length === 1 ? 'BOOKED SESSION' : 'BOOKED SESSIONS'}
+                  </span>
                 </div>
-              ) : null}
-
-              {/* Booked Sessions Card */}
-              {(() => {
-                const selectedDayBookings = selectedDay ? getBookingsForDay(selectedDay.dateStr) : []
-                if (selectedDayBookings.length === 0) return null
-
-                return (
-                  <div
-                    style={{
-                      background: isDark
-                        ? `linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, ${colors.bgCard} 100%)`
-                        : 'linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, #ffffff 100%)',
-                      borderRadius: 16,
-                      padding: 16,
-                      marginBottom: 12,
-                      border: `1px solid ${isDark ? 'rgba(59, 130, 246, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                      <span style={{ fontSize: 14 }}>📅</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: colors.blue }}>
-                        {selectedDayBookings.length === 1 ? 'BOOKED SESSION' : 'BOOKED SESSIONS'}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {selectedDayBookings.map((booking) => {
-                        const startTime = new Date(booking.startsAt)
-                        const endTime = new Date(booking.endsAt)
-                        const timeStr = `${startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} - ${endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
-
-                        return (
-                          <div
-                            key={booking.id}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 14,
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: 40,
-                                height: 40,
-                                borderRadius: 10,
-                                background: `${colors.blue}20`,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: 18,
-                                flexShrink: 0,
-                              }}
-                            >
-                              {booking.bookingType === 'checkin' ? '📹' : '💪'}
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: 15, fontWeight: 600, color: colors.text }}>
-                                {booking.bookingType === 'checkin' ? 'Check-in Call' : 'Training Session'}
-                              </div>
-                              <div style={{ fontSize: 13, color: colors.textMuted }}>{timeStr}</div>
-                            </div>
-                            <Link href="/bookings">
-                              <button
-                                style={{
-                                  padding: '8px 14px',
-                                  borderRadius: 10,
-                                  border: `1px solid ${colors.border}`,
-                                  background: 'transparent',
-                                  fontSize: 13,
-                                  fontWeight: 500,
-                                  color: colors.textSecondary,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                Manage
-                              </button>
-                            </Link>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })()}
-
-              {/* Habits Card */}
-              {habits.length > 0 && (
-                <div className="habits-detail-card">
-                  <div className="habits-detail-header">
-                    <div className="habits-detail-label-row">
-                      <span style={{ fontSize: 14 }}>✅</span>
-                      <span className="habits-detail-label">HABITS</span>
-                    </div>
-                    <div className="habits-detail-count">
-                      {selectedDayCompletions.filter(c => c.value !== 0).length}/{habits.length} complete
-                    </div>
-                  </div>
-
-                  {habits.map((habit, i) => {
-                    const template = getHabitTemplate(habit)
-                    const completion = selectedDayCompletions.find(c => c.client_habit_id === habit.id)
-                    const isCompleted = !!completion && completion.value !== 0
-                    const isSkipped = !!completion && completion.value === 0
-                    const icon = template.category ? habitIcons[template.category] : '✓'
-                    const hasRivalry = rivalry && rivalry.habit_name === template.name
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {selectedDayBookings.map((booking) => {
+                    const startTime = new Date(booking.startsAt)
+                    const endTime = new Date(booking.endsAt)
+                    const timeStr = `${startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} - ${endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
 
                     return (
-                      <div key={habit.id}>
-                        <div className="habit-row" style={{ borderBottom: i < habits.length - 1 ? `1px solid ${colors.border}` : 'none' }}>
-                          <div
-                            className={`habit-checkbox ${isCompleted ? 'completed' : ''} ${isSkipped ? 'skipped' : ''}`}
-                            onClick={() => !isSelectedDayFuture && handleHabitCompleteForDate(habit.id, selectedDay.dateStr)}
-                            style={{ cursor: isSelectedDayFuture ? 'not-allowed' : 'pointer' }}
-                          >
-                            {isCompleted && <Icons.check size={14} color="white" />}
-                            {isSkipped && <span style={{ fontSize: 10, color: 'white' }}>—</span>}
-                          </div>
-                          <span className="habit-icon">{icon}</span>
-                          <span className="habit-name" style={{ textDecoration: isSkipped ? 'line-through' : 'none', opacity: isSkipped ? 0.6 : 1 }}>
-                            {template.name}
-                          </span>
-                          {!isCompleted && !isSkipped && !isSelectedDayFuture && (
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              <button
-                                className="skip-btn"
-                                onClick={() => setShowSkipModal(habit.id)}
-                              >
-                                Skip
-                              </button>
-                              <button
-                                className="habit-add-btn"
-                                onClick={() => handleHabitCompleteForDate(habit.id, selectedDay.dateStr)}
-                                disabled={loading === habit.id}
-                              >
-                                <Icons.plus size={18} color={colors.textMuted} />
-                              </button>
-                            </div>
-                          )}
-                          {isSkipped && (
-                            <span style={{ fontSize: 11, color: colors.textMuted, fontStyle: 'italic' }}>Skipped</span>
-                          )}
+                      <div
+                        key={booking.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 14,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: 10,
+                            background: `${colors.blue}20`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 18,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {booking.bookingType === 'checkin' ? '📹' : '💪'}
                         </div>
-                        {hasRivalry && rivalry && (
-                          <div className="calendar-rivalry-badge">
-                            <span style={{ fontSize: 11 }}>⚔️</span>
-                            <span className="calendar-rivalry-text">
-                              vs {rivalry.opponent_name} · {rivalry.my_score}%-{rivalry.opponent_score}%
-                            </span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 15, fontWeight: 600, color: colors.text }}>
+                            {booking.bookingType === 'checkin' ? 'Check-in Call' : 'Training Session'}
                           </div>
-                        )}
+                          <div style={{ fontSize: 13, color: colors.textMuted }}>{timeStr}</div>
+                        </div>
+                        <Link href="/bookings">
+                          <button
+                            style={{
+                              padding: '8px 14px',
+                              borderRadius: 10,
+                              border: `1px solid ${colors.border}`,
+                              background: 'transparent',
+                              fontSize: 13,
+                              fontWeight: 500,
+                              color: colors.textSecondary,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Manage
+                          </button>
+                        </Link>
                       </div>
                     )
                   })}
                 </div>
-              )}
+              </div>
+            )
+          })()}
+
+          {/* Habits Card */}
+          {habits.length > 0 && (
+            <div className="habits-detail-card">
+              <div className="habits-detail-header">
+                <div className="habits-detail-label-row">
+                  <span style={{ fontSize: 14 }}>✅</span>
+                  <span className="habits-detail-label">HABITS</span>
+                </div>
+                <div className="habits-detail-count">
+                  {selectedDayCompletions.filter(c => c.value !== 0).length}/{habits.length} complete
+                </div>
+              </div>
+
+              {habits.map((habit, i) => {
+                const template = getHabitTemplate(habit)
+                const completion = selectedDayCompletions.find(c => c.client_habit_id === habit.id)
+                const isCompleted = !!completion && completion.value !== 0
+                const isSkipped = !!completion && completion.value === 0
+                const icon = template.category ? habitIcons[template.category] : '✓'
+                const hasRivalry = rivalry && rivalry.habit_name === template.name
+
+                return (
+                  <div key={habit.id}>
+                    <div className="habit-row" style={{ borderBottom: i < habits.length - 1 ? `1px solid ${colors.border}` : 'none' }}>
+                      <div
+                        className={`habit-checkbox ${isCompleted ? 'completed' : ''} ${isSkipped ? 'skipped' : ''}`}
+                        onClick={() => !isSelectedDayFuture && handleHabitCompleteForDate(habit.id, selectedDay.dateStr)}
+                        style={{ cursor: isSelectedDayFuture ? 'not-allowed' : 'pointer' }}
+                      >
+                        {isCompleted && <Icons.check size={14} color="white" />}
+                        {isSkipped && <span style={{ fontSize: 10, color: 'white' }}>—</span>}
+                      </div>
+                      <span className="habit-icon">{icon}</span>
+                      <span className="habit-name" style={{ textDecoration: isSkipped ? 'line-through' : 'none', opacity: isSkipped ? 0.6 : 1 }}>
+                        {template.name}
+                      </span>
+                      {!isCompleted && !isSkipped && !isSelectedDayFuture && (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            className="skip-btn"
+                            onClick={() => setShowSkipModal(habit.id)}
+                          >
+                            Skip
+                          </button>
+                          <button
+                            className="habit-add-btn"
+                            onClick={() => handleHabitCompleteForDate(habit.id, selectedDay.dateStr)}
+                            disabled={loading === habit.id}
+                          >
+                            <Icons.plus size={18} color={colors.textMuted} />
+                          </button>
+                        </div>
+                      )}
+                      {isSkipped && (
+                        <span style={{ fontSize: 11, color: colors.textMuted, fontStyle: 'italic' }}>Skipped</span>
+                      )}
+                    </div>
+                    {hasRivalry && rivalry && (
+                      <div className="calendar-rivalry-badge">
+                        <span style={{ fontSize: 11 }}>⚔️</span>
+                        <span className="calendar-rivalry-text">
+                          vs {rivalry.opponent_name} · {rivalry.my_score}%-{rivalry.opponent_score}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
-          </>
-        )}
+          )}
+
+          {/* Streak Card - Show on today */}
+          {overallStreak > 0 && isSelectedDayToday && weekOffset === 0 && (
+            <div className="streak-card">
+              <div className="streak-icon">🔥</div>
+              <div className="streak-info">
+                <div className="streak-title">Keep your streak alive!</div>
+                <div className="streak-subtitle">Complete all tasks to hit day {overallStreak + 1}</div>
+              </div>
+              <div className="streak-count">{overallStreak}</div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Bottom Navigation */}
       <nav className="bottom-nav">
-        <div
-          className="nav-item"
-          onClick={() => setActiveView('agenda')}
-        >
-          <Icons.home size={22} color={activeView === 'agenda' ? colors.purple : colors.textMuted} filled={activeView === 'agenda'} />
-          <span className="nav-label" style={{ color: activeView === 'agenda' ? colors.purple : colors.textMuted }}>Home</span>
-        </div>
-        <div
-          className="nav-item"
-          onClick={() => setActiveView('calendar')}
-        >
-          <Icons.calendar size={22} color={activeView === 'calendar' ? colors.purple : colors.textMuted} />
-          <span className="nav-label" style={{ color: activeView === 'calendar' ? colors.purple : colors.textMuted }}>Calendar</span>
+        <div className="nav-item">
+          <Icons.home size={22} color={colors.purple} filled={true} />
+          <span className="nav-label" style={{ color: colors.purple }}>Home</span>
         </div>
         {(clientType === 'training' || clientType === 'hybrid') && (
           <Link href="/bookings" className="nav-item">
