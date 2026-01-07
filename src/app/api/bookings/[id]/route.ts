@@ -105,9 +105,17 @@ export async function PATCH(
           currentBooking.package_id &&
           currentBooking.status === 'confirmed'
         ) {
-          await supabase.rpc('increment_session', {
+          console.log('[Cancel Booking] Refunding session for package:', currentBooking.package_id)
+          const { error: rpcError } = await supabase.rpc('increment_session', {
             package_id: currentBooking.package_id,
           })
+          if (rpcError) {
+            console.error('[Cancel Booking] Failed to increment session:', rpcError)
+          } else {
+            console.log('[Cancel Booking] Session refunded successfully')
+          }
+        } else {
+          console.log('[Cancel Booking] Not refunding session. booking_type:', currentBooking.booking_type, 'package_id:', currentBooking.package_id, 'status:', currentBooking.status)
         }
 
         // Reset check-in usage if check-in type
