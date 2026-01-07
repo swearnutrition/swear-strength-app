@@ -24,7 +24,26 @@ const formatLabels: Record<string, string> = {
   'in-person': 'Fully in-person',
 }
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
 function generateEmailHtml(lead: LeadNotificationPayload): string {
+  // Escape user-provided data to prevent XSS/HTML injection
+  const safeName = escapeHtml(lead.name)
+  const safeEmail = escapeHtml(lead.email)
+  const safePhone = lead.phone ? escapeHtml(lead.phone) : null
+  const safeTrainingExperience = escapeHtml(lead.trainingExperience)
+  const safeTrainingFormat = formatLabels[lead.trainingFormat] || escapeHtml(lead.trainingFormat)
+  const safeGoals = lead.goals.map(goal => escapeHtml(goal)).join(', ')
+  const safeCurrentSituation = escapeHtml(lead.currentSituation)
+  const safeAnythingElse = lead.anythingElse ? escapeHtml(lead.anythingElse) : null
+
   return `
     <!DOCTYPE html>
     <html>
@@ -40,32 +59,32 @@ function generateEmailHtml(lead: LeadNotificationPayload): string {
 
           <div style="background: rgba(15, 15, 15, 0.8); border-radius: 12px; padding: 24px; margin-bottom: 16px;">
             <h2 style="color: #a855f7; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 16px 0;">Contact Info</h2>
-            <p style="color: #ffffff; margin: 0 0 8px 0;"><strong>Name:</strong> ${lead.name}</p>
-            <p style="color: #ffffff; margin: 0 0 8px 0;"><strong>Email:</strong> <a href="mailto:${lead.email}" style="color: #a855f7;">${lead.email}</a></p>
-            ${lead.phone ? `<p style="color: #ffffff; margin: 0;"><strong>Phone:</strong> <a href="tel:${lead.phone}" style="color: #a855f7;">${lead.phone}</a></p>` : ''}
+            <p style="color: #ffffff; margin: 0 0 8px 0;"><strong>Name:</strong> ${safeName}</p>
+            <p style="color: #ffffff; margin: 0 0 8px 0;"><strong>Email:</strong> <a href="mailto:${lead.email}" style="color: #a855f7;">${safeEmail}</a></p>
+            ${safePhone ? `<p style="color: #ffffff; margin: 0;"><strong>Phone:</strong> <a href="tel:${lead.phone}" style="color: #a855f7;">${safePhone}</a></p>` : ''}
           </div>
 
           <div style="background: rgba(15, 15, 15, 0.8); border-radius: 12px; padding: 24px; margin-bottom: 16px;">
             <h2 style="color: #a855f7; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 16px 0;">Training Details</h2>
-            <p style="color: #ffffff; margin: 0 0 8px 0;"><strong>Experience:</strong> ${lead.trainingExperience}</p>
-            <p style="color: #ffffff; margin: 0 0 8px 0;"><strong>Format:</strong> ${formatLabels[lead.trainingFormat] || lead.trainingFormat}</p>
-            <p style="color: #ffffff; margin: 0;"><strong>Goals:</strong> ${lead.goals.join(', ')}</p>
+            <p style="color: #ffffff; margin: 0 0 8px 0;"><strong>Experience:</strong> ${safeTrainingExperience}</p>
+            <p style="color: #ffffff; margin: 0 0 8px 0;"><strong>Format:</strong> ${safeTrainingFormat}</p>
+            <p style="color: #ffffff; margin: 0;"><strong>Goals:</strong> ${safeGoals}</p>
           </div>
 
           <div style="background: rgba(15, 15, 15, 0.8); border-radius: 12px; padding: 24px; margin-bottom: 16px;">
             <h2 style="color: #a855f7; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 16px 0;">Current Situation</h2>
-            <p style="color: #ffffff; margin: 0; white-space: pre-wrap;">${lead.currentSituation}</p>
+            <p style="color: #ffffff; margin: 0; white-space: pre-wrap;">${safeCurrentSituation}</p>
           </div>
 
-          ${lead.anythingElse ? `
+          ${safeAnythingElse ? `
           <div style="background: rgba(15, 15, 15, 0.8); border-radius: 12px; padding: 24px; margin-bottom: 16px;">
             <h2 style="color: #a855f7; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 16px 0;">Additional Info</h2>
-            <p style="color: #ffffff; margin: 0; white-space: pre-wrap;">${lead.anythingElse}</p>
+            <p style="color: #ffffff; margin: 0; white-space: pre-wrap;">${safeAnythingElse}</p>
           </div>
           ` : ''}
 
           <div style="text-align: center; margin-top: 24px;">
-            <a href="mailto:${lead.email}" style="display: inline-block; background: linear-gradient(135deg, #a855f7, #ec4899); color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 12px; font-weight: 600;">Reply to ${lead.name}</a>
+            <a href="mailto:${lead.email}" style="display: inline-block; background: linear-gradient(135deg, #a855f7, #ec4899); color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 12px; font-weight: 600;">Reply to ${safeName}</a>
           </div>
         </div>
 
