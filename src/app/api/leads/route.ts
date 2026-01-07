@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { transformLead } from '@/types/lead'
 
 const VALID_EXPERIENCES = [
@@ -69,7 +69,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid email format' }, { status: 400 })
   }
 
-  const supabase = await createClient()
+  // Use admin client for public form submission (bypasses RLS)
+  const supabase = createAdminClient()
 
   // Insert lead
   const { data, error } = await supabase
