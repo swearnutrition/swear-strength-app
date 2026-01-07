@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -41,8 +42,14 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-500/30">
-            <span className="text-3xl">💪</span>
+          <div className="relative w-24 h-24 mx-auto mb-4">
+            <Image
+              src="/icon.png"
+              alt="Swear Strength"
+              fill
+              className="object-contain drop-shadow-[0_0_15px_rgba(168,85,247,0.4)]"
+              priority
+            />
           </div>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
             SWEAR STRENGTH
