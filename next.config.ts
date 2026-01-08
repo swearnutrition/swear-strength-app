@@ -75,6 +75,14 @@ const withPWA = withPWAInit({
 const nextConfig: NextConfig = {
   // Empty turbopack config to allow webpack plugins (next-pwa) to work
   turbopack: {},
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'images.getbento.com',
+      },
+    ],
+  },
 };
 
 export default withPWA(nextConfig);

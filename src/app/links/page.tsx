@@ -88,17 +88,24 @@ export default function LinksPage() {
 
         {/* LyteBite Sponsor Card */}
         <div className="mb-8 p-5 rounded-2xl bg-slate-900/50 border border-slate-800 hover:border-cyan-500/50 transition-all">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-cyan-500/20 flex items-center justify-center">
-              <span className="text-cyan-400 font-bold text-sm">LB</span>
-            </div>
-            <div>
-              <h3 className="font-semibold text-white">LyteBite</h3>
-              <p className="text-slate-400 text-sm">Clean Eats &amp; Meal Prep</p>
+          <div className="flex items-center justify-center mb-4">
+            <div className="relative w-48 h-16">
+              <Image
+                src="/lytebite-logo.png"
+                alt="LyteBite - Clean Eats & Meal Prep"
+                fill
+                className="object-contain"
+              />
             </div>
           </div>
-          <p className="text-slate-300 text-sm mb-3">
-            Fuel your training with clean eats. Use code <span className="font-bold text-cyan-400">SWEAR</span> for a discount!
+          <p className="text-slate-300 text-sm mb-3 text-center">
+            Life&apos;s unpredictable. Your nutrition doesn&apos;t have to be. Fresh meals, 7 days a week.
+          </p>
+          <p className="text-slate-500 text-xs mb-3 text-center">
+            Glendora, CA · Upland, CA · Chandler, AZ
+          </p>
+          <p className="text-cyan-400 text-sm font-semibold mb-3 text-center">
+            Use code SWEAR for a discount!
           </p>
           <a
             href="https://www.lytebite.com"
@@ -106,22 +113,22 @@ export default function LinksPage() {
             rel="noopener noreferrer"
             className="block w-full py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-white font-medium text-center transition-all hover:scale-[1.02]"
           >
-            Shop LyteBite
+            Order Now
           </a>
         </div>
 
         {/* Social Links */}
-        <div className="space-y-3">
+        <div className="flex justify-center gap-4">
           {socialLinks.map((link) => (
             <a
               key={link.name}
               href={link.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-3 w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-medium transition-all hover:scale-[1.02] hover:shadow-lg hover:shadow-purple-500/25"
+              aria-label={link.name}
+              className="flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white transition-all hover:scale-110 hover:shadow-lg hover:shadow-purple-500/25"
             >
               {link.icon}
-              {link.name}
             </a>
           ))}
         </div>
