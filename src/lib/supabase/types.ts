@@ -74,6 +74,9 @@ export interface Database {
           expires_at: string
           accepted_at: string | null
           created_at: string
+          name: string | null
+          client_type: ClientType | null
+          invite_sent_at: string | null
         }
         Insert: {
           id?: string
@@ -83,6 +86,9 @@ export interface Database {
           expires_at: string
           accepted_at?: string | null
           created_at?: string
+          name?: string | null
+          client_type?: ClientType | null
+          invite_sent_at?: string | null
         }
         Update: {
           id?: string
@@ -92,6 +98,9 @@ export interface Database {
           expires_at?: string
           accepted_at?: string | null
           created_at?: string
+          name?: string | null
+          client_type?: ClientType | null
+          invite_sent_at?: string | null
         }
       }
       exercises: {
