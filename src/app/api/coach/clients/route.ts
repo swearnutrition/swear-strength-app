@@ -23,11 +23,12 @@ export async function GET() {
       return NextResponse.json({ error: 'Only coaches can view clients' }, { status: 403 })
     }
 
-    // Fetch confirmed clients
+    // Fetch confirmed clients (exclude archived)
     const { data: clients, error } = await supabase
       .from('profiles')
       .select('id, name, avatar_url, email')
       .eq('role', 'client')
+      .is('archived_at', null)
       .order('name')
 
     if (error) {

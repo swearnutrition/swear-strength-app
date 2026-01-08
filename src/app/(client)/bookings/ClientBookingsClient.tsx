@@ -154,6 +154,8 @@ export function ClientBookingsClient({
   const [rescheduleSlots, setRescheduleSlots] = useState<AvailableSlot[]>([])
   const [selectedRescheduleSlot, setSelectedRescheduleSlot] = useState<AvailableSlot | null>(null)
   const [loadingRescheduleSlots, setLoadingRescheduleSlots] = useState(false)
+  const [rescheduleReason, setRescheduleReason] = useState('')
+  const [cancelReason, setCancelReason] = useState('')
 
   // Get upcoming bookings
   const today = new Date()
@@ -468,7 +470,7 @@ export function ClientBookingsClient({
     if (!selectedBookingForAction) return
 
     const wasSession = selectedBookingForAction.bookingType === 'session'
-    const success = await cancelBooking(selectedBookingForAction.id)
+    const success = await cancelBooking(selectedBookingForAction.id, cancelReason || undefined)
     if (success) {
       // Update local session count immediately
       if (wasSession) {
@@ -480,6 +482,7 @@ export function ClientBookingsClient({
       }
       setShowCancelModal(false)
       setSelectedBookingForAction(null)
+      setCancelReason('')
     }
   }
 
@@ -491,11 +494,13 @@ export function ClientBookingsClient({
       bookingId: selectedBookingForAction.id,
       newStartsAt: newSlot.startsAt,
       newEndsAt: newSlot.endsAt,
+      reason: rescheduleReason || undefined,
     })
 
     if (result) {
       setShowRescheduleModal(false)
       setSelectedBookingForAction(null)
+      setRescheduleReason('')
     }
   }
 
@@ -1287,6 +1292,7 @@ export function ClientBookingsClient({
         onClose={() => {
           setShowCancelModal(false)
           setSelectedBookingForAction(null)
+          setCancelReason('')
         }}
         title="Manage Booking"
       >
@@ -1306,6 +1312,24 @@ export function ClientBookingsClient({
             </div>
           )}
 
+          <div>
+            <label className="block text-sm font-medium mb-2" style={{ color: colors.textSecondary }}>
+              Reason for cancelling (optional)
+            </label>
+            <textarea
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Let your coach know why you need to cancel..."
+              rows={3}
+              className="w-full px-3 py-2 rounded-lg text-sm resize-none"
+              style={{
+                background: colors.bgTertiary,
+                border: `1px solid ${colors.border}`,
+                color: colors.text,
+              }}
+            />
+          </div>
+
           <div className="rounded-lg p-3" style={{ background: colors.amberLight, border: `1px solid ${colors.amber}40` }}>
             <div className="text-sm" style={{ color: colors.amber }}>
               Cancellations must be made at least 12 hours in advance.
@@ -1316,6 +1340,7 @@ export function ClientBookingsClient({
             <Button variant="secondary" onClick={() => {
               setShowCancelModal(false)
               setSelectedBookingForAction(null)
+              setCancelReason('')
             }}>
               Keep Booking
             </Button>
@@ -1344,6 +1369,7 @@ export function ClientBookingsClient({
           setRescheduleDate(null)
           setRescheduleSlots([])
           setSelectedRescheduleSlot(null)
+          setRescheduleReason('')
         }}
         title="Reschedule Booking"
         size="lg"
@@ -1357,6 +1383,25 @@ export function ClientBookingsClient({
               </div>
             </div>
           )}
+
+          {/* Reason for rescheduling */}
+          <div>
+            <label className="block text-sm font-medium mb-2" style={{ color: colors.textSecondary }}>
+              Reason for rescheduling (optional)
+            </label>
+            <textarea
+              value={rescheduleReason}
+              onChange={(e) => setRescheduleReason(e.target.value)}
+              placeholder="Let your coach know why you need to reschedule..."
+              rows={2}
+              className="w-full px-3 py-2 rounded-lg text-sm resize-none"
+              style={{
+                background: colors.bgTertiary,
+                border: `1px solid ${colors.border}`,
+                color: colors.text,
+              }}
+            />
+          </div>
 
           {/* Date Selection */}
           <div>
@@ -1474,6 +1519,7 @@ export function ClientBookingsClient({
               setRescheduleDate(null)
               setRescheduleSlots([])
               setSelectedRescheduleSlot(null)
+              setRescheduleReason('')
             }}>
               Cancel
             </Button>

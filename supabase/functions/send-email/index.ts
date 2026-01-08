@@ -13,6 +13,7 @@ const corsHeaders = {
 // Email templates
 type EmailTemplate =
   | 'client-invite'
+  | 'client-password-setup'
   | 'program-assigned'
   | 'workout-reminder'
   | 'habit-reminder'
@@ -37,6 +38,7 @@ interface EmailRequest {
 // Coaching emails should NOT be disableable - they're part of the coaching service
 const templatePreferenceMap: Record<EmailTemplate, 'email_reminders' | 'email_nudges' | 'email_weekly_summary' | null> = {
   'client-invite': null, // Always send - transactional
+  'client-password-setup': null, // Always send - transactional
   'program-assigned': null, // Always send - transactional
   'workout-reminder': null, // Always send - coach accountability tool
   'habit-reminder': null, // Always send - coach accountability tool
@@ -230,6 +232,41 @@ const templates: Record<EmailTemplate, (data: Record<string, string | number | b
           <p style="margin: 0; color: ${colors.textDark}; font-size: 12px;">
             Can't click the button? Copy this link:<br>
             <a href="${data.inviteLink}" style="color: ${colors.purpleLight}; word-break: break-all;">${data.inviteLink}</a>
+          </p>
+        </td>
+      </tr>
+    `),
+  }),
+
+  'client-password-setup': (data) => ({
+    subject: `Set up your password for Swear Strength`,
+    html: wrapInTemplate(`
+      ${renderLogo()}
+      <tr>
+        <td>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${colors.bgCard}" style="background-color: ${colors.bgCard}; border-radius: 20px; border: 1px solid ${colors.border};">
+            <tr>
+              <td style="padding: 40px;">
+                <h2 style="margin: 0 0 16px; color: ${colors.textPrimary}; font-size: 20px; font-weight: 600; text-align: center;">
+                  Your Account is Ready!
+                </h2>
+                <p style="margin: 0 0 24px; color: ${colors.textSecondary}; font-size: 16px; line-height: 1.6; text-align: center;">
+                  <strong style="color: ${colors.textPrimary};">${data.coachName}</strong> has set up your account on Swear Strength. Click below to set your password and start training.
+                </p>
+                ${renderButton('Set Your Password', String(data.resetLink))}
+                <p style="margin: 24px 0 0; color: ${colors.textMuted}; font-size: 14px; text-align: center;">
+                  This link expires in 24 hours.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding-top: 24px; text-align: center;">
+          <p style="margin: 0; color: ${colors.textDark}; font-size: 12px;">
+            Can't click the button? Copy this link:<br>
+            <a href="${data.resetLink}" style="color: ${colors.purpleLight}; word-break: break-all;">${data.resetLink}</a>
           </p>
         </td>
       </tr>

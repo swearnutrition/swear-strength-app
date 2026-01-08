@@ -125,6 +125,11 @@ export default function AcceptInvitePage() {
 
       if (authError) {
         console.error('Signup error:', authError)
+        // Handle case where user already exists
+        if (authError.status === 422 || authError.message?.toLowerCase().includes('already registered')) {
+          setError('An account with this email already exists. Please log in instead, and your coach connection will be set up automatically.')
+          return
+        }
         setError(`${authError.message} (Code: ${authError.status || 'unknown'})`)
         return
       }

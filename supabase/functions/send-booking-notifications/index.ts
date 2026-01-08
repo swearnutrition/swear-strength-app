@@ -16,6 +16,8 @@ type BookingNotificationType =
   | 'booking_cancelled'
   | 'booking_rescheduled'
   | 'checkin_form_submitted'
+  | 'booking_cancelled_coach'
+  | 'booking_rescheduled_coach'
 
 interface BookingNotificationRequest {
   type: BookingNotificationType
@@ -23,6 +25,8 @@ interface BookingNotificationRequest {
   // Additional data for rescheduling
   previousStartsAt?: string
   previousEndsAt?: string
+  // Reason for cancellation/rescheduling
+  reason?: string | null
 }
 
 interface BookingData {
@@ -450,6 +454,170 @@ function generateCheckinFormSubmittedEmail(
   }
 }
 
+// Email template for coach when client cancels
+function generateBookingCancelledCoachEmail(
+  booking: BookingData,
+  reason: string | null,
+  appUrl: string
+): { subject: string; html: string } {
+  const dateTime = formatDateTime(booking.starts_at)
+  const bookingTypeLabel = booking.booking_type === 'session' ? 'Session' : 'Check-in'
+
+  return {
+    subject: `${booking.client.name} Cancelled Their ${bookingTypeLabel}`,
+    html: wrapInTemplate(`
+      ${renderLogo()}
+      <tr>
+        <td>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${colors.bgCard}" style="background-color: ${colors.bgCard}; border-radius: 20px; border: 1px solid ${colors.border};">
+            <tr>
+              <td style="padding: 40px;">
+                <!-- Cancel icon -->
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td align="center" style="padding-bottom: 16px;">
+                      <div style="width: 64px; height: 64px; background-color: rgba(239, 68, 68, 0.2); border-radius: 50%; text-align: center; line-height: 64px;">
+                        <span style="font-size: 32px; color: ${colors.red};">&#10005;</span>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+
+                <h2 style="margin: 0 0 16px; color: ${colors.textPrimary}; font-size: 22px; font-weight: 700; text-align: center;">
+                  ${bookingTypeLabel} Cancelled
+                </h2>
+                <p style="margin: 0 0 24px; color: ${colors.textSecondary}; font-size: 16px; line-height: 1.6; text-align: center;">
+                  <strong style="color: ${colors.textPrimary};">${booking.client.name}</strong> has cancelled their ${bookingTypeLabel.toLowerCase()}.
+                </p>
+
+                <!-- Booking Details Card -->
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${colors.bgPrimary}" style="background-color: ${colors.bgPrimary}; border-radius: 14px; margin-bottom: 24px;">
+                  <tr>
+                    <td style="padding: 20px;">
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                        <tr>
+                          <td style="padding-bottom: 12px;">
+                            <p style="margin: 0 0 4px; color: ${colors.textMuted}; font-size: 12px; text-transform: uppercase; font-weight: 600;">Original Date</p>
+                            <p style="margin: 0; color: ${colors.textSecondary}; font-size: 16px; text-decoration: line-through;">${dateTime.date}</p>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="padding-bottom: 12px;">
+                            <p style="margin: 0 0 4px; color: ${colors.textMuted}; font-size: 12px; text-transform: uppercase; font-weight: 600;">Time</p>
+                            <p style="margin: 0; color: ${colors.textSecondary}; font-size: 16px; text-decoration: line-through;">${dateTime.time}</p>
+                          </td>
+                        </tr>
+                        ${reason ? `
+                        <tr>
+                          <td>
+                            <p style="margin: 0 0 4px; color: ${colors.textMuted}; font-size: 12px; text-transform: uppercase; font-weight: 600;">Reason</p>
+                            <p style="margin: 0; color: ${colors.textPrimary}; font-size: 14px;">${reason}</p>
+                          </td>
+                        </tr>
+                        ` : ''}
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+
+                ${renderButton('View Bookings', `${appUrl}/coach/bookings`)}
+
+                <p style="margin: 20px 0 0; color: ${colors.textMuted}; font-size: 13px; text-align: center;">
+                  This time slot is now available for other clients.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    `, `${booking.client.name} has cancelled their ${bookingTypeLabel.toLowerCase()} for ${dateTime.date}`),
+  }
+}
+
+// Email template for coach when client reschedules
+function generateBookingRescheduledCoachEmail(
+  booking: BookingData,
+  previousStartsAt: string,
+  previousEndsAt: string,
+  reason: string | null,
+  appUrl: string
+): { subject: string; html: string } {
+  const oldDateTime = formatDateTime(previousStartsAt)
+  const newDateTime = formatDateTime(booking.starts_at)
+  const newEndTime = formatDateTime(booking.ends_at).time
+  const bookingTypeLabel = booking.booking_type === 'session' ? 'Session' : 'Check-in'
+
+  return {
+    subject: `${booking.client.name} Rescheduled Their ${bookingTypeLabel}`,
+    html: wrapInTemplate(`
+      ${renderLogo()}
+      <tr>
+        <td>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${colors.bgCard}" style="background-color: ${colors.bgCard}; border-radius: 20px; border: 1px solid ${colors.border};">
+            <tr>
+              <td style="padding: 40px;">
+                <!-- Reschedule icon -->
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td align="center" style="padding-bottom: 16px;">
+                      <div style="width: 64px; height: 64px; background-color: rgba(245, 158, 11, 0.2); border-radius: 50%; text-align: center; line-height: 64px;">
+                        <span style="font-size: 32px;">&#128197;</span>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+
+                <h2 style="margin: 0 0 16px; color: ${colors.textPrimary}; font-size: 22px; font-weight: 700; text-align: center;">
+                  ${bookingTypeLabel} Rescheduled
+                </h2>
+                <p style="margin: 0 0 24px; color: ${colors.textSecondary}; font-size: 16px; line-height: 1.6; text-align: center;">
+                  <strong style="color: ${colors.textPrimary};">${booking.client.name}</strong> has rescheduled their ${bookingTypeLabel.toLowerCase()}.
+                </p>
+
+                <!-- Old vs New Time -->
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom: 24px;">
+                  <tr>
+                    <!-- Old Time -->
+                    <td width="48%" valign="top" bgcolor="${colors.bgPrimary}" style="background-color: ${colors.bgPrimary}; border-radius: 14px; padding: 16px; opacity: 0.6;">
+                      <p style="margin: 0 0 8px; color: ${colors.red}; font-size: 11px; font-weight: 700; text-transform: uppercase;">Previous</p>
+                      <p style="margin: 0; color: ${colors.textSecondary}; font-size: 14px; text-decoration: line-through;">${oldDateTime.date}</p>
+                      <p style="margin: 4px 0 0; color: ${colors.textMuted}; font-size: 13px; text-decoration: line-through;">${oldDateTime.time}</p>
+                    </td>
+                    <td width="4%"></td>
+                    <!-- New Time -->
+                    <td width="48%" valign="top" bgcolor="${colors.bgPrimary}" style="background-color: ${colors.bgPrimary}; border-radius: 14px; padding: 16px; border: 2px solid ${colors.green};">
+                      <p style="margin: 0 0 8px; color: ${colors.green}; font-size: 11px; font-weight: 700; text-transform: uppercase;">New Time</p>
+                      <p style="margin: 0; color: ${colors.textPrimary}; font-size: 14px; font-weight: 600;">${newDateTime.date}</p>
+                      <p style="margin: 4px 0 0; color: ${colors.textSecondary}; font-size: 13px;">${newDateTime.time} - ${newEndTime}</p>
+                    </td>
+                  </tr>
+                </table>
+
+                ${reason ? `
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="${colors.bgPrimary}" style="background-color: ${colors.bgPrimary}; border-radius: 14px; margin-bottom: 24px;">
+                  <tr>
+                    <td style="padding: 16px;">
+                      <p style="margin: 0 0 4px; color: ${colors.textMuted}; font-size: 12px; text-transform: uppercase; font-weight: 600;">Reason</p>
+                      <p style="margin: 0; color: ${colors.textPrimary}; font-size: 14px;">${reason}</p>
+                    </td>
+                  </tr>
+                </table>
+                ` : ''}
+
+                ${renderButton('View Bookings', `${appUrl}/coach/bookings`)}
+
+                <p style="margin: 20px 0 0; color: ${colors.textMuted}; font-size: 13px; text-align: center;">
+                  The old time slot is now available for other clients.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    `, `${booking.client.name} has rescheduled their ${bookingTypeLabel.toLowerCase()} from ${oldDateTime.date} to ${newDateTime.date}`),
+  }
+}
+
 // Send email via Resend
 async function sendEmail(to: string, subject: string, html: string): Promise<void> {
   if (!RESEND_API_KEY) {
@@ -560,7 +728,7 @@ serve(async (req) => {
   }
 
   try {
-    const { type, bookingId, previousStartsAt, previousEndsAt }: BookingNotificationRequest = await req.json()
+    const { type, bookingId, previousStartsAt, previousEndsAt, reason }: BookingNotificationRequest = await req.json()
     console.log('Booking notification request:', { type, bookingId })
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
@@ -693,6 +861,53 @@ serve(async (req) => {
           [coach.id],
           'Check-in Form Submitted',
           `${client.name} submitted their check-in form`,
+          '/coach/bookings'
+        )
+        break
+      }
+
+      case 'booking_cancelled_coach': {
+        // Send email to coach when client cancels
+        const { subject, html } = generateBookingCancelledCoachEmail(bookingData, reason || null, appUrl)
+        await sendEmail(coach.email, subject, html)
+
+        // Send push to coach
+        await sendPushNotification(
+          supabase,
+          [coach.id],
+          `${bookingTypeLabel} Cancelled`,
+          reason
+            ? `${client.name} cancelled their ${bookingTypeLabel.toLowerCase()}. Reason: ${reason}`
+            : `${client.name} cancelled their ${bookingTypeLabel.toLowerCase()} for ${dateTime.date}`,
+          '/coach/bookings'
+        )
+        break
+      }
+
+      case 'booking_rescheduled_coach': {
+        if (!previousStartsAt || !previousEndsAt) {
+          throw new Error('previousStartsAt and previousEndsAt required for reschedule notification')
+        }
+
+        // Send email to coach when client reschedules
+        const { subject, html } = generateBookingRescheduledCoachEmail(
+          bookingData,
+          previousStartsAt,
+          previousEndsAt,
+          reason || null,
+          appUrl
+        )
+        await sendEmail(coach.email, subject, html)
+
+        // Send push to coach
+        const oldDateTime = formatDateTime(previousStartsAt)
+        await sendPushNotification(
+          supabase,
+          [coach.id],
+          `${bookingTypeLabel} Rescheduled`,
+          reason
+            ? `${client.name} rescheduled from ${oldDateTime.date} to ${dateTime.date}. Reason: ${reason}`
+            : `${client.name} rescheduled their ${bookingTypeLabel.toLowerCase()} from ${oldDateTime.date} to ${dateTime.date}`,
           '/coach/bookings'
         )
         break

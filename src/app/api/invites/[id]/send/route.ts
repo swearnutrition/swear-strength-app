@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
 export async function POST(
@@ -31,6 +32,79 @@ export async function POST(
       return NextResponse.json({ error: 'Invite already accepted' }, { status: 400 })
     }
 
+    // Get coach name for email
+    const { data: coachProfile } = await supabase
+      .from('profiles')
+      .select('name')
+      .eq('id', user.id)
+      .single()
+
+    const coachName = coachProfile?.name || 'Your Coach'
+    const baseUrl = request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL
+
+    // Check if client already exists in auth (has an account but needs password setup)
+    // Look for a profile with this email that's already connected to this coach
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('id, email')
+      .eq('email', invite.email)
+      .single()
+
+    if (existingProfile) {
+      // Client already has an account - send password reset instead of invite
+      // Use admin client to trigger password reset
+      const adminClient = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      )
+
+      // Generate password reset link
+      const { data: resetData, error: resetError } = await adminClient.auth.admin.generateLink({
+        type: 'recovery',
+        email: invite.email,
+        options: {
+          redirectTo: `${baseUrl}/login`,
+        },
+      })
+
+      if (resetError) {
+        console.error('Error generating reset link:', resetError)
+        return NextResponse.json({ error: 'Failed to send password setup email' }, { status: 500 })
+      }
+
+      // Update invite to mark as sent
+      await supabase
+        .from('invites')
+        .update({
+          invite_sent_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+
+      // Send custom password setup email
+      try {
+        await supabase.functions.invoke('send-email', {
+          body: {
+            to: invite.email,
+            template: 'client-password-setup',
+            data: {
+              resetLink: resetData.properties.action_link,
+              coachName,
+              clientName: invite.name,
+            },
+          },
+        })
+      } catch (emailErr) {
+        console.error('Failed to send password setup email:', emailErr)
+      }
+
+      return NextResponse.json({
+        success: true,
+        type: 'password_reset',
+        message: 'Password setup email sent',
+      })
+    }
+
+    // Client doesn't exist - send normal invite
     // Generate new token and set 7-day expiry
     const newToken = crypto.randomUUID()
     const expiresAt = new Date()
@@ -51,15 +125,6 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to update invite' }, { status: 500 })
     }
 
-    // Get coach name for email
-    const { data: coachProfile } = await supabase
-      .from('profiles')
-      .select('name')
-      .eq('id', user.id)
-      .single()
-
-    const coachName = coachProfile?.name || 'Your Coach'
-    const baseUrl = request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL
     const inviteLink = `${baseUrl}/invite/${newToken}`
 
     // Send email
@@ -82,6 +147,7 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
+      type: 'invite',
       inviteLink, // Return link in case email fails
     })
   } catch (error) {

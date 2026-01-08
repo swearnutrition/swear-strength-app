@@ -79,15 +79,35 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Transform bookings from snake_case to camelCase and attach client info
+    // Fetch invite info separately for bookings with invite_id (pending client bookings)
+    const inviteIds = [...new Set((bookings || [])
+      .filter(b => b.invite_id)
+      .map(b => b.invite_id))]
+
+    let invitesMap: Record<string, { id: string; name: string; email: string }> = {}
+
+    if (inviteIds.length > 0) {
+      const { data: invites } = await supabase
+        .from('invites')
+        .select('id, name, email')
+        .in('id', inviteIds)
+
+      if (invites) {
+        invitesMap = Object.fromEntries(invites.map(i => [i.id, i]))
+      }
+    }
+
+    // Transform bookings from snake_case to camelCase and attach client/invite info
     const bookingsWithClients = (bookings || []).map(booking => {
       const client = booking.client_id ? clientsMap[booking.client_id] || null : null
+      const invite = booking.invite_id ? invitesMap[booking.invite_id] || null : null
       return {
         id: booking.id,
         clientId: booking.client_id,
         coachId: booking.coach_id,
         packageId: booking.package_id,
         subscriptionId: booking.subscription_id,
+        inviteId: booking.invite_id,
         bookingType: booking.booking_type,
         startsAt: booking.starts_at,
         endsAt: booking.ends_at,
@@ -104,6 +124,11 @@ export async function GET(request: NextRequest) {
           name: client.name,
           email: client.email,
           avatarUrl: client.avatar_url,
+        } : null,
+        invite: invite ? {
+          id: invite.id,
+          name: invite.name,
+          email: invite.email,
         } : null,
         package: booking.package ? {
           id: booking.package.id,
@@ -355,7 +380,29 @@ export async function POST(request: NextRequest) {
 
   // 9. Create the booking
   try {
-    const { data: booking, error } = await supabase
+    console.log('[Create Booking] Insert data:', {
+      client_id: clientId,
+      coach_id: coachId,
+      package_id: packageId,
+      subscription_id: subscriptionId,
+      booking_type: payload.bookingType,
+      starts_at: payload.startsAt,
+      ends_at: payload.endsAt,
+      one_off_client_name: oneOffClientName,
+      invite_id: inviteId,
+    })
+
+    // Validate that we have either clientId, inviteId, or oneOffClientName
+    if (!clientId && !inviteId && !oneOffClientName) {
+      console.error('[Create Booking] No client identifier provided')
+      return NextResponse.json(
+        { error: 'Must provide clientId, inviteId, or oneOffClientName' },
+        { status: 400 }
+      )
+    }
+
+    // Insert booking first
+    const { data: insertedBooking, error: insertError } = await supabase
       .from('bookings')
       .insert({
         client_id: clientId,
@@ -369,14 +416,47 @@ export async function POST(request: NextRequest) {
         one_off_client_name: oneOffClientName,
         invite_id: inviteId,
       })
-      .select(`
-        *,
-        client:profiles(id, name, email, avatar_url),
-        invite:invites(id, name, email)
-      `)
+      .select('*')
       .single()
 
-    if (error) throw error
+    if (insertError) {
+      console.error('[Create Booking] Insert error:', {
+        message: insertError.message,
+        details: insertError.details,
+        hint: insertError.hint,
+        code: insertError.code,
+      })
+      throw insertError
+    }
+
+    // Fetch related client/invite data separately to avoid join ambiguity
+    let client = null
+    let invite = null
+
+    if (insertedBooking.client_id) {
+      const { data: clientData } = await supabase
+        .from('profiles')
+        .select('id, name, email, avatar_url')
+        .eq('id', insertedBooking.client_id)
+        .single()
+      client = clientData
+    }
+
+    if (insertedBooking.invite_id) {
+      const { data: inviteData } = await supabase
+        .from('invites')
+        .select('id, name, email')
+        .eq('id', insertedBooking.invite_id)
+        .single()
+      invite = inviteData
+    }
+
+    // Combine into booking object
+    const booking = {
+      ...insertedBooking,
+      client,
+      invite,
+    }
 
     // 10. Deduct session from subscription or package
     if (payload.bookingType === 'session') {

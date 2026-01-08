@@ -68,6 +68,7 @@ export async function PATCH(
     status?: BookingStatus
     startsAt?: string
     endsAt?: string
+    reason?: string
   }
   try {
     payload = await request.json()
@@ -98,6 +99,9 @@ export async function PATCH(
 
       if (payload.status === 'cancelled') {
         updates.cancelled_at = new Date().toISOString()
+        if (payload.reason) {
+          updates.cancellation_reason = payload.reason
+        }
 
         // Refund session if session type and was confirmed
         if (
@@ -167,7 +171,57 @@ export async function PATCH(
         await deleteCalendarEvent(currentBooking.coach_id, currentBooking.google_event_id)
       }
 
-      // TODO: Send notifications
+      // Send coach notification if client cancelled
+      if (payload.status === 'cancelled' && profile?.role === 'client' && currentBooking.client_id) {
+        const clientInfo = updatedBooking.client
+        const clientName = clientInfo?.name || 'A client'
+        const bookingDate = new Date(currentBooking.starts_at).toLocaleDateString('en-US', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+        })
+        const bookingTime = new Date(currentBooking.starts_at).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        })
+        const bookingTypeLabel = currentBooking.booking_type === 'session' ? 'session' : 'check-in'
+
+        // Create in-app notification
+        await supabase.from('coach_notifications').insert({
+          coach_id: currentBooking.coach_id,
+          client_id: currentBooking.client_id,
+          type: 'booking_cancelled',
+          title: `${clientName} cancelled their ${bookingTypeLabel}`,
+          message: payload.reason
+            ? `${bookingDate} at ${bookingTime}. Reason: ${payload.reason}`
+            : `${bookingDate} at ${bookingTime}`,
+          data: {
+            booking_id: id,
+            reason: payload.reason || null,
+            starts_at: currentBooking.starts_at,
+            booking_type: currentBooking.booking_type,
+          },
+        })
+
+        // Send email notification to coach
+        try {
+          await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-booking-notifications`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+            },
+            body: JSON.stringify({
+              type: 'booking_cancelled_coach',
+              bookingId: id,
+              reason: payload.reason || null,
+            }),
+          })
+        } catch (emailError) {
+          console.error('Error sending cancellation email to coach:', emailError)
+        }
+      }
 
       return NextResponse.json({ booking: updatedBooking })
     }
@@ -202,6 +256,7 @@ export async function PATCH(
         .update({
           status: 'cancelled',
           cancelled_at: new Date().toISOString(),
+          cancellation_reason: payload.reason || null,
         })
         .eq('id', id)
 
@@ -239,6 +294,70 @@ export async function PATCH(
 
         newBooking.google_event_id = calendarEvent.id
         newBooking.google_meet_link = calendarEvent.hangoutLink || null
+      }
+
+      // Send coach notification if client rescheduled
+      if (profile?.role === 'client' && currentBooking.client_id) {
+        const oldBookingDate = new Date(currentBooking.starts_at).toLocaleDateString('en-US', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+        })
+        const oldBookingTime = new Date(currentBooking.starts_at).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        })
+        const newBookingDate = new Date(payload.startsAt).toLocaleDateString('en-US', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+        })
+        const newBookingTime = new Date(payload.startsAt).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        })
+        const bookingTypeLabel = currentBooking.booking_type === 'session' ? 'session' : 'check-in'
+
+        // Create in-app notification
+        await supabase.from('coach_notifications').insert({
+          coach_id: currentBooking.coach_id,
+          client_id: currentBooking.client_id,
+          type: 'booking_rescheduled',
+          title: `${clientName} rescheduled their ${bookingTypeLabel}`,
+          message: payload.reason
+            ? `From ${oldBookingDate} at ${oldBookingTime} to ${newBookingDate} at ${newBookingTime}. Reason: ${payload.reason}`
+            : `From ${oldBookingDate} at ${oldBookingTime} to ${newBookingDate} at ${newBookingTime}`,
+          data: {
+            old_booking_id: id,
+            new_booking_id: newBooking.id,
+            reason: payload.reason || null,
+            old_starts_at: currentBooking.starts_at,
+            new_starts_at: payload.startsAt,
+            booking_type: currentBooking.booking_type,
+          },
+        })
+
+        // Send email notification to coach
+        try {
+          await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-booking-notifications`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+            },
+            body: JSON.stringify({
+              type: 'booking_rescheduled_coach',
+              bookingId: newBooking.id,
+              previousStartsAt: currentBooking.starts_at,
+              previousEndsAt: currentBooking.ends_at,
+              reason: payload.reason || null,
+            }),
+          })
+        } catch (emailError) {
+          console.error('Error sending reschedule email to coach:', emailError)
+        }
       }
 
       return NextResponse.json({ booking: newBooking })

@@ -913,13 +913,8 @@ export function CoachBookingsClient({ userId, clients, pendingClients }: CoachBo
                   const isToday = isSameDay(day, new Date())
                   const isPast = day < new Date(new Date().setHours(0, 0, 0, 0))
 
-                  // Get booked slot times to filter them out from available slots
-                  const bookedSlotTimes = new Set(
-                    dayBookings.map((b) => new Date(b.startsAt).getTime())
-                  )
-                  const availableSlots = daySlots.filter(
-                    (slot) => !bookedSlotTimes.has(new Date(slot.startsAt).getTime())
-                  )
+                  // Keep all slots available - coaches can book multiple clients at the same time
+                  const availableSlots = daySlots
 
                   return (
                     <div

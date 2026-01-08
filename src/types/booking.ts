@@ -112,6 +112,7 @@ export interface Booking {
   googleMeetLink: string | null
   rescheduledFromId: string | null
   cancelledAt: string | null
+  cancellationReason: string | null // Reason for cancellation/rescheduling
   oneOffClientName: string | null // For one-off bookings without account
   inviteId: string | null // For pending client bookings
   createdAt: string
@@ -149,6 +150,12 @@ export interface RescheduleBookingPayload {
   bookingId: string
   newStartsAt: string
   newEndsAt: string
+  reason?: string
+}
+
+export interface CancelBookingPayload {
+  bookingId: string
+  reason?: string
 }
 
 // Availability
@@ -282,7 +289,12 @@ export interface BookingWithDetails extends Booking {
     name: string
     email: string
     avatarUrl: string | null
-  }
+  } | null
+  invite?: {
+    id: string
+    name: string
+    email: string
+  } | null
   formResponse?: CheckinFormResponse
 }
 

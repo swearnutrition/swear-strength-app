@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { InviteClientModal } from './InviteClientModal'
 import { BulkAddClientsModal } from './BulkAddClientsModal'
 import { createClient } from '@/lib/supabase/client'
@@ -25,6 +25,7 @@ interface Client {
   email: string
   avatar_url: string | null
   created_at: string
+  archived_at: string | null
   user_program_assignments: Assignment[]
 }
 
@@ -40,21 +41,52 @@ interface Invite {
 
 interface ClientsTableProps {
   clients: Client[]
+  archivedClients: Client[]
   workoutsByUser: Record<string, string[]>
   pendingInvites: Invite[]
 }
 
-export function ClientsTable({ clients, workoutsByUser, pendingInvites }: ClientsTableProps) {
+export function ClientsTable({ clients, archivedClients, workoutsByUser, pendingInvites }: ClientsTableProps) {
   const [searchQuery, setSearchQuery] = useState('')
-  const [filter, setFilter] = useState<'all' | 'active' | 'pending'>('all')
+  const [filter, setFilter] = useState<'all' | 'active' | 'pending' | 'archived'>('all')
   const [selectedInvites, setSelectedInvites] = useState<Set<string>>(new Set())
   const [bulkModalOpen, setBulkModalOpen] = useState(false)
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [cancellingInvite, setCancellingInvite] = useState<string | null>(null)
   const [sendingInvite, setSendingInvite] = useState<string | null>(null)
   const [bulkSending, setBulkSending] = useState(false)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [menuPosition, setMenuPosition] = useState<'below' | 'above'>('below')
+  const [processingClient, setProcessingClient] = useState<string | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
   const supabase = createClient()
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpenMenuId(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Open menu and determine position based on available space
+  const handleOpenMenu = (clientId: string, buttonElement: HTMLButtonElement) => {
+    if (openMenuId === clientId) {
+      setOpenMenuId(null)
+      return
+    }
+
+    const rect = buttonElement.getBoundingClientRect()
+    const spaceBelow = window.innerHeight - rect.bottom
+    const menuHeight = 100 // Approximate menu height
+
+    setMenuPosition(spaceBelow < menuHeight ? 'above' : 'below')
+    setOpenMenuId(clientId)
+  }
 
   const handleCancelInvite = async (inviteId: string) => {
     if (!confirm('Are you sure you want to cancel this invite?')) return
@@ -147,7 +179,87 @@ export function ClientsTable({ clients, workoutsByUser, pendingInvites }: Client
     }
   }
 
+  const handleArchiveClient = async (clientId: string, clientName: string) => {
+    if (!confirm(`Are you sure you want to archive ${clientName}? They will be moved to Past Clients.`)) return
+
+    setProcessingClient(clientId)
+    setOpenMenuId(null)
+    try {
+      const response = await fetch(`/api/coach/clients/${clientId}/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to archive client')
+      }
+
+      router.refresh()
+    } catch (err) {
+      console.error('Failed to archive client:', err)
+      alert(err instanceof Error ? err.message : 'Failed to archive client')
+    } finally {
+      setProcessingClient(null)
+    }
+  }
+
+  const handleUnarchiveClient = async (clientId: string, clientName: string) => {
+    if (!confirm(`Are you sure you want to restore ${clientName} as an active client?`)) return
+
+    setProcessingClient(clientId)
+    setOpenMenuId(null)
+    try {
+      const response = await fetch(`/api/coach/clients/${clientId}/archive`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to unarchive client')
+      }
+
+      router.refresh()
+    } catch (err) {
+      console.error('Failed to unarchive client:', err)
+      alert(err instanceof Error ? err.message : 'Failed to unarchive client')
+    } finally {
+      setProcessingClient(null)
+    }
+  }
+
+  const handleDeleteClient = async (clientId: string, clientName: string) => {
+    if (!confirm(`Are you sure you want to permanently delete ${clientName}? This will remove all their data and cannot be undone.`)) return
+    if (!confirm(`This is your final warning. All workout history, habits, and bookings for ${clientName} will be permanently deleted. Continue?`)) return
+
+    setProcessingClient(clientId)
+    setOpenMenuId(null)
+    try {
+      const response = await fetch(`/api/coach/clients/${clientId}/delete`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to delete client')
+      }
+
+      router.refresh()
+    } catch (err) {
+      console.error('Failed to delete client:', err)
+      alert(err instanceof Error ? err.message : 'Failed to delete client')
+    } finally {
+      setProcessingClient(null)
+    }
+  }
+
   const filteredClients = clients.filter(
+    (client) =>
+      client.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      client.email?.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
+  const filteredArchivedClients = archivedClients.filter(
     (client) =>
       client.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       client.email?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -162,6 +274,7 @@ export function ClientsTable({ clients, workoutsByUser, pendingInvites }: Client
   // Apply filter
   const showClients = filter === 'all' || filter === 'active'
   const showPending = filter === 'all' || filter === 'pending'
+  const showArchived = filter === 'archived'
 
   // Generate last 7 days
   const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -269,6 +382,18 @@ export function ClientsTable({ clients, workoutsByUser, pendingInvites }: Client
         >
           Pending ({pendingInvites.length})
         </button>
+        {archivedClients.length > 0 && (
+          <button
+            onClick={() => setFilter('archived')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              filter === 'archived'
+                ? 'bg-purple-600 text-white'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            Archived ({archivedClients.length})
+          </button>
+        )}
       </div>
 
       {/* Bulk Action Bar */}
@@ -501,28 +626,188 @@ export function ClientsTable({ clients, workoutsByUser, pendingInvites }: Client
                   </div>
 
                   {/* Status & Actions */}
-                  <div className="col-span-2 flex items-center justify-end gap-2">
+                  <div className="col-span-2 flex items-center justify-end gap-2 relative">
                     <span className="px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-medium">
                       Active
                     </span>
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault()
-                        // TODO: Open menu
-                      }}
-                      className="p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 opacity-0 group-hover:opacity-100 transition-all"
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-                        />
-                      </svg>
-                    </button>
+                    <div className="relative" ref={openMenuId === client.id ? menuRef : null}>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          handleOpenMenu(client.id, e.currentTarget)
+                        }}
+                        disabled={processingClient === client.id}
+                        className={`p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 transition-all ${
+                          openMenuId === client.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                        } ${processingClient === client.id ? 'opacity-50 cursor-wait' : ''}`}
+                      >
+                        {processingClient === client.id ? (
+                          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+                            />
+                          </svg>
+                        )}
+                      </button>
+                      {/* Dropdown Menu */}
+                      {openMenuId === client.id && (
+                        <div className={`absolute right-0 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 py-1 z-50 ${
+                          menuPosition === 'above' ? 'bottom-full mb-1' : 'top-full mt-1'
+                        }`}>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              handleArchiveClient(client.id, client.name)
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                            </svg>
+                            Archive Client
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              handleDeleteClient(client.id, client.name)
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Delete Client
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </Link>
+              )
+            })}
+
+            {/* Archived Clients */}
+            {showArchived && filteredArchivedClients.map((client) => {
+              const archivedDate = client.archived_at ? new Date(client.archived_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''
+
+              return (
+                <div
+                  key={client.id}
+                  className="grid grid-cols-12 gap-4 px-6 py-4 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors items-center group"
+                >
+                  {/* Checkbox placeholder for alignment */}
+                  {showPending && pendingInvites.length > 0 && (
+                    <div className="col-span-1" />
+                  )}
+
+                  {/* Client */}
+                  <div className={showPending && pendingInvites.length > 0 ? 'col-span-2' : 'col-span-3'}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-300 to-slate-400 dark:from-slate-600 dark:to-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 font-medium overflow-hidden opacity-60">
+                        {client.avatar_url ? (
+                          <img
+                            src={client.avatar_url}
+                            alt={client.name}
+                            className="w-full h-full object-cover grayscale"
+                          />
+                        ) : (
+                          client.name?.[0]?.toUpperCase() || 'U'
+                        )}
+                      </div>
+                      <span className="font-medium text-slate-500 dark:text-slate-400 truncate">{client.name || client.email}</span>
+                    </div>
+                  </div>
+
+                  {/* Archived Info */}
+                  <div className="col-span-4">
+                    <span className="text-slate-500 dark:text-slate-400 text-sm">
+                      Archived {archivedDate}
+                    </span>
+                  </div>
+
+                  {/* Empty space for calendar column */}
+                  <div className="col-span-3" />
+
+                  {/* Status & Actions */}
+                  <div className="col-span-2 flex items-center justify-end gap-2 relative">
+                    <span className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 text-xs font-medium">
+                      Archived
+                    </span>
+                    <div className="relative" ref={openMenuId === client.id ? menuRef : null}>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          handleOpenMenu(client.id, e.currentTarget)
+                        }}
+                        disabled={processingClient === client.id}
+                        className={`p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 transition-all ${
+                          openMenuId === client.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                        } ${processingClient === client.id ? 'opacity-50 cursor-wait' : ''}`}
+                      >
+                        {processingClient === client.id ? (
+                          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+                            />
+                          </svg>
+                        )}
+                      </button>
+                      {/* Dropdown Menu for Archived */}
+                      {openMenuId === client.id && (
+                        <div className={`absolute right-0 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 py-1 z-50 ${
+                          menuPosition === 'above' ? 'bottom-full mb-1' : 'top-full mt-1'
+                        }`}>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              handleUnarchiveClient(client.id, client.name)
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Restore Client
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              handleDeleteClient(client.id, client.name)
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Delete Permanently
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               )
             })}
           </div>

@@ -77,8 +77,11 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId)
   const selectedGroup = groupChats.find((g) => g.id === selectedGroupId)
 
-  // Get clients who don't have a conversation yet
-  const clientsWithoutConversation = clients.filter(
+  // Filter out pending clients - they can't receive messages until they sign up
+  const activeClients = clients.filter((client) => !client.isPending)
+
+  // Get active clients who don't have a conversation yet
+  const clientsWithoutConversation = activeClients.filter(
     (client) => !conversations.some((conv) => conv.clientId === client.id)
   )
 
@@ -681,9 +684,10 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
         <div className="space-y-2">
           {loadingClients ? (
             <div className="text-center py-8 text-slate-500">Loading clients...</div>
-          ) : clients.length === 0 ? (
+          ) : activeClients.length === 0 ? (
             <div className="text-center py-8 text-slate-500">
-              <p>No clients found</p>
+              <p>No active clients yet</p>
+              <p className="text-xs mt-1">Clients will appear here once they sign up</p>
             </div>
           ) : clientsWithoutConversation.length === 0 ? (
             <div className="text-center py-8 text-slate-500">
@@ -699,14 +703,7 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
                   className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-50"
                 >
                   <Avatar name={client.name} src={client.avatar_url} size="md" />
-                  <span className="text-white font-medium">
-                    {client.name}
-                    {client.isPending && (
-                      <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
-                        Pending
-                      </span>
-                    )}
-                  </span>
+                  <span className="text-white font-medium">{client.name}</span>
                 </button>
               ))}
             </div>
@@ -752,11 +749,11 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
             </label>
             {loadingClients ? (
               <div className="text-center py-4 text-slate-500">Loading clients...</div>
-            ) : clients.length === 0 ? (
+            ) : activeClients.length === 0 ? (
               <div className="text-center py-4 text-slate-500">No clients found</div>
             ) : (
               <div className="max-h-60 overflow-y-auto space-y-1 border border-slate-700 rounded-lg p-2">
-                {clients.map((client) => (
+                {activeClients.map((client) => (
                   <button
                     key={client.id}
                     onClick={() => toggleClientSelection(client.id)}
@@ -767,14 +764,7 @@ export function CoachMessagesClient({ userId, userName }: CoachMessagesClientPro
                     }`}
                   >
                     <Avatar name={client.name} src={client.avatar_url} size="sm" />
-                    <span className="text-white text-sm">
-                      {client.name}
-                      {client.isPending && (
-                        <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
-                          Pending
-                        </span>
-                      )}
-                    </span>
+                    <span className="text-white text-sm">{client.name}</span>
                     {selectedClientIds.has(client.id) && (
                       <svg className="w-5 h-5 ml-auto text-purple-400" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />

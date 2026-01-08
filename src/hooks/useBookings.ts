@@ -25,7 +25,7 @@ interface UseBookingsReturn {
   createBooking: (payload: CreateBookingPayload) => Promise<Booking | null>
   createMultipleBookings: (payloads: CreateBookingPayload[]) => Promise<Booking[]>
   rescheduleBooking: (payload: RescheduleBookingPayload) => Promise<Booking | null>
-  cancelBooking: (bookingId: string) => Promise<boolean>
+  cancelBooking: (bookingId: string, reason?: string) => Promise<boolean>
   deleteBooking: (bookingId: string) => Promise<boolean>
   updateStatus: (bookingId: string, status: BookingStatus) => Promise<boolean>
   autoCompletePastSessions: () => Promise<number>
@@ -147,6 +147,7 @@ export function useBookings(options: UseBookingsOptions = {}): UseBookingsReturn
         body: JSON.stringify({
           startsAt: payload.newStartsAt,
           endsAt: payload.newEndsAt,
+          reason: payload.reason,
         }),
       })
 
@@ -165,12 +166,12 @@ export function useBookings(options: UseBookingsOptions = {}): UseBookingsReturn
     }
   }
 
-  const cancelBooking = async (bookingId: string): Promise<boolean> => {
+  const cancelBooking = async (bookingId: string, reason?: string): Promise<boolean> => {
     try {
       const res = await fetch(`/api/bookings/${bookingId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'cancelled' }),
+        body: JSON.stringify({ status: 'cancelled', reason }),
       })
 
       if (!res.ok) {

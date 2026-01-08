@@ -4,7 +4,7 @@ import { ClientsTable } from './ClientsTable'
 export default async function ClientsPage() {
   const supabase = await createClient()
 
-  // Get all clients with their program assignments
+  // Get active clients (not archived) with their program assignments
   const { data: clients } = await supabase
     .from('profiles')
     .select(`
@@ -15,7 +15,22 @@ export default async function ClientsPage() {
       )
     `)
     .eq('role', 'client')
+    .is('archived_at', null)
     .order('name')
+
+  // Get archived clients
+  const { data: archivedClients } = await supabase
+    .from('profiles')
+    .select(`
+      *,
+      user_program_assignments(
+        *,
+        programs(name, id)
+      )
+    `)
+    .eq('role', 'client')
+    .not('archived_at', 'is', null)
+    .order('archived_at', { ascending: false })
 
   // Get workout logs for the last 7 days for all clients
   const sevenDaysAgo = new Date()
@@ -53,6 +68,7 @@ export default async function ClientsPage() {
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <ClientsTable
         clients={clients || []}
+        archivedClients={archivedClients || []}
         workoutsByUser={workoutsByUser}
         pendingInvites={pendingInvites || []}
       />
