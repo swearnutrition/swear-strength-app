@@ -7,6 +7,7 @@ interface Client {
   id: string
   name: string | null
   email: string | null
+  isPending?: boolean
 }
 
 interface AssignProgramModalProps {
@@ -44,13 +45,21 @@ export function AssignProgramModal({
 
   const fetchClients = async () => {
     setLoading(true)
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, name, email')
-      .eq('role', 'client')
-      .order('name')
-
-    setClients(data || [])
+    try {
+      // Use API endpoint that includes pending clients
+      const res = await fetch('/api/coach/clients')
+      const data = await res.json()
+      if (data.clients) {
+        setClients(data.clients.map((c: { id: string; name: string | null; email: string | null; isPending?: boolean }) => ({
+          id: c.id,
+          name: c.name,
+          email: c.email,
+          isPending: c.isPending,
+        })))
+      }
+    } catch (err) {
+      console.error('Error fetching clients:', err)
+    }
     setLoading(false)
   }
 
@@ -69,12 +78,16 @@ export function AssignProgramModal({
 
     setAssigning(true)
 
+    // Determine if this is a pending client
+    const isPending = selectedClientId.startsWith('pending:')
+    const actualId = isPending ? selectedClientId.replace('pending:', '') : selectedClientId
+
     // Check if already assigned
     const { data: existing } = await supabase
       .from('user_program_assignments')
       .select('id, is_active')
       .eq('program_id', programId)
-      .eq('user_id', selectedClientId)
+      .eq(isPending ? 'invite_id' : 'user_id', actualId)
       .single()
 
     if (existing) {
@@ -94,7 +107,8 @@ export function AssignProgramModal({
       // Create new assignment
       await supabase.from('user_program_assignments').insert({
         program_id: programId,
-        user_id: selectedClientId,
+        user_id: isPending ? null : actualId,
+        invite_id: isPending ? actualId : null,
         start_date: startDate,
         current_week: 1,
         current_day: 1,
@@ -112,35 +126,38 @@ export function AssignProgramModal({
 
     const coachName = coachProfile?.name || 'Your Coach'
 
-    // Create in-app notification for the client
-    await supabase.from('client_notifications').insert({
-      user_id: selectedClientId,
-      type: 'new_program',
-      title: 'New Program Assigned!',
-      message: `${coachName} assigned you "${programName}". Tap to set your workout schedule.`,
-      program_id: programId,
-      data: { coachName, programName }
-    })
+    // Only send notifications to confirmed clients (not pending)
+    if (!isPending) {
+      // Create in-app notification for the client
+      await supabase.from('client_notifications').insert({
+        user_id: actualId,
+        type: 'new_program',
+        title: 'New Program Assigned!',
+        message: `${coachName} assigned you "${programName}". Tap to set your workout schedule.`,
+        program_id: programId,
+        data: { coachName, programName }
+      })
 
-    // Send notification email if enabled
-    if (notifyClient) {
-      const client = clients.find(c => c.id === selectedClientId)
-      if (client?.email) {
-        try {
-          await supabase.functions.invoke('send-email', {
-            body: {
-              to: client.email,
-              template: 'program-assigned',
-              data: {
-                coachName,
-                programName,
-                programDescription: programDescription || '',
-                appUrl: window.location.origin,
+      // Send notification email if enabled
+      if (notifyClient) {
+        const client = clients.find(c => c.id === selectedClientId)
+        if (client?.email) {
+          try {
+            await supabase.functions.invoke('send-email', {
+              body: {
+                to: client.email,
+                template: 'program-assigned',
+                data: {
+                  coachName,
+                  programName,
+                  programDescription: programDescription || '',
+                  appUrl: window.location.origin,
+                },
               },
-            },
-          })
-        } catch (err) {
-          console.error('Failed to send notification:', err)
+            })
+          } catch (err) {
+            console.error('Failed to send notification:', err)
+          }
         }
       }
     }
@@ -258,7 +275,7 @@ export function AssignProgramModal({
                     <option value="">Choose a client...</option>
                     {availableClients.map((client) => (
                       <option key={client.id} value={client.id}>
-                        {client.name || client.email || 'Unnamed'}
+                        {client.name || client.email || 'Unnamed'}{client.isPending ? ' (pending)' : ''}
                       </option>
                     ))}
                   </select>

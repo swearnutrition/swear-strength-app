@@ -178,8 +178,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: insertError.message }, { status: 500 })
   }
 
-  // Get target clients
+  // Get target clients - filter out pending clients (they can't receive announcements until signed up)
   let clientIds: string[] = []
+  let skippedPendingCount = 0
   if (targetType === 'all') {
     const { data: clients } = await adminClient
       .from('profiles')
@@ -188,7 +189,9 @@ export async function POST(request: NextRequest) {
 
     clientIds = (clients || []).map((c) => c.id)
   } else {
-    clientIds = selectedClientIds
+    // Filter out pending client IDs (prefixed with "pending:")
+    clientIds = selectedClientIds.filter((id: string) => !id.startsWith('pending:'))
+    skippedPendingCount = selectedClientIds.length - clientIds.length
   }
 
   // Create recipients
@@ -232,6 +235,7 @@ export async function POST(request: NextRequest) {
       createdAt: announcement.created_at,
       readCount: 0,
       totalCount: clientIds.length,
-    }
+    },
+    skippedPending: skippedPendingCount,
   })
 }

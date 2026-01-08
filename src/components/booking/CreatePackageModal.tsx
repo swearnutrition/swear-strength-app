@@ -6,6 +6,7 @@ import { useSessionPackages } from '@/hooks/useSessionPackages'
 interface Client {
   id: string
   name: string
+  isPending?: boolean
 }
 
 interface CreatePackageModalProps {
@@ -116,7 +117,7 @@ export function CreatePackageModal({
               <option value="">Select a client</option>
               {clients.map((client) => (
                 <option key={client.id} value={client.id}>
-                  {client.name}
+                  {client.name}{client.isPending ? ' (pending)' : ''}
                 </option>
               ))}
             </select>

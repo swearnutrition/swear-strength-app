@@ -11,6 +11,7 @@ interface Client {
   id: string
   name: string
   avatar_url: string | null
+  isPending?: boolean
 }
 
 interface BroadcastModalProps {
@@ -50,13 +51,21 @@ export function BroadcastModal({
 
   const fetchClients = async () => {
     setLoading(true)
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, name, avatar_url')
-      .eq('role', 'client')
-      .order('name')
-
-    setClients(data || [])
+    try {
+      // Use API endpoint that includes pending clients
+      const res = await fetch('/api/coach/clients')
+      const data = await res.json()
+      if (data.clients) {
+        setClients(data.clients.map((c: { id: string; name: string; avatar_url: string | null; isPending?: boolean }) => ({
+          id: c.id,
+          name: c.name,
+          avatar_url: c.avatar_url,
+          isPending: c.isPending,
+        })))
+      }
+    } catch (err) {
+      console.error('Error fetching clients:', err)
+    }
     setLoading(false)
   }
 
@@ -229,6 +238,11 @@ export function BroadcastModal({
                       )}
                       <span className="text-sm font-medium text-slate-900 dark:text-white">
                         {client.name}
+                        {client.isPending && (
+                          <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                            Pending
+                          </span>
+                        )}
                       </span>
                     </label>
                   ))

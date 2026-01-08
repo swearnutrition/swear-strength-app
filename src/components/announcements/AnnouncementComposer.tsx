@@ -9,6 +9,7 @@ interface Client {
   id: string
   name: string
   avatar_url: string | null
+  isPending?: boolean
 }
 
 interface AnnouncementComposerProps {
@@ -186,7 +187,14 @@ export function AnnouncementComposer({ onSubmit, onSchedule, onCancel }: Announc
                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white text-sm font-semibold">
                     {client.name?.[0]?.toUpperCase() || '?'}
                   </div>
-                  <span className="flex-1 text-left">{client.name}</span>
+                  <span className="flex-1 text-left">
+                    {client.name}
+                    {client.isPending && (
+                      <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
+                        Pending
+                      </span>
+                    )}
+                  </span>
                   {selectedClientIds.includes(client.id) && (
                     <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />

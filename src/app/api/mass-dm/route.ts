@@ -34,6 +34,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'content required' }, { status: 400 })
   }
 
+  // Filter out pending clients - they can't receive DMs until they've signed up
+  // Pending client IDs are prefixed with "pending:"
+  const confirmedRecipientIds = recipientIds.filter((id: string) => !id.startsWith('pending:'))
+  const skippedPendingCount = recipientIds.length - confirmedRecipientIds.length
+
+  if (confirmedRecipientIds.length === 0) {
+    return NextResponse.json({
+      error: 'No confirmed clients selected. Pending clients cannot receive messages until they sign up.',
+      skippedPending: skippedPendingCount
+    }, { status: 400 })
+  }
+
   const adminClient = createAdminClient()
   const results: { clientId: string; success: boolean; error?: string }[] = []
 
@@ -41,15 +53,15 @@ export async function POST(request: NextRequest) {
   const { data: clientProfiles } = await adminClient
     .from('profiles')
     .select('id, name')
-    .in('id', recipientIds)
+    .in('id', confirmedRecipientIds)
 
   const clientNameMap = new Map<string, string>()
   for (const p of clientProfiles || []) {
     clientNameMap.set(p.id, p.name || '')
   }
 
-  // Send to each recipient
-  for (const clientId of recipientIds) {
+  // Send to each confirmed recipient
+  for (const clientId of confirmedRecipientIds) {
     try {
       // Find existing conversation (single coach model - no coach_id in conversations table)
       let { data: conversation } = await supabase
@@ -127,6 +139,7 @@ export async function POST(request: NextRequest) {
     success: failCount === 0,
     sent: successCount,
     failed: failCount,
+    skippedPending: skippedPendingCount,
     results
   })
 }

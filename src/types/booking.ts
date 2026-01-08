@@ -4,6 +4,7 @@ export type BookingType = 'session' | 'checkin'
 export type BookingStatus = 'confirmed' | 'cancelled' | 'completed' | 'no_show'
 export type AvailabilityType = 'session' | 'checkin'
 export type CheckinQuestionType = 'text' | 'textarea' | 'select' | 'checkbox' | 'radio'
+export type SubscriptionType = 'hybrid' | 'online_only'
 
 // Session Packages
 export interface SessionPackage {
@@ -51,12 +52,58 @@ export interface AdjustSessionPackagePayload {
   reason?: string
 }
 
+// Client Subscriptions
+export interface ClientSubscription {
+  id: string
+  clientId: string | null
+  inviteId: string | null
+  coachId: string
+  subscriptionType: SubscriptionType
+  monthlySessions: number | null  // Only for hybrid
+  availableSessions: number | null  // Only for hybrid
+  sessionDurationMinutes: number | null  // Only for hybrid
+  isActive: boolean
+  notes: string | null
+  createdAt: string
+  updatedAt: string
+  // Joined fields
+  client?: {
+    id: string
+    name: string
+    email: string
+    avatarUrl: string | null
+    isPending?: boolean
+  } | null
+}
+
+export interface CreateSubscriptionPayload {
+  clientId: string  // Can be 'pending:inviteId' for pending clients
+  subscriptionType: SubscriptionType
+  monthlySessions?: number  // Required for hybrid
+  sessionDurationMinutes?: number  // Required for hybrid
+  availableSessions?: number  // Defaults to monthlySessions for hybrid
+  notes?: string
+}
+
+export interface UpdateSubscriptionPayload {
+  monthlySessions?: number
+  sessionDurationMinutes?: number
+  isActive?: boolean
+  notes?: string
+}
+
+export interface AdjustSubscriptionPayload {
+  adjustment: number
+  reason?: string
+}
+
 // Bookings
 export interface Booking {
   id: string
   clientId: string | null // Null for one-off bookings
   coachId: string
   packageId: string | null
+  subscriptionId: string | null // For hybrid subscription bookings
   bookingType: BookingType
   startsAt: string
   endsAt: string

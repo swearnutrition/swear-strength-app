@@ -9,6 +9,7 @@ interface Client {
   name: string
   email: string
   avatar_url: string | null
+  isPending?: boolean
 }
 
 interface AssignHabitModalProps {
@@ -56,13 +57,18 @@ export function AssignHabitModal({ isOpen, onClose, habits, onSuccess }: AssignH
   const fetchClients = async () => {
     setLoading(true)
     try {
-      const { data: clientsData } = await supabase
-        .from('profiles')
-        .select('id, name, email, avatar_url')
-        .eq('role', 'client')
-        .order('name')
-
-      setClients(clientsData || [])
+      // Use API endpoint that includes pending clients
+      const res = await fetch('/api/coach/clients')
+      const data = await res.json()
+      if (data.clients) {
+        setClients(data.clients.map((c: { id: string; name: string; email: string; avatar_url: string | null; isPending?: boolean }) => ({
+          id: c.id,
+          name: c.name,
+          email: c.email,
+          avatar_url: c.avatar_url,
+          isPending: c.isPending,
+        })))
+      }
     } catch (err) {
       console.error('Error fetching clients:', err)
     } finally {
@@ -103,11 +109,16 @@ export function AssignHabitModal({ isOpen, onClose, habits, onSuccess }: AssignH
       if (!userData.user) throw new Error('Not authenticated')
 
       // Create assignments for each habit x client combination
+      // Support both confirmed clients (client_id) and pending clients (invite_id)
       const assignments = []
       for (const habit of habits) {
-        for (const clientId of selectedClients) {
+        for (const selectedId of selectedClients) {
+          const isPending = selectedId.startsWith('pending:')
+          const actualId = isPending ? selectedId.replace('pending:', '') : selectedId
+
           assignments.push({
-            client_id: clientId,
+            client_id: isPending ? null : actualId,
+            invite_id: isPending ? actualId : null,
             habit_template_id: habit.id,
             coach_id: userData.user.id,
             start_date: startDate,
@@ -311,6 +322,11 @@ export function AssignHabitModal({ isOpen, onClose, habits, onSuccess }: AssignH
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-slate-900 dark:text-white truncate">
                           {client.name || client.email}
+                          {client.isPending && (
+                            <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                              Pending
+                            </span>
+                          )}
                         </p>
                         {client.name && (
                           <p className="text-sm text-slate-500 truncate">{client.email}</p>

@@ -87,6 +87,7 @@ export async function GET(request: NextRequest) {
         clientId: booking.client_id,
         coachId: booking.coach_id,
         packageId: booking.package_id,
+        subscriptionId: booking.subscription_id,
         bookingType: booking.booking_type,
         startsAt: booking.starts_at,
         endsAt: booking.ends_at,
@@ -244,30 +245,60 @@ export async function POST(request: NextRequest) {
     coachId = existingPackage.coach_id
   }
 
-  // 6. For sessions, validate package (skip for one-off bookings)
-  // Sessions without packages are allowed - they just won't deduct from any package
+  // 6. For sessions, find session source (subscription or package)
+  // Priority: 1. Hybrid subscription  2. Prepaid package  3. No deduction
   let packageId: string | null = null
+  let subscriptionId: string | null = null
+
   if (payload.bookingType === 'session' && !isOneOff) {
     if (payload.packageId) {
+      // Explicit package specified
       packageId = payload.packageId
-    } else if (clientId) {
-      // Try to find active package for client (optional - sessions can be booked without packages)
-      const { data: activePackage } = await supabase
-        .from('session_packages')
-        .select('id, remaining_sessions')
-        .eq('client_id', clientId)
+    } else if (clientId || inviteId) {
+      // First, check for active hybrid subscription with available sessions
+      let subscriptionQuery = supabase
+        .from('client_subscriptions')
+        .select('id, available_sessions')
         .eq('coach_id', coachId)
-        .gt('remaining_sessions', 0)
-        .or('expires_at.is.null,expires_at.gt.now()')
-        .order('created_at', { ascending: true })
+        .eq('subscription_type', 'hybrid')
+        .eq('is_active', true)
+        .gt('available_sessions', 0)
         .limit(1)
-        .single()
 
-      // Package is optional - if found, use it; if not, session is booked without package
-      if (activePackage) {
-        packageId = activePackage.id
+      if (clientId) {
+        subscriptionQuery = subscriptionQuery.eq('client_id', clientId)
+      } else if (inviteId) {
+        subscriptionQuery = subscriptionQuery.eq('invite_id', inviteId)
       }
-      // No error if no package - coaches can book sessions without requiring a package
+
+      const { data: activeSubscription } = await subscriptionQuery.single()
+
+      if (activeSubscription) {
+        subscriptionId = activeSubscription.id
+      } else {
+        // Fall back to prepaid package
+        let packageQuery = supabase
+          .from('session_packages')
+          .select('id, remaining_sessions')
+          .eq('coach_id', coachId)
+          .gt('remaining_sessions', 0)
+          .or('expires_at.is.null,expires_at.gt.now()')
+          .order('created_at', { ascending: true })
+          .limit(1)
+
+        if (clientId) {
+          packageQuery = packageQuery.eq('client_id', clientId)
+        } else if (inviteId) {
+          packageQuery = packageQuery.eq('invite_id', inviteId)
+        }
+
+        const { data: activePackage } = await packageQuery.single()
+
+        if (activePackage) {
+          packageId = activePackage.id
+        }
+      }
+      // No error if no subscription or package - coaches can book sessions without requiring either
     }
   }
 
@@ -330,6 +361,7 @@ export async function POST(request: NextRequest) {
         client_id: clientId,
         coach_id: coachId,
         package_id: packageId,
+        subscription_id: subscriptionId,
         booking_type: payload.bookingType,
         starts_at: payload.startsAt,
         ends_at: payload.endsAt,
@@ -346,9 +378,13 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error
 
-    // 10. Deduct session from package if session type
-    if (payload.bookingType === 'session' && packageId) {
-      await supabase.rpc('decrement_session', { package_id: packageId })
+    // 10. Deduct session from subscription or package
+    if (payload.bookingType === 'session') {
+      if (subscriptionId) {
+        await supabase.rpc('decrement_subscription_session', { p_subscription_id: subscriptionId })
+      } else if (packageId) {
+        await supabase.rpc('decrement_session', { package_id: packageId })
+      }
     }
 
     // 11. Mark check-in usage if check-in type
@@ -430,6 +466,7 @@ export async function POST(request: NextRequest) {
       clientId: booking.client_id,
       coachId: booking.coach_id,
       packageId: booking.package_id,
+      subscriptionId: booking.subscription_id,
       bookingType: booking.booking_type,
       startsAt: booking.starts_at,
       endsAt: booking.ends_at,

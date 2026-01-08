@@ -63,6 +63,16 @@ interface ClientWithPackage {
   checkinUsage: ClientCheckinUsage | null
 }
 
+interface SelectableClient {
+  id: string // For pending clients, this is prefixed with "pending:"
+  name: string
+  email: string
+  avatarUrl: string | null
+  activePackage: SessionPackage | null
+  checkinUsage: ClientCheckinUsage | null
+  isPending: boolean
+}
+
 interface PendingClient {
   id: string
   name: string
@@ -153,6 +163,12 @@ export function CoachBookingsClient({ userId, clients, pendingClients }: CoachBo
   const [rescheduleTarget, setRescheduleTarget] = useState<{ slot: AvailableSlot; date: Date } | null>(null)
   const [isRescheduling, setIsRescheduling] = useState(false)
 
+  // Mass delete select mode state
+  const [isSelectMode, setIsSelectMode] = useState(false)
+  const [selectedBookingIds, setSelectedBookingIds] = useState<Set<string>>(new Set())
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+
   // Calculate date range based on view mode
   const dateRange = useMemo(() => {
     if (viewMode === 'week') {
@@ -240,6 +256,24 @@ export function CoachBookingsClient({ userId, clients, pendingClients }: CoachBo
       fetchClientsWithPackages()
     }
   }, [clients, packages, packagesLoading])
+
+  // Combine regular clients and pending clients for Quick Book dropdown
+  const allSelectableClients: SelectableClient[] = useMemo(() => {
+    const regularClients: SelectableClient[] = clientsWithPackages.map((c) => ({
+      ...c,
+      isPending: false,
+    }))
+    const pending: SelectableClient[] = pendingClients.map((pc) => ({
+      id: `pending:${pc.id}`,
+      name: pc.name,
+      email: pc.email,
+      avatarUrl: null,
+      activePackage: null,
+      checkinUsage: null,
+      isPending: true,
+    }))
+    return [...regularClients, ...pending].sort((a, b) => a.name.localeCompare(b.name))
+  }, [clientsWithPackages, pendingClients])
 
   // Get today's and tomorrow's bookings for sidebar
   const today = new Date()
@@ -394,10 +428,10 @@ export function CoachBookingsClient({ userId, clients, pendingClients }: CoachBo
     setSelectedBooking(null)
   }
 
-  // Get selected client for multi-select mode
+  // Get selected client for multi-select mode (supports both regular and pending clients)
   const multiSelectClient = useMemo(
-    () => clientsWithPackages.find((c) => c.id === multiSelectClientId),
-    [clientsWithPackages, multiSelectClientId]
+    () => allSelectableClients.find((c) => c.id === multiSelectClientId),
+    [allSelectableClients, multiSelectClientId]
   )
 
   const handleSlotClick = (day: Date, slot: AvailableSlot) => {
@@ -443,10 +477,10 @@ export function CoachBookingsClient({ userId, clients, pendingClients }: CoachBo
   const handleBookSelectedSlots = async () => {
     if (!multiSelectClientId || selectedSlots.length === 0) return
 
-    const client = clientsWithPackages.find((c) => c.id === multiSelectClientId)
+    const client = allSelectableClients.find((c) => c.id === multiSelectClientId)
     if (!client) return
 
-    // Check if client has enough sessions
+    // Check if client has enough sessions (only for regular clients with packages)
     if (client.activePackage && selectedSlots.length > client.activePackage.remainingSessions) {
       alert(`Not enough sessions remaining. Client has ${client.activePackage.remainingSessions} sessions left.`)
       return
@@ -454,8 +488,12 @@ export function CoachBookingsClient({ userId, clients, pendingClients }: CoachBo
 
     setIsBookingMultiple(true)
     try {
+      // Determine if this is a pending client (id starts with "pending:")
+      const isPending = client.isPending
+      const actualId = isPending ? multiSelectClientId.replace('pending:', '') : multiSelectClientId
+
       const payloads = selectedSlots.map((slot) => ({
-        clientId: multiSelectClientId,
+        ...(isPending ? { inviteId: actualId } : { clientId: actualId }),
         bookingType: 'session' as const,
         startsAt: slot.startsAt,
         endsAt: slot.endsAt,
@@ -475,6 +513,74 @@ export function CoachBookingsClient({ userId, clients, pendingClients }: CoachBo
 
   const removeSelectedSlot = (slot: SlotWithDate) => {
     setSelectedSlots((prev) => prev.filter((s) => s.startsAt !== slot.startsAt))
+  }
+
+  // Mass delete select mode handlers
+  const handleEnterSelectMode = () => {
+    setIsSelectMode(true)
+    setSelectedBookingIds(new Set())
+  }
+
+  const handleExitSelectMode = () => {
+    setIsSelectMode(false)
+    setSelectedBookingIds(new Set())
+  }
+
+  const toggleBookingSelection = (bookingId: string) => {
+    setSelectedBookingIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(bookingId)) {
+        next.delete(bookingId)
+      } else {
+        next.add(bookingId)
+      }
+      return next
+    })
+  }
+
+  // Get selectable bookings (exclude completed)
+  const selectableBookings = useMemo(
+    () => bookings.filter((b) => b.status !== 'completed'),
+    [bookings]
+  )
+
+  const handleSelectAllVisible = () => {
+    const allIds = new Set(selectableBookings.map((b) => b.id))
+    setSelectedBookingIds(allIds)
+  }
+
+  const handleClearSelection = () => {
+    setSelectedBookingIds(new Set())
+  }
+
+  // Calculate refund info for selected bookings
+  const selectedBookingsRefundInfo = useMemo(() => {
+    const selected = bookings.filter((b) => selectedBookingIds.has(b.id))
+    const sessionsToRefund = selected.filter(
+      (b) => b.status === 'confirmed' && b.bookingType === 'session' && b.packageId
+    ).length
+    return {
+      count: selected.length,
+      sessionsToRefund,
+    }
+  }, [bookings, selectedBookingIds])
+
+  const handleDeleteSelected = async () => {
+    if (selectedBookingIds.size === 0) return
+
+    setIsDeleting(true)
+    try {
+      // Delete bookings one by one (each handles its own refund logic)
+      const ids = Array.from(selectedBookingIds)
+      for (const id of ids) {
+        await deleteBooking(id)
+      }
+      refetchPackages()
+      handleExitSelectMode()
+    } finally {
+      setIsDeleting(false)
+      setShowDeleteConfirm(false)
+    }
   }
 
   // Drag-and-drop handlers
@@ -583,8 +689,17 @@ export function CoachBookingsClient({ userId, clients, pendingClients }: CoachBo
             </div>
             <div className="flex items-center gap-3">
               {/* Quick Actions */}
-              {!isMultiSelectMode ? (
+              {!isMultiSelectMode && !isSelectMode ? (
                 <>
+                  <button
+                    onClick={handleEnterSelectMode}
+                    className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-medium py-2.5 px-4 rounded-xl transition-all"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    Select
+                  </button>
                   <button
                     onClick={handleEnterMultiSelectMode}
                     className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-medium py-2.5 px-4 rounded-xl transition-all"
@@ -604,7 +719,7 @@ export function CoachBookingsClient({ userId, clients, pendingClients }: CoachBo
                     Book Session
                   </button>
                 </>
-              ) : (
+              ) : isMultiSelectMode ? (
                 <button
                   onClick={handleExitMultiSelectMode}
                   className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-medium py-2.5 px-4 rounded-xl transition-all"
@@ -614,6 +729,45 @@ export function CoachBookingsClient({ userId, clients, pendingClients }: CoachBo
                   </svg>
                   Cancel
                 </button>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-400">
+                    {selectedBookingIds.size} selected
+                  </span>
+                  {selectedBookingIds.size > 0 && (
+                    <button
+                      onClick={handleClearSelection}
+                      className="text-sm text-slate-400 hover:text-white transition-colors"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <button
+                    onClick={handleSelectAllVisible}
+                    className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    disabled={selectedBookingIds.size === 0}
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-medium py-2.5 px-4 rounded-xl transition-all"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Delete
+                  </button>
+                  <button
+                    onClick={handleExitSelectMode}
+                    className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-medium py-2.5 px-4 rounded-xl transition-all"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Cancel
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -632,16 +786,18 @@ export function CoachBookingsClient({ userId, clients, pendingClients }: CoachBo
                     className="w-full max-w-md px-4 py-2 rounded-lg border border-slate-600 bg-slate-800 text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   >
                     <option value="">Select a client...</option>
-                    {clientsWithPackages.map((client) => (
+                    {allSelectableClients.map((client) => (
                       <option key={client.id} value={client.id}>
-                        {client.name} {client.activePackage ? `(${client.activePackage.remainingSessions} sessions)` : '(no package)'}
+                        {client.name} {client.isPending ? '(pending)' : client.activePackage ? `(${client.activePackage.remainingSessions} sessions)` : '(no package)'}
                       </option>
                     ))}
                   </select>
                 </div>
                 {multiSelectClient && (
                   <div className="text-sm text-slate-400">
-                    {multiSelectClient.activePackage ? (
+                    {multiSelectClient.isPending ? (
+                      <span className="text-purple-400">Pending client - will book without deducting</span>
+                    ) : multiSelectClient.activePackage ? (
                       <span>
                         <span className="text-green-400 font-medium">{multiSelectClient.activePackage.remainingSessions}</span> sessions available
                       </span>
@@ -776,35 +932,67 @@ export function CoachBookingsClient({ userId, clients, pendingClients }: CoachBo
                         {/* Booked sessions */}
                         {dayBookings
                           .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
-                          .map((booking) => (
-                            <button
-                              key={booking.id}
-                              onClick={() => setSelectedBooking(booking)}
-                              draggable={booking.status === 'confirmed'}
-                              onDragStart={(e) => handleDragStart(e, booking)}
-                              onDragEnd={handleDragEnd}
-                              className={`w-full p-2 rounded-lg border text-left transition-all hover:scale-[1.02] ${getBookingColor(booking)} ${
-                                booking.status === 'confirmed' ? 'cursor-grab active:cursor-grabbing' : ''
-                              } ${draggedBooking?.id === booking.id ? 'opacity-50 ring-2 ring-purple-500' : ''}`}
-                            >
-                              <div className="text-xs font-medium">{formatTime(booking.startsAt)}</div>
-                              <div className="text-sm font-semibold truncate">
-                                {getBookingClientName(booking)}
-                                {isPendingClientBooking(booking) && (
-                                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-normal">Pending</span>
-                                )}
-                                {!booking.client && !isPendingClientBooking(booking) && <span className="text-amber-400 ml-1">(one-off)</span>}
-                              </div>
-                              <div className="text-xs opacity-75 capitalize flex items-center gap-1">
-                                {booking.bookingType === 'checkin' ? 'Check-in' : 'Session'}
-                                {booking.status === 'confirmed' && (
-                                  <svg className="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
-                                  </svg>
-                                )}
-                              </div>
-                            </button>
-                          ))}
+                          .map((booking) => {
+                            const isSelected = selectedBookingIds.has(booking.id)
+                            return (
+                              <button
+                                key={booking.id}
+                                onClick={() => {
+                                  if (isSelectMode) {
+                                    if (booking.status !== 'completed') {
+                                      toggleBookingSelection(booking.id)
+                                    }
+                                  } else {
+                                    setSelectedBooking(booking)
+                                  }
+                                }}
+                                draggable={!isSelectMode && booking.status === 'confirmed'}
+                                onDragStart={(e) => handleDragStart(e, booking)}
+                                onDragEnd={handleDragEnd}
+                                className={`w-full p-2 rounded-lg border text-left transition-all hover:scale-[1.02] ${getBookingColor(booking)} ${
+                                  !isSelectMode && booking.status === 'confirmed' ? 'cursor-grab active:cursor-grabbing' : ''
+                                } ${draggedBooking?.id === booking.id ? 'opacity-50 ring-2 ring-purple-500' : ''} ${
+                                  isSelected ? 'ring-2 ring-red-500' : ''
+                                } ${isSelectMode && booking.status === 'completed' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              >
+                                <div className="flex items-start gap-2">
+                                  {isSelectMode && (
+                                    <div className={`mt-0.5 w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center ${
+                                      booking.status === 'completed'
+                                        ? 'border-slate-600 bg-slate-700'
+                                        : isSelected
+                                          ? 'border-red-500 bg-red-500'
+                                          : 'border-slate-500'
+                                    }`}>
+                                      {isSelected && (
+                                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                      )}
+                                    </div>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-xs font-medium">{formatTime(booking.startsAt)}</div>
+                                    <div className="text-sm font-semibold truncate">
+                                      {getBookingClientName(booking)}
+                                      {isPendingClientBooking(booking) && (
+                                        <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-normal">Pending</span>
+                                      )}
+                                      {!booking.client && !isPendingClientBooking(booking) && <span className="text-amber-400 ml-1">(one-off)</span>}
+                                    </div>
+                                    <div className="text-xs opacity-75 capitalize flex items-center gap-1">
+                                      {booking.bookingType === 'checkin' ? 'Check-in' : 'Session'}
+                                      {!isSelectMode && booking.status === 'confirmed' && (
+                                        <svg className="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+                                        </svg>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </button>
+                            )
+                          })}
 
                         {/* Available slots (only for today and future dates) */}
                         {!isPast && availableSlots.length > 0 && (
@@ -913,15 +1101,43 @@ export function CoachBookingsClient({ userId, clients, pendingClients }: CoachBo
                         {day.getDate()}
                       </div>
                       <div className="space-y-1">
-                        {dayBookings.slice(0, 2).map((booking) => (
-                          <button
-                            key={booking.id}
-                            onClick={() => setSelectedBooking(booking)}
-                            className={`w-full px-1.5 py-0.5 rounded text-xs truncate text-left ${getBookingColor(booking)}`}
-                          >
-                            {formatTime(booking.startsAt)} {getBookingClientName(booking).split(' ')[0]}
-                          </button>
-                        ))}
+                        {dayBookings.slice(0, 2).map((booking) => {
+                          const isSelected = selectedBookingIds.has(booking.id)
+                          return (
+                            <button
+                              key={booking.id}
+                              onClick={() => {
+                                if (isSelectMode) {
+                                  if (booking.status !== 'completed') {
+                                    toggleBookingSelection(booking.id)
+                                  }
+                                } else {
+                                  setSelectedBooking(booking)
+                                }
+                              }}
+                              className={`w-full px-1.5 py-0.5 rounded text-xs truncate text-left flex items-center gap-1 ${getBookingColor(booking)} ${
+                                isSelected ? 'ring-2 ring-red-500' : ''
+                              } ${isSelectMode && booking.status === 'completed' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            >
+                              {isSelectMode && (
+                                <div className={`w-3 h-3 rounded border flex-shrink-0 flex items-center justify-center ${
+                                  booking.status === 'completed'
+                                    ? 'border-slate-600 bg-slate-700'
+                                    : isSelected
+                                      ? 'border-red-500 bg-red-500'
+                                      : 'border-slate-500'
+                                }`}>
+                                  {isSelected && (
+                                    <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </div>
+                              )}
+                              <span className="truncate">{formatTime(booking.startsAt)} {getBookingClientName(booking).split(' ')[0]}</span>
+                            </button>
+                          )
+                        })}
                         {dayBookings.length > 2 && (
                           <div className="text-xs text-slate-500 px-1">+{dayBookings.length - 2} more</div>
                         )}
@@ -1368,6 +1584,59 @@ export function CoachBookingsClient({ userId, clients, pendingClients }: CoachBo
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Mass Delete Confirmation Modal */}
+      <Modal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        title="Delete Bookings"
+      >
+        <div className="space-y-4">
+          <p className="text-slate-300">
+            Delete {selectedBookingsRefundInfo.count} booking{selectedBookingsRefundInfo.count !== 1 ? 's' : ''}?
+          </p>
+
+          {selectedBookingsRefundInfo.sessionsToRefund > 0 && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+              <p className="text-amber-400 text-sm">
+                {selectedBookingsRefundInfo.sessionsToRefund} session{selectedBookingsRefundInfo.sessionsToRefund !== 1 ? 's' : ''} will be refunded to client packages.
+              </p>
+            </div>
+          )}
+
+          <p className="text-slate-400 text-sm">
+            This cannot be undone.
+          </p>
+
+          <div className="flex gap-3 pt-2">
+            <Button
+              variant="secondary"
+              onClick={() => setShowDeleteConfirm(false)}
+              className="flex-1"
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDeleteSelected}
+              className="flex-1 bg-red-600 hover:bg-red-500"
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <svg className="w-4 h-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Deleting...
+                </>
+              ) : (
+                'Delete'
+              )}
+            </Button>
+          </div>
+        </div>
       </Modal>
 
     </div>

@@ -7,6 +7,7 @@ import { useRouter, useParams } from 'next/navigation'
 type ClientType = 'online' | 'training' | 'hybrid'
 
 interface InviteData {
+  id: string
   email: string
   coach_name: string
   expires_at: string
@@ -32,7 +33,7 @@ export default function AcceptInvitePage() {
         // First get the invite
         const { data: inviteData, error: inviteError } = await supabase
           .from('invites')
-          .select('email, expires_at, accepted_at, created_by, name, client_type')
+          .select('id, email, expires_at, accepted_at, created_by, name, client_type')
           .eq('token', token)
           .single()
 
@@ -77,6 +78,7 @@ export default function AcceptInvitePage() {
         }
 
         setInviteData({
+          id: inviteData.id,
           email: inviteData.email,
           coach_name: coachName,
           expires_at: inviteData.expires_at,
@@ -146,6 +148,15 @@ export default function AcceptInvitePage() {
           client_type: clientType,
         })
         .eq('id', authData.user.id)
+
+      // Migrate any pre-configured data (packages, habits, programs, conversations, bookings)
+      // from invite_id to the new client_id
+      if (inviteData?.id) {
+        await supabase.rpc('migrate_pending_client_data', {
+          p_invite_id: inviteData.id,
+          p_client_id: authData.user.id,
+        })
+      }
 
       router.push('/dashboard')
     } catch {

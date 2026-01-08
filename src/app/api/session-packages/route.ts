@@ -22,13 +22,14 @@ export async function GET() {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // 3. Fetch all packages for this coach with client info
+  // 3. Fetch all packages for this coach with client info (both confirmed and pending)
   try {
     const { data: packages, error } = await supabase
       .from('session_packages')
       .select(`
         *,
-        client:profiles!client_id(id, name, email, avatar_url)
+        client:profiles!client_id(id, name, email, avatar_url),
+        invite:invites!invite_id(id, name, email)
       `)
       .eq('coach_id', user.id)
       .order('created_at', { ascending: false })
@@ -39,6 +40,7 @@ export async function GET() {
     const transformedPackages = (packages || []).map((pkg) => ({
       id: pkg.id,
       clientId: pkg.client_id,
+      inviteId: pkg.invite_id,
       coachId: pkg.coach_id,
       totalSessions: pkg.total_sessions,
       remainingSessions: pkg.remaining_sessions,
@@ -47,11 +49,19 @@ export async function GET() {
       notes: pkg.notes,
       createdAt: pkg.created_at,
       updatedAt: pkg.updated_at,
+      // Client info from either confirmed profile or pending invite
       client: pkg.client ? {
         id: pkg.client.id,
         name: pkg.client.name,
         email: pkg.client.email,
         avatarUrl: pkg.client.avatar_url,
+        isPending: false,
+      } : pkg.invite ? {
+        id: `pending:${pkg.invite.id}`,
+        name: pkg.invite.name,
+        email: pkg.invite.email,
+        avatarUrl: null,
+        isPending: true,
       } : null,
     }))
 
@@ -93,20 +103,39 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // 4. Validate required fields
-  if (!payload.clientId || !payload.totalSessions || !payload.sessionDurationMinutes) {
+  // 4. Validate required fields - either clientId or inviteId must be provided
+  const isPendingClient = payload.clientId?.startsWith('pending:')
+  const actualClientId = isPendingClient ? null : payload.clientId
+  const inviteId = isPendingClient ? payload.clientId.replace('pending:', '') : null
+
+  if ((!actualClientId && !inviteId) || !payload.totalSessions || !payload.sessionDurationMinutes) {
     return NextResponse.json(
-      { error: 'Missing required fields: clientId, totalSessions, sessionDurationMinutes' },
+      { error: 'Missing required fields: clientId (or pending:inviteId), totalSessions, sessionDurationMinutes' },
       { status: 400 }
     )
   }
 
-  // 5. Create the package
+  // 5. If using invite_id, verify the invite exists and belongs to this coach
+  if (inviteId) {
+    const { data: invite, error: inviteError } = await supabase
+      .from('invites')
+      .select('id, created_by')
+      .eq('id', inviteId)
+      .is('accepted_at', null)
+      .single()
+
+    if (inviteError || !invite || invite.created_by !== user.id) {
+      return NextResponse.json({ error: 'Invalid pending client' }, { status: 400 })
+    }
+  }
+
+  // 6. Create the package
   try {
     const { data: newPackage, error } = await supabase
       .from('session_packages')
       .insert({
-        client_id: payload.clientId,
+        client_id: actualClientId,
+        invite_id: inviteId,
         coach_id: user.id,
         total_sessions: payload.totalSessions,
         remaining_sessions: payload.totalSessions,
@@ -116,7 +145,8 @@ export async function POST(request: NextRequest) {
       })
       .select(`
         *,
-        client:profiles!client_id(id, name, email, avatar_url)
+        client:profiles!client_id(id, name, email, avatar_url),
+        invite:invites!invite_id(id, name, email)
       `)
       .single()
 
@@ -126,6 +156,7 @@ export async function POST(request: NextRequest) {
     const transformedPackage = {
       id: newPackage.id,
       clientId: newPackage.client_id,
+      inviteId: newPackage.invite_id,
       coachId: newPackage.coach_id,
       totalSessions: newPackage.total_sessions,
       remainingSessions: newPackage.remaining_sessions,
@@ -139,6 +170,13 @@ export async function POST(request: NextRequest) {
         name: newPackage.client.name,
         email: newPackage.client.email,
         avatarUrl: newPackage.client.avatar_url,
+        isPending: false,
+      } : newPackage.invite ? {
+        id: `pending:${newPackage.invite.id}`,
+        name: newPackage.invite.name,
+        email: newPackage.invite.email,
+        avatarUrl: null,
+        isPending: true,
       } : null,
     }
 

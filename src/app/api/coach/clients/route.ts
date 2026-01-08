@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-// GET /api/coach/clients - Get all clients
+// GET /api/coach/clients - Get all clients (including pending/imported clients)
 export async function GET() {
   try {
     const supabase = await createClient()
@@ -23,10 +23,10 @@ export async function GET() {
       return NextResponse.json({ error: 'Only coaches can view clients' }, { status: 403 })
     }
 
-    // Fetch all clients
+    // Fetch confirmed clients
     const { data: clients, error } = await supabase
       .from('profiles')
-      .select('id, name, avatar_url')
+      .select('id, name, avatar_url, email')
       .eq('role', 'client')
       .order('name')
 
@@ -35,7 +35,36 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ clients: clients || [] })
+    // Fetch pending clients (invites that haven't been accepted yet)
+    const { data: pendingInvites, error: invitesError } = await supabase
+      .from('invites')
+      .select('id, name, email')
+      .eq('created_by', user.id)
+      .is('accepted_at', null)
+      .not('name', 'is', null)
+      .order('name')
+
+    if (invitesError) {
+      console.error('Error fetching pending invites:', invitesError)
+      // Don't fail the request, just return confirmed clients
+    }
+
+    // Format pending clients with "pending:" prefix to distinguish them
+    const pendingClients = (pendingInvites || []).map(invite => ({
+      id: `pending:${invite.id}`,
+      name: invite.name,
+      email: invite.email,
+      avatar_url: null,
+      isPending: true,
+    }))
+
+    // Merge and sort all clients
+    const allClients = [
+      ...(clients || []).map(c => ({ ...c, isPending: false })),
+      ...pendingClients,
+    ].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+
+    return NextResponse.json({ clients: allClients })
 
   } catch (error) {
     console.error('Error in clients GET:', error)
