@@ -42,12 +42,12 @@ export default async function ClientsPage() {
     }
   })
 
-  // Get pending invites
+  // Get pending invites with new fields
   const { data: pendingInvites } = await supabase
     .from('invites')
-    .select('*')
+    .select('id, email, name, client_type, expires_at, created_at, invite_sent_at')
     .is('accepted_at', null)
-    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
