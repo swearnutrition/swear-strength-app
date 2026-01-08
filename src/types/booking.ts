@@ -66,6 +66,7 @@ export interface Booking {
   rescheduledFromId: string | null
   cancelledAt: string | null
   oneOffClientName: string | null // For one-off bookings without account
+  inviteId: string | null // For pending client bookings
   createdAt: string
   updatedAt: string
   // Joined fields
@@ -74,6 +75,11 @@ export interface Booking {
     name: string
     email: string
     avatarUrl: string | null
+  } | null
+  invite?: {
+    id: string
+    name: string
+    email: string
   } | null
   package?: SessionPackage
   formResponse?: CheckinFormResponse
@@ -88,6 +94,8 @@ export interface CreateBookingPayload {
   // One-off booking fields
   oneOffClientName?: string
   isOneOff?: boolean
+  // Pending client booking fields
+  inviteId?: string // For pending client bookings
 }
 
 export interface RescheduleBookingPayload {
