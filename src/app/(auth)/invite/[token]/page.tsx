@@ -32,7 +32,7 @@ export default function AcceptInvitePage() {
         // First get the invite
         const { data: inviteData, error: inviteError } = await supabase
           .from('invites')
-          .select('email, expires_at, accepted_at, created_by')
+          .select('email, expires_at, accepted_at, created_by, name, client_type')
           .eq('token', token)
           .single()
 
@@ -66,6 +66,14 @@ export default function AcceptInvitePage() {
           if (profileData?.name) {
             coachName = profileData.name
           }
+        }
+
+        // Pre-fill name and client type if provided (from bulk invite)
+        if (inviteData.name) {
+          setName(inviteData.name)
+        }
+        if (inviteData.client_type) {
+          setClientType(inviteData.client_type)
         }
 
         setInviteData({
