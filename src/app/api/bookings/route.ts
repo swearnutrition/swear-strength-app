@@ -170,14 +170,34 @@ export async function POST(request: NextRequest) {
 
   // Check if this is a one-off booking
   const isOneOff = payload.isOneOff || !!payload.oneOffClientName
+  // Check if this is a pending client booking
+  const isPendingClientBooking = !!payload.inviteId
 
   // 5. Determine client and coach IDs
   let clientId: string | null = null
   let coachId: string
   let oneOffClientName: string | null = null
+  let inviteId: string | null = null
 
   if (profile?.role === 'coach') {
-    if (isOneOff) {
+    if (isPendingClientBooking) {
+      // Pending client booking - verify invite exists and belongs to this coach
+      const { data: invite, error: inviteError } = await supabase
+        .from('invites')
+        .select('id, created_by')
+        .eq('id', payload.inviteId)
+        .is('accepted_at', null)
+        .single()
+
+      if (inviteError || !invite || invite.created_by !== user.id) {
+        return NextResponse.json(
+          { error: 'Invalid pending client' },
+          { status: 400 }
+        )
+      }
+      inviteId = payload.inviteId!
+      coachId = user.id
+    } else if (isOneOff) {
       // One-off booking - no client account required
       if (!payload.oneOffClientName?.trim()) {
         return NextResponse.json(
@@ -315,10 +335,12 @@ export async function POST(request: NextRequest) {
         ends_at: payload.endsAt,
         status: 'confirmed',
         one_off_client_name: oneOffClientName,
+        invite_id: inviteId,
       })
       .select(`
         *,
-        client:profiles!client_id(id, name, email, avatar_url)
+        client:profiles!client_id(id, name, email, avatar_url),
+        invite:invites!invite_id(id, name, email)
       `)
       .single()
 
@@ -348,10 +370,17 @@ export async function POST(request: NextRequest) {
     }
 
     // 12. Create Google Calendar event
-    const clientName = isOneOff
-      ? oneOffClientName
-      : booking.client?.name || 'Client'
-    const clientEmail = isOneOff ? undefined : booking.client?.email
+    // Determine client name and email based on booking type
+    const clientName = isPendingClientBooking
+      ? booking.invite?.name || 'Pending Client'
+      : isOneOff
+        ? oneOffClientName
+        : booking.client?.name || 'Client'
+    const clientEmail = isPendingClientBooking
+      ? booking.invite?.email
+      : isOneOff
+        ? undefined
+        : booking.client?.email
 
     console.log('[Create Booking] Creating calendar event:', {
       coachId,
@@ -362,9 +391,10 @@ export async function POST(request: NextRequest) {
       endsAt: payload.endsAt,
     })
 
+    const bookingLabel = isPendingClientBooking ? ' (Pending client)' : isOneOff ? ' (One-off booking)' : ''
     const calendarEvent = await createCalendarEvent(coachId, {
       summary: `${payload.bookingType === 'checkin' ? 'Check-in' : 'Training Session'}: ${clientName}`,
-      description: `${payload.bookingType === 'checkin' ? 'Monthly check-in' : 'Training session'} with ${clientName}${isOneOff ? ' (One-off booking)' : ''}`,
+      description: `${payload.bookingType === 'checkin' ? 'Monthly check-in' : 'Training session'} with ${clientName}${bookingLabel}`,
       startTime: payload.startsAt,
       endTime: payload.endsAt,
       attendeeEmail: clientEmail,
@@ -409,6 +439,7 @@ export async function POST(request: NextRequest) {
       rescheduledFromId: booking.rescheduled_from_id,
       cancelledAt: booking.cancelled_at,
       oneOffClientName: booking.one_off_client_name,
+      inviteId: booking.invite_id,
       createdAt: booking.created_at,
       updatedAt: booking.updated_at,
       client: booking.client ? {
@@ -416,6 +447,11 @@ export async function POST(request: NextRequest) {
         name: booking.client.name,
         email: booking.client.email,
         avatarUrl: booking.client.avatar_url,
+      } : null,
+      invite: booking.invite ? {
+        id: booking.invite.id,
+        name: booking.invite.name,
+        email: booking.invite.email,
       } : null,
     }
 
