@@ -11,20 +11,40 @@ import { BookSessionModal } from '@/components/booking/BookSessionModal'
 import { createClient } from '@/lib/supabase/client'
 import type { BookingWithDetails, BookingStatus, SessionPackage, ClientCheckinUsage, Booking, AvailableSlot } from '@/types/booking'
 
-// Helper to get the display name for a booking (supports one-off bookings)
+// Helper to get the display name for a booking (supports one-off and pending client bookings)
 function getBookingClientName(booking: Booking | BookingWithDetails): string {
+  // 1. First try booking.client?.name
   if (booking.client?.name) {
     return booking.client.name
   }
+  // 2. Then try booking.invite?.name (for pending client bookings)
+  if ('invite' in booking && booking.invite?.name) {
+    return booking.invite.name
+  }
+  // Check snake_case version from raw API response for invite
+  const rawBooking = booking as unknown as Record<string, unknown>
+  const rawInvite = rawBooking.invite as Record<string, unknown> | null | undefined
+  if (rawInvite?.name) {
+    return rawInvite.name as string
+  }
+  // 3. Then try booking.oneOffClientName
   if ('oneOffClientName' in booking && booking.oneOffClientName) {
     return booking.oneOffClientName
   }
   // Check snake_case version from raw API response
-  const rawBooking = booking as unknown as Record<string, unknown>
   if (rawBooking.one_off_client_name) {
     return rawBooking.one_off_client_name as string
   }
+  // 4. Finally fallback to 'Unknown'
   return 'Unknown'
+}
+
+// Helper to check if a booking is for a pending client (has invite but no client)
+function isPendingClientBooking(booking: Booking | BookingWithDetails): boolean {
+  const rawBooking = booking as unknown as Record<string, unknown>
+  const hasInvite = ('invite' in booking && booking.invite) || rawBooking.invite
+  const hasClient = booking.client
+  return !!hasInvite && !hasClient
 }
 
 interface Client {
@@ -43,9 +63,17 @@ interface ClientWithPackage {
   checkinUsage: ClientCheckinUsage | null
 }
 
+interface PendingClient {
+  id: string
+  name: string
+  email: string
+  clientType: 'online' | 'training' | 'hybrid'
+}
+
 interface CoachBookingsClientProps {
   userId: string
   clients: Client[]
+  pendingClients: PendingClient[]
 }
 
 type ViewMode = 'week' | 'month'
@@ -102,7 +130,7 @@ interface SlotWithDate extends AvailableSlot {
   date: string // ISO date string
 }
 
-export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProps) {
+export function CoachBookingsClient({ userId, clients, pendingClients }: CoachBookingsClientProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('week')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [showBookSessionModal, setShowBookSessionModal] = useState(false)
@@ -762,7 +790,10 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
                               <div className="text-xs font-medium">{formatTime(booking.startsAt)}</div>
                               <div className="text-sm font-semibold truncate">
                                 {getBookingClientName(booking)}
-                                {!booking.client && <span className="text-amber-400 ml-1">(one-off)</span>}
+                                {isPendingClientBooking(booking) && (
+                                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-normal">Pending</span>
+                                )}
+                                {!booking.client && !isPendingClientBooking(booking) && <span className="text-amber-400 ml-1">(one-off)</span>}
                               </div>
                               <div className="text-xs opacity-75 capitalize flex items-center gap-1">
                                 {booking.bookingType === 'checkin' ? 'Check-in' : 'Session'}
@@ -989,7 +1020,10 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-white truncate">
                         {getBookingClientName(booking)}
-                        {!booking.client && <span className="text-amber-400 text-xs ml-1">(one-off)</span>}
+                        {isPendingClientBooking(booking) && (
+                          <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-normal">Pending</span>
+                        )}
+                        {!booking.client && !isPendingClientBooking(booking) && <span className="text-amber-400 text-xs ml-1">(one-off)</span>}
                       </div>
                       <div className="text-sm text-slate-400">
                         {formatTime(booking.startsAt)} - {formatTime(booking.endsAt)}
@@ -1026,7 +1060,10 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-white truncate">
                       {getBookingClientName(booking)}
-                      {!booking.client && <span className="text-amber-400 text-xs ml-1">(one-off)</span>}
+                      {isPendingClientBooking(booking) && (
+                        <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-normal">Pending</span>
+                      )}
+                      {!booking.client && !isPendingClientBooking(booking) && <span className="text-amber-400 text-xs ml-1">(one-off)</span>}
                     </div>
                     <div className="text-xs text-slate-500">{formatTime(booking.startsAt)}</div>
                   </div>
@@ -1122,12 +1159,15 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
               <div>
                 <h3 className="text-lg font-semibold text-white">
                   {getBookingClientName(selectedBooking)}
-                  {!selectedBooking.client && (
+                  {isPendingClientBooking(selectedBooking) && (
+                    <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-sm font-normal">Pending</span>
+                  )}
+                  {!selectedBooking.client && !isPendingClientBooking(selectedBooking) && (
                     <span className="ml-2 text-sm font-normal text-amber-400">(one-off)</span>
                   )}
                 </h3>
                 <p className="text-slate-400">
-                  {selectedBooking.client?.email || 'No account - one-off booking'}
+                  {selectedBooking.client?.email || (isPendingClientBooking(selectedBooking) ? (selectedBooking.invite?.email || 'Pending client') : 'No account - one-off booking')}
                 </p>
               </div>
             </div>
@@ -1223,6 +1263,7 @@ export function CoachBookingsClient({ userId, clients }: CoachBookingsClientProp
           setPreselectedSlot(undefined)
         }}
         clients={clientsWithPackages}
+        pendingClients={pendingClients}
         preselectedDate={preselectedDate}
         onSuccess={() => {
           refetchPackages()
