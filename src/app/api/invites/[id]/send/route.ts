@@ -42,21 +42,21 @@ export async function POST(
     const coachName = coachProfile?.name || 'Your Coach'
     const baseUrl = request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL
 
-    // Check if client already exists in auth (has an account but needs password setup)
-    // Look for a profile with this email that's already connected to this coach
-    const { data: existingProfile } = await supabase
-      .from('profiles')
-      .select('id, email')
-      .eq('email', invite.email)
-      .single()
+    // Use admin client to check if user exists in auth
+    const adminClient = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
 
-    if (existingProfile) {
+    // Check if client already exists in auth (has an account but needs password setup)
+    // Use admin API to look up user by email in auth.users
+    const { data: existingUsers } = await adminClient.auth.admin.listUsers()
+    const existingAuthUser = existingUsers?.users?.find(
+      (u) => u.email?.toLowerCase() === invite.email.toLowerCase()
+    )
+
+    if (existingAuthUser) {
       // Client already has an account - send password reset instead of invite
-      // Use admin client to trigger password reset
-      const adminClient = createAdminClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-      )
 
       // Generate password reset link
       const { data: resetData, error: resetError } = await adminClient.auth.admin.generateLink({
