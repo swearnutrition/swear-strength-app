@@ -14,13 +14,24 @@ interface ClientWithPackage {
   checkinUsage: ClientCheckinUsage | null
 }
 
+interface PendingClient {
+  id: string // invite id
+  name: string
+  email: string
+  clientType: 'online' | 'training' | 'hybrid'
+}
+
 // One-off booking option (pseudo-client for UI)
 const ONE_OFF_BOOKING_ID = '__one_off__'
+
+// Pending client prefix for UI
+const PENDING_CLIENT_PREFIX = '__pending__'
 
 interface BookSessionModalProps {
   isOpen: boolean
   onClose: () => void
   clients: ClientWithPackage[]
+  pendingClients?: PendingClient[]
   preselectedClientId?: string
   preselectedDate?: string
   onSuccess: () => void
@@ -30,6 +41,7 @@ export function BookSessionModal({
   isOpen,
   onClose,
   clients,
+  pendingClients,
   preselectedClientId,
   preselectedDate,
   onSuccess,
@@ -49,6 +61,7 @@ export function BookSessionModal({
   const { createMultipleBookings } = useBookings()
 
   const isOneOffBooking = selectedClientId === ONE_OFF_BOOKING_ID
+  const isPendingClient = selectedClientId.startsWith(PENDING_CLIENT_PREFIX)
 
   // Get selected client info
   const selectedClient = useMemo(
@@ -143,15 +156,20 @@ export function BookSessionModal({
 
     setSubmitting(true)
     try {
+      // Extract inviteId if booking for a pending client
+      const inviteId = isPendingClient ? selectedClientId.replace(PENDING_CLIENT_PREFIX, '') : undefined
+
       const payloads = selectedSlots.map((slot) => ({
-        clientId: isOneOffBooking ? null : selectedClientId,
+        clientId: isOneOffBooking || isPendingClient ? null : selectedClientId,
         bookingType,
         startsAt: slot.startsAt,
         endsAt: slot.endsAt,
-        packageId: bookingType === 'session' && !isOneOffBooking ? selectedClient?.activePackage?.id : undefined,
+        packageId: bookingType === 'session' && !isOneOffBooking && !isPendingClient ? selectedClient?.activePackage?.id : undefined,
         // One-off booking fields
         oneOffClientName: isOneOffBooking ? oneOffClientName.trim() : undefined,
         isOneOff: isOneOffBooking,
+        // Pending client booking fields
+        inviteId: isPendingClient ? inviteId : undefined,
       }))
 
       const results = await createMultipleBookings(payloads)
@@ -231,8 +249,8 @@ export function BookSessionModal({
               onChange={(e) => {
                 setSelectedClientId(e.target.value)
                 setSelectedSlots([])
-                // Reset booking type to session for one-off
-                if (e.target.value === ONE_OFF_BOOKING_ID) {
+                // Reset booking type to session for one-off and pending clients
+                if (e.target.value === ONE_OFF_BOOKING_ID || e.target.value.startsWith(PENDING_CLIENT_PREFIX)) {
                   setBookingType('session')
                 }
               }}
@@ -241,7 +259,16 @@ export function BookSessionModal({
             >
               <option value="">Select a client</option>
               <option value={ONE_OFF_BOOKING_ID}>One-off booking (no account)</option>
-              <optgroup label="Existing Clients">
+              {pendingClients && pendingClients.length > 0 && (
+                <optgroup label="Pending Clients">
+                  {pendingClients.map((client) => (
+                    <option key={client.id} value={`${PENDING_CLIENT_PREFIX}${client.id}`}>
+                      {client.name} ({client.email}) - Pending
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label="Active Clients">
                 {clients.map((client) => (
                   <option key={client.id} value={client.id}>
                     {client.name} - {client.activePackage ? `${client.activePackage.remainingSessions} sessions` : 'No package'}
@@ -323,8 +350,8 @@ export function BookSessionModal({
             </div>
           )}
 
-          {/* Booking type - hide for one-off bookings (only sessions available) */}
-          {!isOneOffBooking && (
+          {/* Booking type - hide for one-off and pending client bookings (only sessions available) */}
+          {!isOneOffBooking && !isPendingClient && (
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                 Booking Type <span className="text-red-500">*</span>
