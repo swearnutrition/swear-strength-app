@@ -371,8 +371,8 @@ export async function POST(request: NextRequest) {
       })
       .select(`
         *,
-        client:profiles!client_id(id, name, email, avatar_url),
-        invite:invites!invite_id(id, name, email)
+        client:profiles(id, name, email, avatar_url),
+        invite:invites(id, name, email)
       `)
       .single()
 
