@@ -99,7 +99,16 @@ export function useBookings(options: UseBookingsOptions = {}): UseBookingsReturn
       const res = await fetch('/api/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          clientId: payload.clientId,
+          bookingType: payload.bookingType,
+          startsAt: payload.startsAt,
+          endsAt: payload.endsAt,
+          packageId: payload.packageId,
+          oneOffClientName: payload.oneOffClientName,
+          isOneOff: payload.isOneOff,
+          inviteId: payload.inviteId, // For pending client bookings
+        }),
       })
 
       const data = await res.json()
