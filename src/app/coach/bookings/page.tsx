@@ -31,10 +31,25 @@ export default async function CoachBookingsPage() {
     .eq('role', 'client')
     .order('name')
 
+  // Fetch pending invites for booking modal
+  const { data: pendingInvites } = await supabase
+    .from('invites')
+    .select('id, email, name, client_type')
+    .is('accepted_at', null)
+    .not('name', 'is', null)
+
+  const pendingClients = (pendingInvites || []).map(invite => ({
+    id: invite.id,
+    name: invite.name!,
+    email: invite.email,
+    clientType: (invite.client_type || 'online') as 'online' | 'training' | 'hybrid',
+  }))
+
   return (
     <CoachBookingsClient
       userId={user.id}
       clients={clients || []}
+      pendingClients={pendingClients}
     />
   )
 }
