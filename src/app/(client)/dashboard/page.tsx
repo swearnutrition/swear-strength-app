@@ -368,100 +368,6 @@ export default async function ClientDashboard() {
     }
   }
 
-  // Get active rivalry for the client
-  const { data: rivalryData } = await supabase
-    .from('habit_rivalries')
-    .select(`
-      id,
-      name,
-      start_date,
-      end_date,
-      challenger_id,
-      opponent_id
-    `)
-    .eq('status', 'active')
-    .or(`challenger_id.eq.${user.id},opponent_id.eq.${user.id}`)
-    .limit(1)
-    .maybeSingle()
-
-  // Transform rivalry data if exists
-  let rivalry = null
-  if (rivalryData) {
-    const isChallenger = rivalryData.challenger_id === user.id
-    const opponentId = isChallenger ? rivalryData.opponent_id : rivalryData.challenger_id
-
-    // Get opponent profile
-    const { data: opponentProfile } = await supabase
-      .from('profiles')
-      .select('name, avatar_url')
-      .eq('id', opponentId)
-      .single()
-
-    const opponentName = opponentProfile?.name || 'Opponent'
-
-    // Get initials for rivalry card
-    const getInitial = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 1)
-    const userInitial = getInitial(profile.name)
-    const opponentInitial = getInitial(opponentName)
-
-    // Get linked habits for this rivalry
-    const { data: rivalryHabits } = await supabase
-      .from('client_habits')
-      .select('id, client_id, habit_templates(name, category)')
-      .eq('rivalry_id', rivalryData.id)
-
-    // Get habit template info from the linked habits
-    const myRivalryHabit = rivalryHabits?.find(h => h.client_id === user.id)
-    const habitTemplate = myRivalryHabit?.habit_templates as { name?: string; category?: string } | { name?: string; category?: string }[] | null
-    let habitName = rivalryData.name
-    if (habitTemplate) {
-      if (Array.isArray(habitTemplate)) {
-        habitName = habitTemplate[0]?.name || rivalryData.name
-      } else {
-        habitName = habitTemplate.name || rivalryData.name
-      }
-    }
-
-    // Calculate days left
-    const endDate = new Date(rivalryData.end_date)
-    const daysLeft = Math.max(0, Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)))
-
-    // Get habit IDs for this rivalry
-    const rivalryHabitIds = rivalryHabits?.map(h => h.id) || []
-
-    // Get completions for rivalry period to calculate scores
-    const { data: rivalryCompletions } = await supabase
-      .from('habit_completions')
-      .select('client_id, completed_date, client_habit_id')
-      .in('client_habit_id', rivalryHabitIds)
-      .gte('completed_date', rivalryData.start_date)
-      .lte('completed_date', rivalryData.end_date)
-
-    // Calculate scores based on days in rivalry
-    const rivalryStart = new Date(rivalryData.start_date)
-    const totalDays = Math.ceil((endDate.getTime() - rivalryStart.getTime()) / (1000 * 60 * 60 * 24))
-    const daysPassed = Math.max(1, Math.min(totalDays, Math.ceil((today.getTime() - rivalryStart.getTime()) / (1000 * 60 * 60 * 24))))
-
-    const myCompletions = (rivalryCompletions || []).filter(c => c.client_id === user.id).length
-    const opponentCompletionCount = (rivalryCompletions || []).filter(c => c.client_id === opponentId).length
-
-    const myScore = Math.round((myCompletions / daysPassed) * 100)
-    const opponentScore = Math.round((opponentCompletionCount / daysPassed) * 100)
-
-    rivalry = {
-      id: rivalryData.id,
-      habit_name: habitName || rivalryData.name,
-      opponent_name: opponentName,
-      my_score: myScore,
-      opponent_score: opponentScore,
-      days_left: daysLeft,
-      user_initial: userInitial,
-      opponent_initial: opponentInitial,
-      user_avatar_url: profile.avatar_url || null,
-      opponent_avatar_url: opponentProfile?.avatar_url || null,
-    }
-  }
-
   // Generate habit week days for the expandable week view
   const habitWeekDays = Array.from({ length: 7 }, (_, i) => {
     const date = new Date(startOfWeek)
@@ -526,7 +432,6 @@ export default async function ClientDashboard() {
       weekHabitCompletions={weekHabitCompletions || []}
       habitWeekDays={habitWeekDays}
       overallStreak={overallStreak}
-      rivalry={rivalry}
       scheduleInfo={scheduleInfo}
       programWorkoutDays={programWorkoutDays}
       clientType={profile.client_type || 'online'}

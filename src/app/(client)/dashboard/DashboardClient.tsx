@@ -86,19 +86,6 @@ interface WeekDay {
   hasWorkout: boolean
 }
 
-interface Rivalry {
-  id: string
-  habit_name: string
-  opponent_name: string
-  my_score: number
-  opponent_score: number
-  days_left: number
-  user_initial: string
-  opponent_initial: string
-  user_avatar_url: string | null
-  opponent_avatar_url: string | null
-}
-
 interface ScheduleInfo {
   assignmentId: string
   programName: string
@@ -147,7 +134,6 @@ interface DashboardClientProps {
   weekHabitCompletions: WeekHabitCompletion[]
   habitWeekDays: HabitWeekDay[]
   overallStreak: number
-  rivalry?: Rivalry | null
   scheduleInfo?: ScheduleInfo | null
   programWorkoutDays?: ProgramWorkoutDay[] // All workout days from current week to reuse
   clientType?: ClientType
@@ -225,18 +211,6 @@ const Icons = {
       <polyline points="15 18 9 12 15 6"/>
     </svg>
   ),
-  swords: ({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
-      <polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/>
-      <line x1="13" y1="19" x2="19" y2="13"/>
-      <line x1="16" y1="16" x2="20" y2="20"/>
-      <line x1="19" y1="21" x2="21" y2="19"/>
-      <polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/>
-      <line x1="5" y1="14" x2="9" y2="18"/>
-      <line x1="7" y1="17" x2="4" y2="20"/>
-      <line x1="3" y1="19" x2="5" y2="21"/>
-    </svg>
-  ),
 }
 
 export function DashboardClient({
@@ -255,7 +229,6 @@ export function DashboardClient({
   weekHabitCompletions,
   habitWeekDays,
   overallStreak,
-  rivalry,
   scheduleInfo,
   programWorkoutDays,
   clientType = 'online',
@@ -357,17 +330,6 @@ export function DashboardClient({
 
   const displayWeekWorkouts = getWorkoutsForWeekOffset(weekOffset)
   const selectedDayWorkout = displayWeekWorkouts[selectedDayIndex] || null
-
-  // Rivalry display logic: show banner only if tied or losing
-  const rivalryStatus = rivalry
-    ? rivalry.my_score > rivalry.opponent_score
-      ? 'winning'
-      : rivalry.my_score < rivalry.opponent_score
-        ? 'losing'
-        : 'tied'
-    : 'none'
-  // Show rivalry banner whenever there's an active rivalry (rivalry object only exists when active)
-  const showRivalryBanner = !!rivalry
 
   // Get current date info
   const now = new Date()
@@ -548,12 +510,6 @@ export function DashboardClient({
     }
   }
 
-  const getRivalryMessage = () => {
-    if (rivalryStatus === 'losing') return `${rivalry?.opponent_name} is ahead!`
-    if (rivalryStatus === 'tied') return 'Tied! Stay consistent'
-    return ''
-  }
-
   // Get day name for selected day
   const selectedDayDate = selectedDay ? new Date(selectedDay.dateStr + 'T12:00:00') : new Date()
   const selectedDayFullName = dayNames[selectedDayDate.getDay()] || 'Today'
@@ -563,14 +519,6 @@ export function DashboardClient({
   return (
     <div className="dashboard-container">
       <style>{`
-        @keyframes rivalry-glow {
-          0%, 100% { box-shadow: 0 0 15px rgba(249, 115, 22, 0.25); }
-          50% { box-shadow: 0 0 25px rgba(249, 115, 22, 0.4); }
-        }
-        @keyframes pulse-dot {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
         @keyframes habit-complete-fill {
           0% {
             transform: scale(0.8);
@@ -597,8 +545,6 @@ export function DashboardClient({
             opacity: 1;
           }
         }
-        .rivalry-card { animation: rivalry-glow 3s ease-in-out infinite; }
-        .rivalry-dot { animation: pulse-dot 2s ease-in-out infinite; }
 
         .dashboard-container {
           min-height: 100vh;
@@ -736,87 +682,6 @@ export function DashboardClient({
         .announcement-dismiss:hover {
           background: ${colors.purple}20;
           color: ${colors.textPrimary};
-        }
-
-        /* Rivalry Banner */
-        .rivalry-banner {
-          background: ${isDark ? colors.bgCard : 'linear-gradient(135deg, #fffaf8 0%, #fff6f2 100%)'};
-          border-radius: 16px;
-          padding: 14px 16px;
-          margin-bottom: 20px;
-          position: relative;
-          overflow: hidden;
-        }
-
-        .rivalry-banner::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          border-radius: 16px;
-          padding: ${isDark ? '1.5px' : '2px'};
-          background: linear-gradient(135deg, #f97316, #fbbf24, #ef4444);
-          -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-          -webkit-mask-composite: xor;
-          mask-composite: exclude;
-          pointer-events: none;
-        }
-
-        .rivalry-banner-content {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          position: relative;
-        }
-
-        .rivalry-icon {
-          width: 40px;
-          height: 40px;
-          border-radius: 10px;
-          background: linear-gradient(135deg, #ef4444 0%, #f97316 100%);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          box-shadow: ${isDark ? 'none' : '0 2px 8px rgba(249, 115, 22, 0.3)'};
-        }
-
-        .rivalry-info {
-          flex: 1;
-          min-width: 0;
-        }
-
-        .rivalry-title-row {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          margin-bottom: 2px;
-        }
-
-        .rivalry-title {
-          font-size: 13px;
-          font-weight: 600;
-          color: ${colors.text};
-        }
-
-        .rivalry-message {
-          font-size: 12px;
-          color: ${isDark ? '#fbbf24' : '#f97316'};
-          font-weight: 500;
-        }
-
-        .rivalry-scores {
-          text-align: center;
-          flex-shrink: 0;
-        }
-
-        .rivalry-score-text {
-          font-size: 15px;
-          font-weight: 700;
-        }
-
-        .rivalry-days {
-          font-size: 10px;
-          color: ${colors.textMuted};
         }
 
         /* Agenda Header */
@@ -975,38 +840,6 @@ export function DashboardClient({
           align-items: center;
           justify-content: center;
           cursor: pointer;
-        }
-
-        /* Rivalry Badge on Habit */
-        .rivalry-badge {
-          margin-top: 10px;
-          margin-left: 42px;
-          padding: 8px 10px;
-          background: ${isDark
-            ? 'linear-gradient(135deg, rgba(249, 115, 22, 0.08) 0%, rgba(239, 68, 68, 0.04) 100%)'
-            : 'linear-gradient(135deg, rgba(249, 115, 22, 0.08) 0%, rgba(239, 68, 68, 0.04) 100%)'};
-          border-radius: 8px;
-          border: 1px solid ${isDark ? 'rgba(249, 115, 22, 0.2)' : 'rgba(249, 115, 22, 0.3)'};
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .rivalry-badge-text {
-          font-size: 11px;
-          color: #f97316;
-          font-weight: 600;
-        }
-
-        .rivalry-badge-score {
-          font-size: 11px;
-          color: ${colors.textMuted};
-        }
-
-        .rivalry-badge-days {
-          font-size: 10px;
-          color: ${colors.textMuted};
-          margin-left: auto;
         }
 
         /* Streak Card */
@@ -1379,25 +1212,6 @@ export function DashboardClient({
           color: ${colors.purple};
         }
 
-        /* Calendar Rivalry Badge */
-        .calendar-rivalry-badge {
-          margin-left: 36px;
-          margin-bottom: 8px;
-          padding: 6px 10px;
-          background: rgba(249, 115, 22, 0.08);
-          border-radius: 6px;
-          border: 1px solid rgba(249, 115, 22, 0.2);
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-
-        .calendar-rivalry-text {
-          font-size: 10px;
-          color: #f97316;
-          font-weight: 600;
-        }
-
         /* Upcoming Section */
         .upcoming-card {
           background: ${colors.bgCard};
@@ -1514,35 +1328,6 @@ export function DashboardClient({
               </div>
             ))}
           </div>
-        )}
-
-        {/* Rivalry Banner */}
-        {showRivalryBanner && rivalry && (
-          <Link href={`/rivalry/${rivalry.id}`} style={{ textDecoration: 'none' }}>
-            <div className="rivalry-banner rivalry-card">
-              <div className="rivalry-banner-content">
-                <div className="rivalry-icon">
-                  <Icons.swords size={18} color="white" />
-                </div>
-                <div className="rivalry-info">
-                  <div className="rivalry-title-row">
-                    <span className="rivalry-title">{rivalry.habit_name}</span>
-                    <div className="rivalry-dot" style={{ width: 5, height: 5, borderRadius: '50%', background: '#f97316' }} />
-                  </div>
-                  <div className="rivalry-message">{getRivalryMessage()}</div>
-                </div>
-                <div className="rivalry-scores">
-                  <div className="rivalry-score-text">
-                    <span style={{ color: colors.green }}>{rivalry.my_score}%</span>
-                    <span style={{ color: colors.textMuted, margin: '0 4px', fontSize: 12 }}>vs</span>
-                    <span style={{ color: '#f97316' }}>{rivalry.opponent_score}%</span>
-                  </div>
-                  <div className="rivalry-days">{rivalry.days_left}d left</div>
-                </div>
-                <Icons.chevronRight size={18} color={colors.textMuted} />
-              </div>
-            </div>
-          </Link>
         )}
 
         {/* Calendar Header with Week Navigation */}
@@ -1872,7 +1657,6 @@ export function DashboardClient({
                 const isCompleted = !!completion && completion.value !== 0
                 const isSkipped = !!completion && completion.value === 0
                 const icon = template.category ? habitIcons[template.category] : '✓'
-                const hasRivalry = rivalry && rivalry.habit_name === template.name
 
                 return (
                   <div key={habit.id}>
@@ -1910,14 +1694,6 @@ export function DashboardClient({
                         <span style={{ fontSize: 11, color: colors.textMuted, fontStyle: 'italic' }}>Skipped</span>
                       )}
                     </div>
-                    {hasRivalry && rivalry && (
-                      <div className="calendar-rivalry-badge">
-                        <span style={{ fontSize: 11 }}>⚔️</span>
-                        <span className="calendar-rivalry-text">
-                          vs {rivalry.opponent_name} · {rivalry.my_score}%-{rivalry.opponent_score}%
-                        </span>
-                      </div>
-                    )}
                   </div>
                 )
               })}

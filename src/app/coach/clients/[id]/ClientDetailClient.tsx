@@ -78,24 +78,6 @@ interface HabitStat {
   startDate: string
 }
 
-interface Rivalry {
-  id: string
-  name: string
-  status: string
-  startDate: string
-  endDate: string
-  winnerId: string | null
-  clientScore: number
-  rivalScore: number
-  rival: {
-    id: string
-    name: string
-    avatar_url: string | null
-  }
-  isWinner: boolean
-  isTied: boolean
-}
-
 interface CoachProgram {
   id: string
   name: string
@@ -141,7 +123,6 @@ interface ClientDetailClientProps {
   workoutLogs: WorkoutLog[]
   personalRecords: PersonalRecord[]
   habitStats: HabitStat[]
-  rivalries: Rivalry[]
   coachPrograms: CoachProgram[]
   habitTemplates: HabitTemplate[]
   currentUserId: string
@@ -224,7 +205,6 @@ export function ClientDetailClient({
   workoutLogs,
   personalRecords,
   habitStats,
-  rivalries,
   coachPrograms,
   habitTemplates,
   currentUserId,
@@ -268,9 +248,6 @@ export function ClientDetailClient({
   const [clientType, setClientType] = useState<ClientType>(client.clientType)
   const [hybridSessions, setHybridSessions] = useState(client.hybridSessionsPerMonth)
   const [savingClientType, setSavingClientType] = useState(false)
-
-  const activeRivalries = rivalries.filter(r => r.status === 'active' || r.status === 'pending')
-  const completedRivalries = rivalries.filter(r => r.status === 'completed' || r.status === 'cancelled')
 
   // Determine what assignments this client has
   const hasWorkouts = !!currentProgram
@@ -1139,145 +1116,6 @@ export function ClientDetailClient({
             </div>
           </div>
         </div>
-
-        {/* Rivalries Section */}
-        {rivalries.length > 0 && (
-          <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-200 dark:border-slate-800">
-            <h2 className="font-semibold text-slate-900 dark:text-white mb-4">Rivalries</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {rivalries.slice(0, 4).map(rivalry => {
-                const isActive = rivalry.status === 'active' || rivalry.status === 'pending'
-                const daysLeft = Math.ceil(
-                  (new Date(rivalry.endDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
-                )
-                const totalDays = Math.ceil(
-                  (new Date(rivalry.endDate).getTime() - new Date(rivalry.startDate).getTime()) / (1000 * 60 * 60 * 24)
-                )
-                const daysElapsed = totalDays - Math.max(0, daysLeft)
-                const progress = Math.min(100, (daysElapsed / totalDays) * 100)
-                const clientWinning = rivalry.clientScore > rivalry.rivalScore
-                const rivalWinning = rivalry.rivalScore > rivalry.clientScore
-                const isTied = rivalry.clientScore === rivalry.rivalScore
-
-                return (
-                  <Link
-                    key={rivalry.id}
-                    href={`/coach/habits/rivalries/${rivalry.id}`}
-                    className="block p-5 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover:scale-[1.01]"
-                  >
-                    {/* Header */}
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold text-slate-900 dark:text-white truncate">{rivalry.name}</h3>
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                        isActive
-                          ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
-                          : rivalry.isWinner
-                            ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400'
-                            : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
-                      }`}>
-                        {isActive ? 'Active' : rivalry.isWinner ? 'Won' : rivalry.isTied ? 'Tied' : 'Completed'}
-                      </span>
-                    </div>
-
-                    {/* Players & Score */}
-                    <div className="flex items-center justify-between mb-4">
-                      {/* Client */}
-                      <div className="flex flex-col items-center">
-                        <div
-                          className="w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold text-white mb-1.5 overflow-hidden"
-                          style={{
-                            background: 'linear-gradient(135deg, #8b5cf6 0%, #8b5cf699 100%)',
-                            boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)',
-                          }}
-                        >
-                          {client.avatar_url ? (
-                            <img src={client.avatar_url} alt={client.name} className="w-full h-full object-cover" />
-                          ) : (
-                            client.name[0]?.toUpperCase()
-                          )}
-                        </div>
-                        <p className="text-xs font-medium text-slate-600 dark:text-slate-400 truncate max-w-[70px]">
-                          {client.name.split(' ')[0]}
-                        </p>
-                        {rivalry.status === 'completed' && rivalry.isWinner && (
-                          <span className="text-[10px] text-amber-500 font-medium mt-0.5">🏆</span>
-                        )}
-                      </div>
-
-                      {/* Score */}
-                      <div className="flex flex-col items-center px-4">
-                        <div className="text-2xl font-black tracking-tight">
-                          <span className={clientWinning ? 'text-emerald-500' : isTied ? 'text-slate-700 dark:text-white' : 'text-slate-400'}>
-                            {rivalry.clientScore}
-                          </span>
-                          <span className="text-slate-300 dark:text-slate-600 mx-1.5">-</span>
-                          <span className={rivalWinning ? 'text-emerald-500' : isTied ? 'text-slate-700 dark:text-white' : 'text-slate-400'}>
-                            {rivalry.rivalScore}
-                          </span>
-                        </div>
-                        <div className="bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                          VS
-                        </div>
-                      </div>
-
-                      {/* Rival */}
-                      <div className="flex flex-col items-center">
-                        <div
-                          className="w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold text-white mb-1.5 overflow-hidden"
-                          style={{
-                            background: 'linear-gradient(135deg, #f59e0b 0%, #f59e0b99 100%)',
-                            boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)',
-                          }}
-                        >
-                          {rivalry.rival.avatar_url ? (
-                            <img src={rivalry.rival.avatar_url} alt={rivalry.rival.name} className="w-full h-full object-cover" />
-                          ) : (
-                            rivalry.rival.name[0]?.toUpperCase()
-                          )}
-                        </div>
-                        <p className="text-xs font-medium text-slate-600 dark:text-slate-400 truncate max-w-[70px]">
-                          {rivalry.rival.name.split(' ')[0]}
-                        </p>
-                        {rivalry.status === 'completed' && !rivalry.isWinner && !rivalry.isTied && (
-                          <span className="text-[10px] text-amber-500 font-medium mt-0.5">🏆</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Progress Bar */}
-                    {isActive && (
-                      <div>
-                        <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                          <span>{new Date(rivalry.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                          <span>{daysLeft > 0 ? `${daysLeft}d left` : 'Ending'}</span>
-                        </div>
-                        <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-purple-500 to-amber-500 rounded-full transition-all duration-300"
-                            style={{ width: `${progress}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Completed status */}
-                    {!isActive && (
-                      <div className="text-center text-xs text-slate-400 dark:text-slate-500">
-                        {rivalry.isWinner ? (
-                          <span className="text-emerald-500 font-medium">Victory!</span>
-                        ) : rivalry.isTied ? (
-                          <span>Draw - Ended {new Date(rivalry.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                        ) : (
-                          <span>Ended {new Date(rivalry.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                        )}
-                      </div>
-                    )}
-                  </Link>
-                )
-              })}
-            </div>
-          </div>
-        )}
 
         {/* Archive History Section */}
         {(archivedPrograms.length > 0 || archivedHabits.length > 0) && (

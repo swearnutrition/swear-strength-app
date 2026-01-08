@@ -143,17 +143,6 @@ export default async function ClientDetailPage({ params }: PageProps) {
     .gte('completed_date', twentyEightDaysAgo.toISOString().split('T')[0])
     .order('completed_date', { ascending: false })
 
-  // Get rivalries (active and completed)
-  const { data: rivalries } = await supabase
-    .from('habit_rivalries')
-    .select(`
-      *,
-      challenger:profiles!habit_rivalries_challenger_id_fkey(id, name, avatar_url),
-      opponent:profiles!habit_rivalries_opponent_id_fkey(id, name, avatar_url)
-    `)
-    .or(`challenger_id.eq.${id},opponent_id.eq.${id}`)
-    .order('created_at', { ascending: false })
-
   // Get coach's programs for assignment
   const { data: coachPrograms } = await supabase
     .from('programs')
@@ -346,60 +335,6 @@ export default async function ClientDetailPage({ params }: PageProps) {
     }
   })
 
-  // Calculate rivalry scores
-  const rivalryHabitIds = (rivalries || []).map(r => r.id)
-  const { data: rivalryHabits } = await supabase
-    .from('client_habits')
-    .select('id, client_id, rivalry_id')
-    .in('rivalry_id', rivalryHabitIds.length > 0 ? rivalryHabitIds : ['none'])
-
-  const rHabitIds = (rivalryHabits || []).map(h => h.id)
-  const { data: rivalryCompletions } = await supabase
-    .from('habit_completions')
-    .select('client_habit_id, client_id, completed_date')
-    .in('client_habit_id', rHabitIds.length > 0 ? rHabitIds : ['none'])
-
-  const rivalriesWithScores = (rivalries || []).map(rivalry => {
-    const rHabits = (rivalryHabits || []).filter(h => h.rivalry_id === rivalry.id)
-    const challengerHabitIdsList = rHabits.filter(h => h.client_id === rivalry.challenger_id).map(h => h.id)
-    const opponentHabitIdsList = rHabits.filter(h => h.client_id === rivalry.opponent_id).map(h => h.id)
-
-    const challengerScore = (rivalryCompletions || []).filter(c =>
-      challengerHabitIdsList.includes(c.client_habit_id) &&
-      c.completed_date >= rivalry.start_date &&
-      c.completed_date <= rivalry.end_date
-    ).length
-
-    const opponentScore = (rivalryCompletions || []).filter(c =>
-      opponentHabitIdsList.includes(c.client_habit_id) &&
-      c.completed_date >= rivalry.start_date &&
-      c.completed_date <= rivalry.end_date
-    ).length
-
-    const isChallenger = rivalry.challenger_id === id
-    const clientScore = isChallenger ? challengerScore : opponentScore
-    const rivalScore = isChallenger ? opponentScore : challengerScore
-    const rival = isChallenger ? rivalry.opponent : rivalry.challenger
-
-    return {
-      id: rivalry.id,
-      name: rivalry.name,
-      status: rivalry.status,
-      startDate: rivalry.start_date,
-      endDate: rivalry.end_date,
-      winnerId: rivalry.winner_id,
-      clientScore,
-      rivalScore,
-      rival: {
-        id: rival?.id,
-        name: rival?.name || 'Unknown',
-        avatar_url: rival?.avatar_url,
-      },
-      isWinner: rivalry.winner_id === id,
-      isTied: rivalry.status === 'completed' && !rivalry.winner_id,
-    }
-  })
-
   // Calculate 4-week consistency (include workouts with logged sets)
   const fourWeeksAgo = new Date()
   fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28)
@@ -469,7 +404,6 @@ export default async function ClientDetailPage({ params }: PageProps) {
         achievedAt: pr.achieved_at,
       }))}
       habitStats={habitStats}
-      rivalries={rivalriesWithScores}
       coachPrograms={(coachPrograms || []).map(p => ({ id: p.id, name: p.name }))}
       habitTemplates={(habitTemplates || []).map(h => ({ id: h.id, name: h.name, category: h.category }))}
       currentUserId={user.id}

@@ -45,19 +45,7 @@ export function AssignHabitModal({ isOpen, onClose, habits, onSuccess }: AssignH
   const [timesPerWeek, setTimesPerWeek] = useState(3)
   const [specificDays, setSpecificDays] = useState<number[]>([1, 3, 5]) // Mon, Wed, Fri
 
-  // Rivalry settings
-  const [createRivalry, setCreateRivalry] = useState(false)
-  const [rivalryName, setRivalryName] = useState('')
-  const [rivalryEndDate, setRivalryEndDate] = useState(() => {
-    const date = new Date()
-    date.setDate(date.getDate() + 30) // Default 30 days
-    return date.toISOString().split('T')[0]
-  })
-
   const supabase = createClient()
-
-  // Can only create rivalry when exactly 2 clients and 1 habit selected
-  const canCreateRivalry = selectedClients.length === 2 && habits.length === 1
 
   useEffect(() => {
     if (isOpen && habits.length > 0) {
@@ -114,31 +102,6 @@ export function AssignHabitModal({ isOpen, onClose, habits, onSuccess }: AssignH
       const { data: userData } = await supabase.auth.getUser()
       if (!userData.user) throw new Error('Not authenticated')
 
-      let rivalryId: string | null = null
-
-      // Create rivalry first if enabled
-      if (createRivalry && canCreateRivalry) {
-        const habit = habits[0]
-        const name = rivalryName.trim() || habit.name
-
-        const { data: rivalryData, error: rivalryError } = await supabase
-          .from('habit_rivalries')
-          .insert({
-            name,
-            coach_id: userData.user.id,
-            challenger_id: selectedClients[0],
-            opponent_id: selectedClients[1],
-            start_date: startDate,
-            end_date: rivalryEndDate,
-            status: 'active',
-          })
-          .select('id')
-          .single()
-
-        if (rivalryError) throw rivalryError
-        rivalryId = rivalryData.id
-      }
-
       // Create assignments for each habit x client combination
       const assignments = []
       for (const habit of habits) {
@@ -152,7 +115,6 @@ export function AssignHabitModal({ isOpen, onClose, habits, onSuccess }: AssignH
             custom_frequency: frequency,
             custom_times_per_week: frequency === 'times_per_week' ? timesPerWeek : null,
             custom_specific_days: frequency === 'specific_days' ? specificDays : null,
-            rivalry_id: rivalryId, // Link to rivalry if created
           })
         }
       }
@@ -181,11 +143,6 @@ export function AssignHabitModal({ isOpen, onClose, habits, onSuccess }: AssignH
     setFrequency('daily')
     setTimesPerWeek(3)
     setSpecificDays([1, 3, 5])
-    setCreateRivalry(false)
-    setRivalryName('')
-    const defaultEndDate = new Date()
-    defaultEndDate.setDate(defaultEndDate.getDate() + 30)
-    setRivalryEndDate(defaultEndDate.toISOString().split('T')[0])
     onClose()
   }
 
@@ -401,98 +358,6 @@ export function AssignHabitModal({ isOpen, onClose, habits, onSuccess }: AssignH
             </div>
           </div>
 
-          {/* Rivalry Option - only show when 2 clients and 1 habit selected */}
-          {canCreateRivalry && (
-            <div className="border border-orange-200 dark:border-orange-500/30 bg-orange-50 dark:bg-orange-500/10 rounded-xl p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-orange-100 dark:bg-orange-500/20 flex items-center justify-center">
-                    <svg className="w-5 h-5 text-orange-600 dark:text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h4 className="font-medium text-slate-900 dark:text-white">Create Rivalry</h4>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                      Pit these 2 clients against each other
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCreateRivalry(!createRivalry)}
-                  className={`relative w-12 h-6 rounded-full transition-colors ${
-                    createRivalry ? 'bg-orange-500' : 'bg-slate-200 dark:bg-slate-700'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                      createRivalry ? 'translate-x-6' : ''
-                    }`}
-                  />
-                </button>
-              </div>
-
-              {createRivalry && (
-                <div className="space-y-3 pt-2 border-t border-orange-200 dark:border-orange-500/30">
-                  {/* Show selected clients */}
-                  <div className="flex items-center gap-2">
-                    {selectedClients.map((clientId, idx) => {
-                      const client = clients.find(c => c.id === clientId)
-                      return (
-                        <div key={clientId} className="flex items-center gap-2">
-                          {idx > 0 && (
-                            <span className="text-orange-500 font-bold text-sm">VS</span>
-                          )}
-                          <div className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-800 rounded-lg">
-                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-slate-200 to-slate-300 dark:from-slate-600 dark:to-slate-700 flex items-center justify-center text-xs font-medium">
-                              {client?.name?.[0]?.toUpperCase() || 'U'}
-                            </div>
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                              {client?.name || client?.email}
-                            </span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                      Rivalry Name (optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={rivalryName}
-                      onChange={(e) => setRivalryName(e.target.value)}
-                      placeholder={habits[0]?.name || 'Enter rivalry name...'}
-                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/50"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                      Rivalry End Date
-                    </label>
-                    <input
-                      type="date"
-                      value={rivalryEndDate}
-                      min={startDate}
-                      onChange={(e) => setRivalryEndDate(e.target.value)}
-                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Hint when close to rivalry conditions */}
-          {!canCreateRivalry && selectedClients.length > 0 && selectedClients.length !== 2 && habits.length === 1 && (
-            <p className="text-sm text-slate-500 dark:text-slate-400 text-center">
-              Select exactly 2 clients to enable rivalry mode
-            </p>
-          )}
         </div>
 
         {/* Footer */}

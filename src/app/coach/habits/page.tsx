@@ -32,50 +32,6 @@ export default async function HabitsPage() {
     .select('*')
     .gte('completed_date', twentyEightDaysAgo.toISOString().split('T')[0])
 
-  // Get active rivalries with scores
-  const { data: rivalries } = await supabase
-    .from('habit_rivalries')
-    .select(`
-      *,
-      challenger:profiles!habit_rivalries_challenger_id_fkey(id, name, avatar_url),
-      opponent:profiles!habit_rivalries_opponent_id_fkey(id, name, avatar_url)
-    `)
-    .eq('status', 'active')
-
-  // Get rivalry completion counts for scoring
-  const rivalryIds = (rivalries || []).map(r => r.id)
-  let rivalryCompletions: { rivalry_id: string; user_id: string; count: number }[] = []
-
-  if (rivalryIds.length > 0) {
-    const { data: rivalryCompletionData } = await supabase
-      .from('habit_completions')
-      .select(`
-        client_id,
-        client_habit_id,
-        client_habits!inner(rivalry_id)
-      `)
-      .in('client_habits.rivalry_id', rivalryIds)
-
-    const completionCounts: Record<string, Record<string, number>> = {}
-    for (const comp of rivalryCompletionData || []) {
-      const clientHabitData = comp.client_habits as unknown as { rivalry_id: string } | null
-      const rivalryId = clientHabitData?.rivalry_id
-      if (rivalryId) {
-        if (!completionCounts[rivalryId]) completionCounts[rivalryId] = {}
-        if (!completionCounts[rivalryId][comp.client_id]) completionCounts[rivalryId][comp.client_id] = 0
-        completionCounts[rivalryId][comp.client_id]++
-      }
-    }
-
-    rivalryCompletions = Object.entries(completionCounts).flatMap(([rivalryId, users]) =>
-      Object.entries(users).map(([userId, count]) => ({
-        rivalry_id: rivalryId,
-        user_id: userId,
-        count,
-      }))
-    )
-  }
-
   // Build client data with habits and completions
   const clientMap = new Map<string, {
     id: string
@@ -176,42 +132,9 @@ export default async function HabitsPage() {
     }
   })
 
-  // Process rivalries with scores
-  const processedRivalries = (rivalries || []).map(rivalry => {
-    const challengerScore = rivalryCompletions
-      .filter(rc => rc.rivalry_id === rivalry.id && rc.user_id === rivalry.challenger_id)
-      .reduce((sum, rc) => sum + rc.count, 0)
-
-    const opponentScore = rivalryCompletions
-      .filter(rc => rc.rivalry_id === rivalry.id && rc.user_id === rivalry.opponent_id)
-      .reduce((sum, rc) => sum + rc.count, 0)
-
-    return {
-      id: rivalry.id,
-      name: rivalry.name,
-      endDate: rivalry.end_date,
-      startDate: rivalry.start_date,
-      player1: {
-        id: rivalry.challenger_id,
-        name: rivalry.challenger?.name || 'Unknown',
-        avatar: rivalry.challenger?.name?.[0]?.toUpperCase() || 'C',
-        avatar_url: rivalry.challenger?.avatar_url,
-        score: challengerScore,
-      },
-      player2: {
-        id: rivalry.opponent_id,
-        name: rivalry.opponent?.name || 'Unknown',
-        avatar: rivalry.opponent?.name?.[0]?.toUpperCase() || 'O',
-        avatar_url: rivalry.opponent?.avatar_url,
-        score: opponentScore,
-      },
-    }
-  })
-
   return (
     <HabitsDashboardClient
       clients={clients}
-      rivalries={processedRivalries}
     />
   )
 }
