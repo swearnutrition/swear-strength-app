@@ -63,7 +63,7 @@ export async function POST(
         type: 'recovery',
         email: invite.email,
         options: {
-          redirectTo: `${baseUrl}/login`,
+          redirectTo: `${baseUrl}/reset-password`,
         },
       })
 
