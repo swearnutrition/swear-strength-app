@@ -93,16 +93,19 @@ export function ClientsTable({ clients, archivedClients, workoutsByUser, pending
 
     setCancellingInvite(inviteId)
     try {
-      const { error } = await supabase
-        .from('invites')
-        .delete()
-        .eq('id', inviteId)
+      const response = await fetch(`/api/invites/${inviteId}`, {
+        method: 'DELETE',
+      })
 
-      if (error) throw error
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to cancel invite')
+      }
+
       router.refresh()
     } catch (err) {
       console.error('Failed to cancel invite:', err)
-      alert('Failed to cancel invite')
+      alert(err instanceof Error ? err.message : 'Failed to cancel invite')
     } finally {
       setCancellingInvite(null)
     }

@@ -30,11 +30,18 @@ export async function POST() {
     )
 
     // Get invite data to find coach and client info
-    const { data: invite } = await adminClient
+    // Look for the most recent unaccepted invite for this email
+    const { data: invite, error: inviteError } = await adminClient
       .from('invites')
       .select('name, created_by, client_type')
       .eq('email', user.email)
+      .is('accepted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .single()
+
+    console.log('Setup profile - looking for invite for:', user.email)
+    console.log('Setup profile - invite found:', invite, 'error:', inviteError)
 
     // Create profile using admin client
     const { error: profileError } = await adminClient
