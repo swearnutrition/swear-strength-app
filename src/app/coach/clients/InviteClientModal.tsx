@@ -41,6 +41,7 @@ export function InviteClientModal({ onClose }: InviteClientModalProps) {
       // Create invite record
       const { error: insertError } = await supabase.from('invites').insert({
         email: email.toLowerCase().trim(),
+        name: name.trim() || null,
         token,
         created_by: user.id,
         expires_at: expiresAt.toISOString(),
