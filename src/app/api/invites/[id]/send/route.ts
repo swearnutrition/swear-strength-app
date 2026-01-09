@@ -62,15 +62,33 @@ export async function POST(
       const { data: resetData, error: resetError } = await adminClient.auth.admin.generateLink({
         type: 'recovery',
         email: invite.email,
-        options: {
-          redirectTo: `${baseUrl}/reset-password`,
-        },
       })
 
       if (resetError) {
         console.error('Error generating reset link:', resetError)
         return NextResponse.json({ error: 'Failed to send password setup email' }, { status: 500 })
       }
+
+      // The action_link from Supabase looks like:
+      // https://xxx.supabase.co/auth/v1/verify?token=xxx&type=recovery&redirect_to=...
+      // We need to modify it to redirect to our reset-password page
+      // Extract the token part and rebuild the URL to point to our app
+      const actionLink = resetData.properties.action_link
+      const url = new URL(actionLink)
+      const token = url.searchParams.get('token')
+      const type = url.searchParams.get('type')
+
+      // Build a direct link to our reset-password page with the token
+      // This bypasses Supabase's redirect and goes directly to our page
+      const resetLink = `${baseUrl}/reset-password#access_token=${resetData.properties.hashed_token}&refresh_token=&type=${type}&token=${token}`
+
+      // Actually, the simpler approach is to use the Supabase verify endpoint
+      // but ensure it redirects to our reset-password page
+      // Let's use the action_link but modify the redirect_to
+      const modifiedActionLink = actionLink.replace(
+        /redirect_to=[^&]*/,
+        `redirect_to=${encodeURIComponent(`${baseUrl}/reset-password`)}`
+      )
 
       // Update invite to mark as sent
       await supabase
@@ -87,7 +105,7 @@ export async function POST(
             to: invite.email,
             template: 'client-password-setup',
             data: {
-              resetLink: resetData.properties.action_link,
+              resetLink: modifiedActionLink,
               coachName,
               clientName: invite.name,
             },

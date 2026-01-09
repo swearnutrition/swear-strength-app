@@ -19,19 +19,60 @@ export default function ResetPasswordPage() {
   // Handle recovery token and auth state changes
   useEffect(() => {
     const handleRecovery = async () => {
-      // Parse hash params from URL
+      // Log full URL for debugging
+      console.log('Reset password page - Full URL:', window.location.href)
+      console.log('Reset password page - Hash:', window.location.hash)
+      console.log('Reset password page - Search:', window.location.search)
+
+      // Parse hash params from URL (tokens come after #)
       const hashParams = new URLSearchParams(window.location.hash.substring(1))
       const accessToken = hashParams.get('access_token')
       const refreshToken = hashParams.get('refresh_token')
       const type = hashParams.get('type')
 
-      console.log('Recovery page loaded, type:', type, 'has access_token:', !!accessToken)
+      // Also check query params (some flows use ? instead of #)
+      const searchParams = new URLSearchParams(window.location.search)
+      const code = searchParams.get('code')
+      const errorParam = searchParams.get('error')
+      const errorDescription = searchParams.get('error_description')
+
+      console.log('Recovery page loaded, type:', type, 'has access_token:', !!accessToken, 'has code:', !!code)
+
+      // Handle error from Supabase redirect
+      if (errorParam) {
+        console.error('Supabase error:', errorParam, errorDescription)
+        setError(errorDescription || 'Authentication error. Please request a new reset link.')
+        setCheckingSession(false)
+        return
+      }
+
+      // Handle PKCE flow - exchange code for session
+      if (code) {
+        console.log('Exchanging code for session...')
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+
+        if (error) {
+          console.error('Error exchanging code:', error)
+          setError('Invalid or expired reset link. Please request a new one.')
+          setCheckingSession(false)
+          return
+        }
+
+        if (data.session) {
+          setSessionReady(true)
+          setEmail(data.session.user.email || '')
+          setCheckingSession(false)
+          // Clear the code from URL
+          window.history.replaceState(null, '', window.location.pathname)
+          return
+        }
+      }
 
       // If we have tokens in the hash, manually set the session
-      if (accessToken && refreshToken && type === 'recovery') {
+      if (accessToken && type === 'recovery') {
         const { data, error } = await supabase.auth.setSession({
           access_token: accessToken,
-          refresh_token: refreshToken,
+          refresh_token: refreshToken || '',
         })
 
         if (error) {
