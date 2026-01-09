@@ -52,7 +52,26 @@ export default async function ClientDashboard() {
     .single()
 
   if (!profile) {
-    redirect('/login')
+    // User exists but no profile - this shouldn't happen normally
+    // Show a helpful message instead of redirecting to avoid loops
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-slate-950">
+        <div className="text-center max-w-md">
+          <h1 className="text-2xl font-bold text-white mb-4">Account Setup Incomplete</h1>
+          <p className="text-slate-400 mb-6">
+            Your account exists but hasn&apos;t been fully set up yet. Please contact your coach to complete the setup process.
+          </p>
+          <form action="/api/auth/signout" method="POST">
+            <button
+              type="submit"
+              className="bg-purple-600 hover:bg-purple-500 text-white font-medium py-2 px-6 rounded-xl transition-colors"
+            >
+              Sign Out
+            </button>
+          </form>
+        </div>
+      </div>
+    )
   }
 
   // Get user's active program assignment (including scheduled_days)
