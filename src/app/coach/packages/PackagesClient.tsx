@@ -64,12 +64,35 @@ export function PackagesClient({ clients, completedSessionsByClient, initialSubs
   // Adjust package form state
   const [adjustment, setAdjustment] = useState(0)
   const [adjustReason, setAdjustReason] = useState('')
+  const [adjustExpiresAt, setAdjustExpiresAt] = useState<string>('')
 
   // Client detail modal state
   const [showClientDetail, setShowClientDetail] = useState(false)
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [clientBookings, setClientBookings] = useState<BookingWithDetails[]>([])
   const [loadingClientBookings, setLoadingClientBookings] = useState(false)
+  const [clientPackageHistory, setClientPackageHistory] = useState<Array<{
+    id: string
+    clientId: string
+    coachId: string
+    totalSessions: number
+    remainingSessions: number
+    sessionDurationMinutes: number
+    expiresAt: string | null
+    notes: string | null
+    createdAt: string
+    updatedAt: string
+    adjustments: Array<{
+      id: string
+      packageId: string
+      adjustment: number
+      previousBalance: number
+      newBalance: number
+      reason: string | null
+      createdAt: string
+    }>
+  }>>([])
+  const [loadingPackageHistory, setLoadingPackageHistory] = useState(false)
 
   // Packages are already transformed by the API
   const packagesWithClients = packages
@@ -155,12 +178,20 @@ export function PackagesClient({ clients, completedSessionsByClient, initialSubs
 
   const handleAdjustPackage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedPackage || adjustment === 0) return
+    if (!selectedPackage) return
+
+    // Check if there's any change
+    const currentExpiresAt = selectedPackage.expiresAt ? selectedPackage.expiresAt.split('T')[0] : ''
+    const expiresAtChanged = adjustExpiresAt !== currentExpiresAt
+    const hasAdjustment = adjustment !== 0
+
+    if (!hasAdjustment && !expiresAtChanged) return
 
     const result = await adjustPackage({
       packageId: selectedPackage.id,
       adjustment,
       reason: adjustReason || undefined,
+      expiresAt: expiresAtChanged ? (adjustExpiresAt || null) : undefined,
     })
 
     if (result) {
@@ -168,6 +199,7 @@ export function PackagesClient({ clients, completedSessionsByClient, initialSubs
       setSelectedPackage(null)
       setAdjustment(0)
       setAdjustReason('')
+      setAdjustExpiresAt('')
     }
   }
 
@@ -176,6 +208,8 @@ export function PackagesClient({ clients, completedSessionsByClient, initialSubs
     setSelectedPackage(pkg)
     setAdjustment(0)
     setAdjustReason('')
+    // Initialize expiration date - format as YYYY-MM-DD for date input
+    setAdjustExpiresAt(pkg.expiresAt ? pkg.expiresAt.split('T')[0] : '')
     setShowAdjustModal(true)
   }
 
@@ -183,27 +217,46 @@ export function PackagesClient({ clients, completedSessionsByClient, initialSubs
     setSelectedClient(client)
     setShowClientDetail(true)
     setLoadingClientBookings(true)
+    setLoadingPackageHistory(true)
 
+    // Fetch bookings
     try {
-      // Use the API endpoint which handles RLS and proper filtering
       const response = await fetch(`/api/bookings?clientId=${client.id}`)
       if (!response.ok) {
-        throw new Error('Failed to fetch bookings')
+        const errorData = await response.json().catch(() => ({}))
+        console.warn('Could not fetch bookings for client:', client.id, errorData)
+        setClientBookings([])
+      } else {
+        const data = await response.json()
+        const sortedBookings = (data.bookings || []).sort(
+          (a: BookingWithDetails, b: BookingWithDetails) =>
+            new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime()
+        )
+        setClientBookings(sortedBookings)
       }
-      const data = await response.json()
-
-      // Sort by starts_at descending (most recent first)
-      const sortedBookings = (data.bookings || []).sort(
-        (a: BookingWithDetails, b: BookingWithDetails) =>
-          new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime()
-      )
-
-      setClientBookings(sortedBookings)
     } catch (err) {
-      console.error('Error fetching client bookings:', err)
+      console.warn('Error fetching client bookings:', err)
       setClientBookings([])
     } finally {
       setLoadingClientBookings(false)
+    }
+
+    // Fetch package history
+    try {
+      const response = await fetch(`/api/session-packages/history?clientId=${client.id}`)
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        console.warn('Could not fetch package history for client:', client.id, errorData)
+        setClientPackageHistory([])
+      } else {
+        const data = await response.json()
+        setClientPackageHistory(data.packages || [])
+      }
+    } catch (err) {
+      console.warn('Error fetching package history:', err)
+      setClientPackageHistory([])
+    } finally {
+      setLoadingPackageHistory(false)
     }
   }
 
@@ -908,6 +961,28 @@ export function PackagesClient({ clients, completedSessionsByClient, initialSubs
               </div>
             </div>
 
+            {/* Expiration Date */}
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Expiration Date
+              </label>
+              <input
+                type="date"
+                value={adjustExpiresAt}
+                onChange={(e) => setAdjustExpiresAt(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-slate-800 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              />
+              {adjustExpiresAt && (
+                <button
+                  type="button"
+                  onClick={() => setAdjustExpiresAt('')}
+                  className="text-sm text-slate-400 hover:text-slate-300 mt-2"
+                >
+                  Remove expiration date
+                </button>
+              )}
+            </div>
+
             {/* Reason */}
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
@@ -917,7 +992,7 @@ export function PackagesClient({ clients, completedSessionsByClient, initialSubs
                 type="text"
                 value={adjustReason}
                 onChange={(e) => setAdjustReason(e.target.value)}
-                placeholder="e.g., Makeup session, refund, etc."
+                placeholder="e.g., Makeup session, refund, extended validity, etc."
                 className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-slate-800 text-white placeholder-slate-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               />
             </div>
@@ -927,7 +1002,11 @@ export function PackagesClient({ clients, completedSessionsByClient, initialSubs
               <Button type="button" variant="secondary" onClick={() => setShowAdjustModal(false)} className="flex-1">
                 Cancel
               </Button>
-              <Button type="submit" disabled={adjustment === 0} className="flex-1">
+              <Button
+                type="submit"
+                disabled={adjustment === 0 && adjustExpiresAt === (selectedPackage.expiresAt ? selectedPackage.expiresAt.split('T')[0] : '')}
+                className="flex-1"
+              >
                 {adjustment > 0 ? `Add ${adjustment} Sessions` : adjustment < 0 ? `Remove ${Math.abs(adjustment)} Sessions` : 'Save Changes'}
               </Button>
             </div>
@@ -942,6 +1021,7 @@ export function PackagesClient({ clients, completedSessionsByClient, initialSubs
           setShowClientDetail(false)
           setSelectedClient(null)
           setClientBookings([])
+          setClientPackageHistory([])
         }}
         title={selectedClient?.name || 'Client Details'}
       >
@@ -1115,6 +1195,111 @@ export function PackagesClient({ clients, completedSessionsByClient, initialSubs
                       </>
                     )
                   })()}
+                </div>
+              )}
+            </div>
+
+            {/* Package History */}
+            <div>
+              <h4 className="text-sm font-medium text-slate-300 mb-3">Package History</h4>
+              {loadingPackageHistory ? (
+                <div className="flex items-center justify-center py-8">
+                  <svg className="animate-spin h-6 w-6 text-purple-500" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                </div>
+              ) : clientPackageHistory.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  No packages found
+                </div>
+              ) : (
+                <div className="space-y-4 max-h-64 overflow-y-auto">
+                  {clientPackageHistory.map((pkg) => {
+                    const isExpired = pkg.expiresAt && new Date(pkg.expiresAt) <= new Date()
+                    const isDepleted = pkg.remainingSessions === 0
+                    const statusLabel = isDepleted ? 'Depleted' : isExpired ? 'Expired' : 'Active'
+                    const statusColor = isDepleted ? 'bg-slate-500/20 text-slate-400' : isExpired ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'
+
+                    return (
+                      <div key={pkg.id} className="bg-slate-800/50 rounded-xl p-4 space-y-3">
+                        {/* Package Header */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-white font-medium">
+                                {pkg.totalSessions} Session Package
+                              </span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor}`}>
+                                {statusLabel}
+                              </span>
+                            </div>
+                            <div className="text-xs text-slate-500 mt-1">
+                              Purchased {new Date(pkg.createdAt).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
+                              })}
+                              {pkg.expiresAt && (
+                                <span className="ml-2">
+                                  {isExpired ? 'Expired' : 'Expires'} {new Date(pkg.expiresAt).toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric'
+                                  })}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-lg font-bold text-white">
+                              {pkg.remainingSessions}
+                              <span className="text-slate-500 text-sm font-normal"> / {pkg.totalSessions}</span>
+                            </div>
+                            <div className="text-xs text-slate-500">remaining</div>
+                          </div>
+                        </div>
+
+                        {/* Adjustments */}
+                        {pkg.adjustments.length > 0 && (
+                          <div className="border-t border-slate-700 pt-2">
+                            <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">
+                              Adjustments
+                            </div>
+                            <div className="space-y-1">
+                              {pkg.adjustments.map((adj) => (
+                                <div key={adj.id} className="flex items-center justify-between text-sm">
+                                  <div className="flex items-center gap-2">
+                                    <span className={adj.adjustment > 0 ? 'text-green-400' : 'text-red-400'}>
+                                      {adj.adjustment > 0 ? '+' : ''}{adj.adjustment}
+                                    </span>
+                                    {adj.reason && (
+                                      <span className="text-slate-500 text-xs truncate max-w-[150px]">
+                                        {adj.reason}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-slate-500 text-xs">
+                                    {new Date(adj.createdAt).toLocaleDateString('en-US', {
+                                      month: 'short',
+                                      day: 'numeric'
+                                    })}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Notes */}
+                        {pkg.notes && (
+                          <div className="border-t border-slate-700 pt-2">
+                            <div className="text-xs text-slate-400">{pkg.notes}</div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>

@@ -27,16 +27,20 @@ export async function POST(
   }
 
   // 3. Parse request body
-  let payload: { adjustment: number; reason?: string }
+  let payload: { adjustment: number; reason?: string; expiresAt?: string | null }
   try {
     payload = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  if (typeof payload.adjustment !== 'number' || payload.adjustment === 0) {
+  // Either adjustment or expiration change is required
+  const hasAdjustment = typeof payload.adjustment === 'number' && payload.adjustment !== 0
+  const hasExpiresAtChange = 'expiresAt' in payload
+
+  if (!hasAdjustment && !hasExpiresAtChange) {
     return NextResponse.json(
-      { error: 'adjustment must be a non-zero number' },
+      { error: 'Must provide adjustment or expiresAt change' },
       { status: 400 }
     )
   }
@@ -53,44 +57,61 @@ export async function POST(
     return NextResponse.json({ error: 'Package not found' }, { status: 404 })
   }
 
-  const newBalance = currentPackage.remaining_sessions + payload.adjustment
-  if (newBalance < 0) {
+  // Calculate new balance if there's an adjustment
+  const newBalance = hasAdjustment
+    ? currentPackage.remaining_sessions + payload.adjustment
+    : currentPackage.remaining_sessions
+
+  if (hasAdjustment && newBalance < 0) {
     return NextResponse.json(
       { error: 'Cannot reduce balance below 0' },
       { status: 400 }
     )
   }
 
-  // 5. Update package and create adjustment record
+  // 5. Update package and optionally create adjustment record
   try {
-    // Update remaining sessions
+    // Build update object
+    const updateData: Record<string, unknown> = {}
+
+    if (hasAdjustment) {
+      updateData.remaining_sessions = newBalance
+      if (payload.adjustment > 0) {
+        updateData.total_sessions = currentPackage.total_sessions + payload.adjustment
+      }
+    }
+
+    if (hasExpiresAtChange) {
+      updateData.expires_at = payload.expiresAt || null
+    }
+
+    // Update package
     const { error: updateError } = await supabase
       .from('session_packages')
-      .update({
-        remaining_sessions: newBalance,
-        total_sessions: payload.adjustment > 0
-          ? currentPackage.total_sessions + payload.adjustment
-          : currentPackage.total_sessions,
-      })
+      .update(updateData)
       .eq('id', packageId)
 
     if (updateError) throw updateError
 
-    // Create adjustment record
-    const { data: adjustment, error: adjustmentError } = await supabase
-      .from('session_package_adjustments')
-      .insert({
-        package_id: packageId,
-        adjustment: payload.adjustment,
-        previous_balance: currentPackage.remaining_sessions,
-        new_balance: newBalance,
-        reason: payload.reason || null,
-        adjusted_by: user.id,
-      })
-      .select()
-      .single()
+    // Create adjustment record only if there was a session adjustment
+    let adjustmentRecord = null
+    if (hasAdjustment) {
+      const { data: adjustment, error: adjustmentError } = await supabase
+        .from('session_package_adjustments')
+        .insert({
+          package_id: packageId,
+          adjustment: payload.adjustment,
+          previous_balance: currentPackage.remaining_sessions,
+          new_balance: newBalance,
+          reason: payload.reason || null,
+          adjusted_by: user.id,
+        })
+        .select()
+        .single()
 
-    if (adjustmentError) throw adjustmentError
+      if (adjustmentError) throw adjustmentError
+      adjustmentRecord = adjustment
+    }
 
     // Fetch updated package
     const { data: updatedPackage } = await supabase
@@ -104,7 +125,7 @@ export async function POST(
 
     return NextResponse.json({
       package: updatedPackage,
-      adjustment,
+      adjustment: adjustmentRecord,
     })
   } catch (error) {
     console.error('Error adjusting session package:', error)

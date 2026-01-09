@@ -108,6 +108,7 @@ export function useSessionPackages(clientId?: string): UseSessionPackagesReturn 
         body: JSON.stringify({
           adjustment: payload.adjustment,
           reason: payload.reason,
+          expiresAt: payload.expiresAt,
         }),
       })
 

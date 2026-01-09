@@ -50,6 +50,7 @@ export interface AdjustSessionPackagePayload {
   packageId: string
   adjustment: number
   reason?: string
+  expiresAt?: string | null  // New expiration date
 }
 
 // Client Subscriptions

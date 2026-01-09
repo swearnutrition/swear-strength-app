@@ -50,11 +50,13 @@ export function ClientsTable({ clients, archivedClients, workoutsByUser, pending
   const [searchQuery, setSearchQuery] = useState('')
   const [filter, setFilter] = useState<'all' | 'active' | 'pending' | 'archived'>('all')
   const [selectedInvites, setSelectedInvites] = useState<Set<string>>(new Set())
+  const [selectedClients, setSelectedClients] = useState<Set<string>>(new Set())
   const [bulkModalOpen, setBulkModalOpen] = useState(false)
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [cancellingInvite, setCancellingInvite] = useState<string | null>(null)
   const [sendingInvite, setSendingInvite] = useState<string | null>(null)
   const [bulkSending, setBulkSending] = useState(false)
+  const [bulkProcessing, setBulkProcessing] = useState(false)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [menuPosition, setMenuPosition] = useState<'below' | 'above'>('below')
   const [processingClient, setProcessingClient] = useState<string | null>(null)
@@ -162,6 +164,37 @@ export function ClientsTable({ clients, archivedClients, workoutsByUser, pending
     }
   }
 
+  const handleBulkDeleteInvites = async () => {
+    if (selectedInvites.size === 0) return
+    if (!confirm(`Are you sure you want to delete ${selectedInvites.size} invite(s)? This cannot be undone.`)) return
+
+    setBulkProcessing(true)
+    try {
+      const response = await fetch('/api/invites/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inviteIds: Array.from(selectedInvites),
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete invites')
+      }
+
+      alert(`Successfully deleted ${data.deleted} invite(s)${data.failed > 0 ? `. ${data.failed} failed.` : ''}`)
+      setSelectedInvites(new Set())
+      router.refresh()
+    } catch (err) {
+      console.error('Failed to delete invites:', err)
+      alert(err instanceof Error ? err.message : 'Failed to delete invites')
+    } finally {
+      setBulkProcessing(false)
+    }
+  }
+
   const toggleInviteSelection = (inviteId: string) => {
     setSelectedInvites((prev) => {
       const newSet = new Set(prev)
@@ -179,6 +212,121 @@ export function ClientsTable({ clients, archivedClients, workoutsByUser, pending
       setSelectedInvites(new Set())
     } else {
       setSelectedInvites(new Set(pendingInvites.map((i) => i.id)))
+    }
+  }
+
+  const toggleClientSelection = (clientId: string) => {
+    setSelectedClients((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(clientId)) {
+        newSet.delete(clientId)
+      } else {
+        newSet.add(clientId)
+      }
+      return newSet
+    })
+  }
+
+  const toggleAllClients = () => {
+    const currentList = filter === 'archived' ? filteredArchivedClients : filteredClients
+    if (selectedClients.size === currentList.length) {
+      setSelectedClients(new Set())
+    } else {
+      setSelectedClients(new Set(currentList.map((c) => c.id)))
+    }
+  }
+
+  const handleBulkArchiveClients = async () => {
+    if (selectedClients.size === 0) return
+    if (!confirm(`Are you sure you want to archive ${selectedClients.size} client(s)?`)) return
+
+    setBulkProcessing(true)
+    try {
+      const response = await fetch('/api/coach/clients/bulk-archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientIds: Array.from(selectedClients),
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to archive clients')
+      }
+
+      alert(`Successfully archived ${data.archived} client(s)${data.failed > 0 ? `. ${data.failed} failed.` : ''}`)
+      setSelectedClients(new Set())
+      router.refresh()
+    } catch (err) {
+      console.error('Failed to archive clients:', err)
+      alert(err instanceof Error ? err.message : 'Failed to archive clients')
+    } finally {
+      setBulkProcessing(false)
+    }
+  }
+
+  const handleBulkRestoreClients = async () => {
+    if (selectedClients.size === 0) return
+    if (!confirm(`Are you sure you want to restore ${selectedClients.size} client(s)?`)) return
+
+    setBulkProcessing(true)
+    try {
+      const response = await fetch('/api/coach/clients/bulk-restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientIds: Array.from(selectedClients),
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to restore clients')
+      }
+
+      alert(`Successfully restored ${data.restored} client(s)${data.failed > 0 ? `. ${data.failed} failed.` : ''}`)
+      setSelectedClients(new Set())
+      router.refresh()
+    } catch (err) {
+      console.error('Failed to restore clients:', err)
+      alert(err instanceof Error ? err.message : 'Failed to restore clients')
+    } finally {
+      setBulkProcessing(false)
+    }
+  }
+
+  const handleBulkDeleteClients = async () => {
+    if (selectedClients.size === 0) return
+    if (!confirm(`Are you sure you want to permanently delete ${selectedClients.size} client(s)? This cannot be undone.`)) return
+    if (!confirm(`This is your final warning. All data for these ${selectedClients.size} client(s) will be permanently deleted. Continue?`)) return
+
+    setBulkProcessing(true)
+    try {
+      const response = await fetch('/api/coach/clients/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientIds: Array.from(selectedClients),
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete clients')
+      }
+
+      alert(`Successfully deleted ${data.deleted} client(s)${data.failed > 0 ? `. ${data.failed} failed.` : ''}`)
+      setSelectedClients(new Set())
+      router.refresh()
+    } catch (err) {
+      console.error('Failed to delete clients:', err)
+      alert(err instanceof Error ? err.message : 'Failed to delete clients')
+    } finally {
+      setBulkProcessing(false)
     }
   }
 
@@ -399,41 +547,172 @@ export function ClientsTable({ clients, archivedClients, workoutsByUser, pending
         )}
       </div>
 
-      {/* Bulk Action Bar */}
+      {/* Bulk Action Bar for Invites */}
       {selectedInvites.size > 0 && (
         <div className="mb-4 bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/20 rounded-xl p-4 flex items-center justify-between">
           <span className="text-purple-600 dark:text-purple-400 font-medium">
             {selectedInvites.size} invite{selectedInvites.size !== 1 ? 's' : ''} selected
           </span>
-          <button
-            onClick={handleBulkSendInvites}
-            disabled={bulkSending}
-            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-medium py-2 px-4 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {bulkSending ? (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleBulkSendInvites}
+              disabled={bulkSending || bulkProcessing}
+              className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-medium py-2 px-4 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {bulkSending ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  Send {selectedInvites.size}
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleBulkDeleteInvites}
+              disabled={bulkSending || bulkProcessing}
+              className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-medium py-2 px-4 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {bulkProcessing ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Delete {selectedInvites.size}
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Action Bar for Clients */}
+      {selectedClients.size > 0 && (
+        <div className="mb-4 bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/20 rounded-xl p-4 flex items-center justify-between">
+          <span className="text-purple-600 dark:text-purple-400 font-medium">
+            {selectedClients.size} client{selectedClients.size !== 1 ? 's' : ''} selected
+          </span>
+          <div className="flex items-center gap-2">
+            {filter === 'archived' ? (
               <>
-                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                Sending...
+                <button
+                  onClick={handleBulkRestoreClients}
+                  disabled={bulkProcessing}
+                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2 px-4 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {bulkProcessing ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Restore {selectedClients.size}
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={handleBulkDeleteClients}
+                  disabled={bulkProcessing}
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-medium py-2 px-4 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {bulkProcessing ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Delete {selectedClients.size}
+                    </>
+                  )}
+                </button>
               </>
             ) : (
               <>
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                Send {selectedInvites.size} Invite{selectedInvites.size !== 1 ? 's' : ''}
+                <button
+                  onClick={handleBulkArchiveClients}
+                  disabled={bulkProcessing}
+                  className="flex items-center gap-2 bg-slate-600 hover:bg-slate-500 text-white font-medium py-2 px-4 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {bulkProcessing ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                      </svg>
+                      Archive {selectedClients.size}
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={handleBulkDeleteClients}
+                  disabled={bulkProcessing}
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-medium py-2 px-4 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {bulkProcessing ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Delete {selectedClients.size}
+                    </>
+                  )}
+                </button>
               </>
             )}
-          </button>
+          </div>
         </div>
       )}
 
       {/* Table */}
-      <div className="bg-white dark:bg-slate-900/50 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+      <div className="bg-white dark:bg-slate-900/50 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-2xl overflow-visible shadow-sm">
         {/* Table Header */}
         <div className="grid grid-cols-12 gap-4 px-6 py-4 border-b border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-500 uppercase tracking-wider">
+          {/* Checkbox column for pending invites */}
           {showPending && pendingInvites.length > 0 && (
             <div className="col-span-1 flex items-center">
               <input
@@ -444,7 +723,18 @@ export function ClientsTable({ clients, archivedClients, workoutsByUser, pending
               />
             </div>
           )}
-          <div className={showPending && pendingInvites.length > 0 ? 'col-span-2' : 'col-span-3'}>Client</div>
+          {/* Checkbox column for active/archived clients */}
+          {(showClients || showArchived) && !showPending && (
+            <div className="col-span-1 flex items-center">
+              <input
+                type="checkbox"
+                checked={selectedClients.size === (filter === 'archived' ? filteredArchivedClients.length : filteredClients.length) && (filter === 'archived' ? filteredArchivedClients.length : filteredClients.length) > 0}
+                onChange={toggleAllClients}
+                className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-purple-600 focus:ring-purple-500"
+              />
+            </div>
+          )}
+          <div className={(showPending && pendingInvites.length > 0) || ((showClients || showArchived) && !showPending) ? 'col-span-2' : 'col-span-3'}>Client</div>
           <div className="col-span-4">Program</div>
           <div className="col-span-3">Last 7 Days</div>
           <div className="col-span-2 text-right">Status</div>
@@ -562,19 +852,29 @@ export function ClientsTable({ clients, archivedClients, workoutsByUser, pending
               const clientWorkouts = workoutsByUser[client.id] || []
 
               return (
-                <Link
+                <div
                   key={client.id}
-                  href={`/coach/clients/${client.id}`}
                   className="grid grid-cols-12 gap-4 px-6 py-4 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors items-center group"
                 >
+                  {/* Checkbox for selection when not showing pending */}
+                  {!showPending && (
+                    <div className="col-span-1 flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedClients.has(client.id)}
+                        onChange={() => toggleClientSelection(client.id)}
+                        className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-purple-600 focus:ring-purple-500"
+                      />
+                    </div>
+                  )}
                   {/* Checkbox placeholder for alignment when pending invites exist */}
                   {showPending && pendingInvites.length > 0 && (
                     <div className="col-span-1" />
                   )}
 
                   {/* Client */}
-                  <div className={showPending && pendingInvites.length > 0 ? 'col-span-2' : 'col-span-3'} >
-                    <div className="flex items-center gap-3">
+                  <div className={(showPending && pendingInvites.length > 0) || !showPending ? 'col-span-2' : 'col-span-3'} >
+                    <Link href={`/coach/clients/${client.id}`} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-800 flex items-center justify-center text-slate-700 dark:text-white font-medium overflow-hidden">
                         {client.avatar_url ? (
                           <img
@@ -587,7 +887,7 @@ export function ClientsTable({ clients, archivedClients, workoutsByUser, pending
                         )}
                       </div>
                       <span className="font-medium text-slate-900 dark:text-white truncate">{client.name || client.email}</span>
-                    </div>
+                    </Link>
                   </div>
 
                   {/* Program */}
@@ -696,7 +996,7 @@ export function ClientsTable({ clients, archivedClients, workoutsByUser, pending
                       )}
                     </div>
                   </div>
-                </Link>
+                </div>
               )
             })}
 
@@ -709,13 +1009,18 @@ export function ClientsTable({ clients, archivedClients, workoutsByUser, pending
                   key={client.id}
                   className="grid grid-cols-12 gap-4 px-6 py-4 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors items-center group"
                 >
-                  {/* Checkbox placeholder for alignment */}
-                  {showPending && pendingInvites.length > 0 && (
-                    <div className="col-span-1" />
-                  )}
+                  {/* Checkbox for archived client selection */}
+                  <div className="col-span-1 flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedClients.has(client.id)}
+                      onChange={() => toggleClientSelection(client.id)}
+                      className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-purple-600 focus:ring-purple-500"
+                    />
+                  </div>
 
                   {/* Client */}
-                  <div className={showPending && pendingInvites.length > 0 ? 'col-span-2' : 'col-span-3'}>
+                  <div className="col-span-2">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-300 to-slate-400 dark:from-slate-600 dark:to-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 font-medium overflow-hidden opacity-60">
                         {client.avatar_url ? (
