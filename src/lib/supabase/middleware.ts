@@ -55,7 +55,15 @@ export async function updateSession(request: NextRequest) {
       .eq('id', user.id)
       .single()
 
-    const isCoach = profile?.role === 'coach'
+    // If user has no profile yet, don't do any role-based redirects
+    // Let them stay on public pages or get handled by individual page logic
+    if (!profile) {
+      // Only redirect away from login to avoid loops - send to a setup page or let them stay
+      // For now, just let the request through - the page will handle missing profile
+      return supabaseResponse
+    }
+
+    const isCoach = profile.role === 'coach'
     const isCoachRoute = pathname.startsWith('/coach') || pathname.startsWith('/api/coach')
     const isClientRoute = !isCoachRoute && !isPublicRoute && !isApiRoute
 
