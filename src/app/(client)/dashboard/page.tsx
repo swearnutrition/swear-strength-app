@@ -52,8 +52,47 @@ export default async function ClientDashboard() {
     .single()
 
   if (!profile) {
-    // User exists but no profile - this shouldn't happen normally
-    // Show a helpful message instead of redirecting to avoid loops
+    // User exists but no profile - try to create it now
+    // This handles cases where the profile setup failed during password reset
+    const { createClient: createAdminClient } = await import('@supabase/supabase-js')
+    const adminClient = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
+    // Try to find invite and create profile
+    const { data: invite } = await adminClient
+      .from('invites')
+      .select('name, created_by, client_type')
+      .ilike('email', user.email || '')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    const { error: profileError } = await adminClient
+      .from('profiles')
+      .insert({
+        id: user.id,
+        email: user.email,
+        name: invite?.name || user.email?.split('@')[0] || 'User',
+        role: 'client',
+        coach_id: invite?.created_by || null,
+        client_type: invite?.client_type || 'online',
+      })
+
+    if (!profileError) {
+      // Profile created successfully, mark invite as accepted
+      if (invite) {
+        await adminClient
+          .from('invites')
+          .update({ accepted_at: new Date().toISOString() })
+          .ilike('email', user.email || '')
+      }
+      // Redirect to reload the page with the new profile
+      redirect('/dashboard')
+    }
+
+    // If we still can't create the profile, show error
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-slate-950">
         <div className="text-center max-w-md">
