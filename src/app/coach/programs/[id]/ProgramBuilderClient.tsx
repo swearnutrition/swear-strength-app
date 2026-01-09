@@ -602,9 +602,30 @@ export function ProgramBuilderClient({ program: initialProgram, exercises, templ
     setSaving(true)
     try {
       await supabase.from('program_weeks').delete().eq('id', weekId)
+
+      // Get remaining weeks after deletion
+      const remainingWeeks = program.program_weeks.filter(w => w.id !== weekId)
+
+      // Renumber weeks to be sequential (1, 2, 3...)
+      const updates = remainingWeeks.map((week, index) => {
+        const newNum = index + 1
+        if (week.week_number !== newNum) {
+          return supabase.from('program_weeks').update({ week_number: newNum }).eq('id', week.id)
+        }
+        return null
+      }).filter(Boolean)
+
+      if (updates.length > 0) {
+        await Promise.all(updates)
+      }
+
+      // Update local state with renumbered weeks
       setProgram(p => ({
         ...p,
-        program_weeks: p.program_weeks.filter(w => w.id !== weekId),
+        program_weeks: remainingWeeks.map((week, index) => ({
+          ...week,
+          week_number: index + 1
+        })),
       }))
     } catch (err) {
       console.error('Error deleting week:', err)

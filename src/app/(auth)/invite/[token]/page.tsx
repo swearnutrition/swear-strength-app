@@ -148,12 +148,14 @@ export default function AcceptInvitePage() {
         body: JSON.stringify({
           inviteId: inviteData!.id,
           clientType,
+          userId: authData.user.id,
         }),
       })
 
       if (!acceptRes.ok) {
         const errorData = await acceptRes.json()
         console.error('Failed to accept invite:', errorData)
+        // Don't block navigation - user account is created, they can still use the app
       }
 
       router.push('/dashboard')

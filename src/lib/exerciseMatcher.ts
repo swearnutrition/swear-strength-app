@@ -121,8 +121,7 @@ export function matchExercises(
         status: 'fuzzy',
         matchedExercise: normalizedMatch,
         suggestions: [normalizedMatch],
-        resolution: 'use_match',
-        selectedExerciseId: normalizedMatch.id,
+        // Don't auto-resolve fuzzy matches - let user confirm or create new
       })
       continue
     }
@@ -141,14 +140,12 @@ export function matchExercises(
       .slice(0, 5)
 
     if (scored.length > 0 && scored[0].score > 0.6) {
-      // Good fuzzy match
+      // Good fuzzy match - don't auto-resolve, let user confirm or create new
       matches.push({
         parsedName,
         status: 'fuzzy',
         matchedExercise: scored[0].exercise,
         suggestions: scored.map(s => s.exercise),
-        resolution: 'use_match',
-        selectedExerciseId: scored[0].exercise.id,
       })
     } else {
       // Unmatched
