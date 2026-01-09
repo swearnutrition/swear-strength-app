@@ -10,6 +10,7 @@ interface InviteData {
   id: string
   email: string
   coach_name: string
+  coach_id: string
   expires_at: string
 }
 
@@ -81,6 +82,7 @@ export default function AcceptInvitePage() {
           id: inviteData.id,
           email: inviteData.email,
           coach_name: coachName,
+          coach_id: inviteData.created_by,
           expires_at: inviteData.expires_at,
         })
       } catch {
@@ -145,14 +147,20 @@ export default function AcceptInvitePage() {
         .update({ accepted_at: new Date().toISOString() })
         .eq('token', token)
 
-      // Update profile with invite info and client type
-      await supabase
+      // Update profile with invite info, client type, and coach link
+      // This update triggers the welcome message to be sent
+      const { error: profileUpdateError } = await supabase
         .from('profiles')
         .update({
+          invited_by: inviteData!.coach_id,
           invite_accepted_at: new Date().toISOString(),
           client_type: clientType,
         })
         .eq('id', authData.user.id)
+
+      if (profileUpdateError) {
+        console.error('Failed to update profile with invite info:', profileUpdateError)
+      }
 
       // Migrate any pre-configured data (packages, habits, programs, conversations, bookings)
       // from invite_id to the new client_id
