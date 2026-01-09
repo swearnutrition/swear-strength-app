@@ -29,7 +29,7 @@ export async function PATCH(
   // 3. Verify package exists and belongs to this coach
   const { data: pkg, error: fetchError } = await supabase
     .from('session_packages')
-    .select('id, coach_id, client_id, invite_id')
+    .select('id, coach_id, client_id')
     .eq('id', packageId)
     .single()
 
@@ -43,19 +43,25 @@ export async function PATCH(
 
   // 4. Parse request body
   const body = await request.json()
-  const { clientId } = body
+  const { clientId, expiresAt } = body
 
-  if (!clientId) {
-    return NextResponse.json({ error: 'clientId is required' }, { status: 400 })
+  // Build update object with only provided fields
+  const updateData: Record<string, unknown> = {}
+  if (clientId !== undefined) {
+    updateData.client_id = clientId
+  }
+  if (expiresAt !== undefined) {
+    updateData.expires_at = expiresAt
   }
 
-  // 5. Update the package - set client_id and clear invite_id
+  if (Object.keys(updateData).length === 0) {
+    return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
+  }
+
+  // 5. Update the package
   const { data: updatedPkg, error: updateError } = await supabase
     .from('session_packages')
-    .update({
-      client_id: clientId,
-      invite_id: null,
-    })
+    .update(updateData)
     .eq('id', packageId)
     .select()
     .single()

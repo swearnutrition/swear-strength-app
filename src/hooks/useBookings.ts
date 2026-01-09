@@ -107,7 +107,6 @@ export function useBookings(options: UseBookingsOptions = {}): UseBookingsReturn
           packageId: payload.packageId,
           oneOffClientName: payload.oneOffClientName,
           isOneOff: payload.isOneOff,
-          inviteId: payload.inviteId, // For pending client bookings
         }),
       })
 

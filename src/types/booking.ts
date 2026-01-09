@@ -56,8 +56,7 @@ export interface AdjustSessionPackagePayload {
 // Client Subscriptions
 export interface ClientSubscription {
   id: string
-  clientId: string | null
-  inviteId: string | null
+  clientId: string
   coachId: string
   subscriptionType: SubscriptionType
   monthlySessions: number | null  // Only for hybrid
@@ -73,12 +72,11 @@ export interface ClientSubscription {
     name: string
     email: string
     avatarUrl: string | null
-    isPending?: boolean
   } | null
 }
 
 export interface CreateSubscriptionPayload {
-  clientId: string  // Can be 'pending:inviteId' for pending clients
+  clientId: string
   subscriptionType: SubscriptionType
   monthlySessions?: number  // Required for hybrid
   sessionDurationMinutes?: number  // Required for hybrid
@@ -115,7 +113,6 @@ export interface Booking {
   cancelledAt: string | null
   cancellationReason: string | null // Reason for cancellation/rescheduling
   oneOffClientName: string | null // For one-off bookings without account
-  inviteId: string | null // For pending client bookings
   createdAt: string
   updatedAt: string
   // Joined fields
@@ -124,11 +121,6 @@ export interface Booking {
     name: string
     email: string
     avatarUrl: string | null
-  } | null
-  invite?: {
-    id: string
-    name: string
-    email: string
   } | null
   package?: SessionPackage
   formResponse?: CheckinFormResponse
@@ -143,8 +135,6 @@ export interface CreateBookingPayload {
   // One-off booking fields
   oneOffClientName?: string
   isOneOff?: boolean
-  // Pending client booking fields
-  inviteId?: string // For pending client bookings
 }
 
 export interface RescheduleBookingPayload {
@@ -290,11 +280,6 @@ export interface BookingWithDetails extends Booking {
     name: string
     email: string
     avatarUrl: string | null
-  } | null
-  invite?: {
-    id: string
-    name: string
-    email: string
   } | null
   formResponse?: CheckinFormResponse
 }

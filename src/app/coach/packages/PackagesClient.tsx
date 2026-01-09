@@ -12,7 +12,6 @@ interface Client {
   name: string
   email: string
   avatar_url: string | null
-  isPending?: boolean
 }
 
 interface PackagesClientProps {
@@ -740,11 +739,8 @@ export function PackagesClient({ clients, completedSessionsByClient, initialSubs
                             size="sm"
                           />
                           <div>
-                            <div className="font-medium text-white flex items-center gap-2">
+                            <div className="font-medium text-white">
                               {sub.client?.name || 'Unknown'}
-                              {sub.client?.isPending && (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">pending</span>
-                              )}
                             </div>
                             <div className="text-sm text-slate-500">{sub.client?.email}</div>
                           </div>
@@ -830,7 +826,7 @@ export function PackagesClient({ clients, completedSessionsByClient, initialSubs
               <option value="">Select a client</option>
               {clients.map((client) => (
                 <option key={client.id} value={client.id}>
-                  {client.name} ({client.email}){client.isPending ? ' - pending' : ''}
+                  {client.name} ({client.email})
                 </option>
               ))}
             </select>
@@ -1365,7 +1361,7 @@ export function PackagesClient({ clients, completedSessionsByClient, initialSubs
               <option value="">Select a client</option>
               {clients.map((client) => (
                 <option key={client.id} value={client.id}>
-                  {client.name} ({client.email}){client.isPending ? ' - pending' : ''}
+                  {client.name} ({client.email})
                 </option>
               ))}
             </select>

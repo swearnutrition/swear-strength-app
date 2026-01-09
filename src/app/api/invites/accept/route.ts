@@ -172,19 +172,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Migrate pending client data (packages, habits, programs, conversations, bookings)
-    const { data: migrateResult, error: migrateError } = await adminClient.rpc('migrate_pending_client_data', {
-      p_invite_id: inviteId,
-      p_client_id: userId,
-    })
-
-    if (migrateError) {
-      console.error('Failed to migrate pending client data:', migrateError)
-      // Don't fail the whole request, but log the error
-    } else {
-      console.log('Migration completed:', migrateResult)
-    }
-
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Accept invite error:', error)

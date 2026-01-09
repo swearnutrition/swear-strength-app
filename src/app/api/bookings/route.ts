@@ -79,35 +79,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Fetch invite info separately for bookings with invite_id (pending client bookings)
-    const inviteIds = [...new Set((bookings || [])
-      .filter(b => b.invite_id)
-      .map(b => b.invite_id))]
-
-    let invitesMap: Record<string, { id: string; name: string; email: string }> = {}
-
-    if (inviteIds.length > 0) {
-      const { data: invites } = await supabase
-        .from('invites')
-        .select('id, name, email')
-        .in('id', inviteIds)
-
-      if (invites) {
-        invitesMap = Object.fromEntries(invites.map(i => [i.id, i]))
-      }
-    }
-
-    // Transform bookings from snake_case to camelCase and attach client/invite info
+    // Transform bookings from snake_case to camelCase and attach client info
     const bookingsWithClients = (bookings || []).map(booking => {
       const client = booking.client_id ? clientsMap[booking.client_id] || null : null
-      const invite = booking.invite_id ? invitesMap[booking.invite_id] || null : null
       return {
         id: booking.id,
         clientId: booking.client_id,
         coachId: booking.coach_id,
         packageId: booking.package_id,
         subscriptionId: booking.subscription_id,
-        inviteId: booking.invite_id,
         bookingType: booking.booking_type,
         startsAt: booking.starts_at,
         endsAt: booking.ends_at,
@@ -124,11 +104,6 @@ export async function GET(request: NextRequest) {
           name: client.name,
           email: client.email,
           avatarUrl: client.avatar_url,
-        } : null,
-        invite: invite ? {
-          id: invite.id,
-          name: invite.name,
-          email: invite.email,
         } : null,
         package: booking.package ? {
           id: booking.package.id,
@@ -196,34 +171,14 @@ export async function POST(request: NextRequest) {
 
   // Check if this is a one-off booking
   const isOneOff = payload.isOneOff || !!payload.oneOffClientName
-  // Check if this is a pending client booking
-  const isPendingClientBooking = !!payload.inviteId
 
   // 5. Determine client and coach IDs
   let clientId: string | null = null
   let coachId: string
   let oneOffClientName: string | null = null
-  let inviteId: string | null = null
 
   if (profile?.role === 'coach') {
-    if (isPendingClientBooking) {
-      // Pending client booking - verify invite exists and belongs to this coach
-      const { data: invite, error: inviteError } = await supabase
-        .from('invites')
-        .select('id, created_by')
-        .eq('id', payload.inviteId)
-        .is('accepted_at', null)
-        .single()
-
-      if (inviteError || !invite || invite.created_by !== user.id) {
-        return NextResponse.json(
-          { error: 'Invalid pending client' },
-          { status: 400 }
-        )
-      }
-      inviteId = payload.inviteId!
-      coachId = user.id
-    } else if (isOneOff) {
+    if (isOneOff) {
       // One-off booking - no client account required
       if (!payload.oneOffClientName?.trim()) {
         return NextResponse.json(
@@ -279,45 +234,33 @@ export async function POST(request: NextRequest) {
     if (payload.packageId) {
       // Explicit package specified
       packageId = payload.packageId
-    } else if (clientId || inviteId) {
+    } else if (clientId) {
       // First, check for active hybrid subscription with available sessions
-      let subscriptionQuery = supabase
+      const { data: activeSubscription } = await supabase
         .from('client_subscriptions')
         .select('id, available_sessions')
         .eq('coach_id', coachId)
+        .eq('client_id', clientId)
         .eq('subscription_type', 'hybrid')
         .eq('is_active', true)
         .gt('available_sessions', 0)
         .limit(1)
-
-      if (clientId) {
-        subscriptionQuery = subscriptionQuery.eq('client_id', clientId)
-      } else if (inviteId) {
-        subscriptionQuery = subscriptionQuery.eq('invite_id', inviteId)
-      }
-
-      const { data: activeSubscription } = await subscriptionQuery.single()
+        .single()
 
       if (activeSubscription) {
         subscriptionId = activeSubscription.id
       } else {
         // Fall back to prepaid package
-        let packageQuery = supabase
+        const { data: activePackage } = await supabase
           .from('session_packages')
           .select('id, remaining_sessions')
           .eq('coach_id', coachId)
+          .eq('client_id', clientId)
           .gt('remaining_sessions', 0)
           .or('expires_at.is.null,expires_at.gt.now()')
           .order('created_at', { ascending: true })
           .limit(1)
-
-        if (clientId) {
-          packageQuery = packageQuery.eq('client_id', clientId)
-        } else if (inviteId) {
-          packageQuery = packageQuery.eq('invite_id', inviteId)
-        }
-
-        const { data: activePackage } = await packageQuery.single()
+          .single()
 
         if (activePackage) {
           packageId = activePackage.id
@@ -389,14 +332,13 @@ export async function POST(request: NextRequest) {
       starts_at: payload.startsAt,
       ends_at: payload.endsAt,
       one_off_client_name: oneOffClientName,
-      invite_id: inviteId,
     })
 
-    // Validate that we have either clientId, inviteId, or oneOffClientName
-    if (!clientId && !inviteId && !oneOffClientName) {
+    // Validate that we have either clientId or oneOffClientName
+    if (!clientId && !oneOffClientName) {
       console.error('[Create Booking] No client identifier provided')
       return NextResponse.json(
-        { error: 'Must provide clientId, inviteId, or oneOffClientName' },
+        { error: 'Must provide clientId or oneOffClientName' },
         { status: 400 }
       )
     }
@@ -414,7 +356,6 @@ export async function POST(request: NextRequest) {
         ends_at: payload.endsAt,
         status: 'confirmed',
         one_off_client_name: oneOffClientName,
-        invite_id: inviteId,
       })
       .select('*')
       .single()
@@ -429,9 +370,8 @@ export async function POST(request: NextRequest) {
       throw insertError
     }
 
-    // Fetch related client/invite data separately to avoid join ambiguity
+    // Fetch related client data separately to avoid join ambiguity
     let client = null
-    let invite = null
 
     if (insertedBooking.client_id) {
       const { data: clientData } = await supabase
@@ -442,20 +382,10 @@ export async function POST(request: NextRequest) {
       client = clientData
     }
 
-    if (insertedBooking.invite_id) {
-      const { data: inviteData } = await supabase
-        .from('invites')
-        .select('id, name, email')
-        .eq('id', insertedBooking.invite_id)
-        .single()
-      invite = inviteData
-    }
-
     // Combine into booking object
     const booking = {
       ...insertedBooking,
       client,
-      invite,
     }
 
     // 10. Deduct session from subscription or package
@@ -487,16 +417,12 @@ export async function POST(request: NextRequest) {
 
     // 12. Create Google Calendar event
     // Determine client name and email based on booking type
-    const clientName = isPendingClientBooking
-      ? booking.invite?.name || 'Pending Client'
-      : isOneOff
-        ? oneOffClientName
-        : booking.client?.name || 'Client'
-    const clientEmail = isPendingClientBooking
-      ? booking.invite?.email
-      : isOneOff
-        ? undefined
-        : booking.client?.email
+    const clientName = isOneOff
+      ? oneOffClientName
+      : booking.client?.name || 'Client'
+    const clientEmail = isOneOff
+      ? undefined
+      : booking.client?.email
 
     console.log('[Create Booking] Creating calendar event:', {
       coachId,
@@ -507,7 +433,7 @@ export async function POST(request: NextRequest) {
       endsAt: payload.endsAt,
     })
 
-    const bookingLabel = isPendingClientBooking ? ' (Pending client)' : isOneOff ? ' (One-off booking)' : ''
+    const bookingLabel = isOneOff ? ' (One-off booking)' : ''
     const calendarEvent = await createCalendarEvent(coachId, {
       summary: `${payload.bookingType === 'checkin' ? 'Check-in' : 'Training Session'}: ${clientName}`,
       description: `${payload.bookingType === 'checkin' ? 'Monthly check-in' : 'Training session'} with ${clientName}${bookingLabel}`,
@@ -556,7 +482,6 @@ export async function POST(request: NextRequest) {
       rescheduledFromId: booking.rescheduled_from_id,
       cancelledAt: booking.cancelled_at,
       oneOffClientName: booking.one_off_client_name,
-      inviteId: booking.invite_id,
       createdAt: booking.created_at,
       updatedAt: booking.updated_at,
       client: booking.client ? {
@@ -564,11 +489,6 @@ export async function POST(request: NextRequest) {
         name: booking.client.name,
         email: booking.client.email,
         avatarUrl: booking.client.avatar_url,
-      } : null,
-      invite: booking.invite ? {
-        id: booking.invite.id,
-        name: booking.invite.name,
-        email: booking.invite.email,
       } : null,
     }
 

@@ -5,7 +5,7 @@ import type { ClientSubscription } from '@/types/booking'
 export default async function PackagesPage() {
   const supabase = await createClient()
 
-  // Get current user to fetch their pending invites
+  // Get current user
   const { data: { user } } = await supabase.auth.getUser()
 
   // Get all confirmed clients for the dropdown
@@ -14,27 +14,6 @@ export default async function PackagesPage() {
     .select('id, name, email, avatar_url')
     .eq('role', 'client')
     .order('name')
-
-  // Get pending clients (invites that haven't been accepted yet)
-  const { data: pendingInvites } = await supabase
-    .from('invites')
-    .select('id, name, email')
-    .eq('created_by', user?.id)
-    .is('accepted_at', null)
-    .not('name', 'is', null)
-    .order('name')
-
-  // Combine confirmed and pending clients
-  const allClients = [
-    ...(clients || []).map(c => ({ ...c, isPending: false })),
-    ...(pendingInvites || []).map(invite => ({
-      id: `pending:${invite.id}`,
-      name: invite.name,
-      email: invite.email,
-      avatar_url: null,
-      isPending: true,
-    })),
-  ].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 
   // Get completed sessions count per client
   const { data: completedBookings } = await supabase
@@ -56,8 +35,7 @@ export default async function PackagesPage() {
     .from('client_subscriptions')
     .select(`
       *,
-      client:profiles!client_id(id, name, email, avatar_url),
-      invite:invites!invite_id(id, name, email)
+      client:profiles!client_id(id, name, email, avatar_url)
     `)
     .eq('coach_id', user?.id)
     .order('created_at', { ascending: false })
@@ -66,7 +44,6 @@ export default async function PackagesPage() {
   const subscriptions: ClientSubscription[] = (subscriptionsData || []).map((sub) => ({
     id: sub.id,
     clientId: sub.client_id,
-    inviteId: sub.invite_id,
     coachId: sub.coach_id,
     subscriptionType: sub.subscription_type,
     monthlySessions: sub.monthly_sessions,
@@ -81,20 +58,13 @@ export default async function PackagesPage() {
       name: sub.client.name,
       email: sub.client.email,
       avatarUrl: sub.client.avatar_url,
-      isPending: false,
-    } : sub.invite ? {
-      id: `pending:${sub.invite.id}`,
-      name: sub.invite.name,
-      email: sub.invite.email,
-      avatarUrl: null,
-      isPending: true,
     } : null,
   }))
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <PackagesClient
-        clients={allClients}
+        clients={clients || []}
         completedSessionsByClient={completedSessionsByClient}
         initialSubscriptions={subscriptions}
       />
