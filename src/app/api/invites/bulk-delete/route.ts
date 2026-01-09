@@ -39,7 +39,19 @@ export async function POST(request: NextRequest) {
           continue
         }
 
-        // First, delete any bookings associated with this invite
+        // First, delete any session packages associated with this invite
+        const { error: packagesDeleteError } = await supabase
+          .from('session_packages')
+          .delete()
+          .eq('invite_id', inviteId)
+
+        if (packagesDeleteError) {
+          console.error(`Error deleting packages for invite ${inviteId}:`, packagesDeleteError)
+          failed++
+          continue
+        }
+
+        // Delete any bookings associated with this invite
         const { error: bookingsDeleteError } = await supabase
           .from('bookings')
           .delete()

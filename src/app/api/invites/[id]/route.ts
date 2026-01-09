@@ -116,7 +116,18 @@ export async function DELETE(
       return NextResponse.json({ error: 'You can only delete your own invites' }, { status: 403 })
     }
 
-    // First, delete any bookings associated with this invite
+    // First, delete any session packages associated with this invite
+    const { error: packagesDeleteError } = await supabase
+      .from('session_packages')
+      .delete()
+      .eq('invite_id', id)
+
+    if (packagesDeleteError) {
+      console.error('Error deleting associated packages:', packagesDeleteError)
+      return NextResponse.json({ error: 'Failed to delete associated packages' }, { status: 500 })
+    }
+
+    // Delete any bookings associated with this invite
     // This is needed because bookings.invite_id has ON DELETE SET NULL which would
     // violate the booking_client_validation constraint
     const { error: bookingsDeleteError } = await supabase
