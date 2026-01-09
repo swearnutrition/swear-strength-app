@@ -69,6 +69,9 @@ export default async function ClientDashboard() {
       .limit(1)
       .single()
 
+    console.log('Dashboard - Creating profile for user:', user.id, user.email)
+    console.log('Dashboard - Invite found:', invite)
+
     const { error: profileError } = await adminClient
       .from('profiles')
       .insert({
@@ -76,9 +79,11 @@ export default async function ClientDashboard() {
         email: user.email,
         name: invite?.name || user.email?.split('@')[0] || 'User',
         role: 'client',
-        coach_id: invite?.created_by || null,
+        invited_by: invite?.created_by || null,
         client_type: invite?.client_type || 'online',
       })
+
+    console.log('Dashboard - Profile creation error:', profileError)
 
     if (!profileError) {
       // Profile created successfully, mark invite as accepted

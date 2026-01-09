@@ -67,7 +67,7 @@ export async function POST() {
         email: user.email,
         name: finalInvite?.name || user.email?.split('@')[0] || 'User',
         role: 'client',
-        coach_id: finalInvite?.created_by || null,
+        invited_by: finalInvite?.created_by || null,
         client_type: finalInvite?.client_type || 'online',
       })
 
