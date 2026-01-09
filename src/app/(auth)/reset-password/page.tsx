@@ -85,11 +85,59 @@ export default function ResetPasswordPage() {
     setLoading(true)
 
     try {
-      const { error } = await supabase.auth.updateUser({ password })
+      const { error: updateError } = await supabase.auth.updateUser({ password })
 
-      if (error) {
-        setError(error.message)
+      if (updateError) {
+        setError(updateError.message)
         return
+      }
+
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setError('Failed to get user after password update')
+        return
+      }
+
+      // Check if profile exists, create one if not
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', user.id)
+        .single()
+
+      if (!existingProfile) {
+        // Get invite data to find coach and client info
+        const { data: invite } = await supabase
+          .from('invites')
+          .select('name, created_by, client_type')
+          .eq('email', user.email)
+          .single()
+
+        // Create profile for this user
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            email: user.email,
+            name: invite?.name || user.email?.split('@')[0] || 'User',
+            role: 'client',
+            coach_id: invite?.created_by || null,
+            client_type: invite?.client_type || 'online',
+          })
+
+        if (profileError) {
+          console.error('Error creating profile:', profileError)
+          // Don't fail the whole flow - profile might already exist or have other issues
+        }
+
+        // Mark invite as accepted if found
+        if (invite) {
+          await supabase
+            .from('invites')
+            .update({ accepted_at: new Date().toISOString() })
+            .eq('email', user.email)
+        }
       }
 
       // Password set successfully, redirect to dashboard
