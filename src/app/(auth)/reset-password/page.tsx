@@ -16,39 +16,56 @@ export default function ResetPasswordPage() {
   const router = useRouter()
   const supabase = createClient()
 
-  // Check for recovery token in URL hash on mount
+  // Handle recovery token and auth state changes
   useEffect(() => {
-    const checkRecoveryToken = async () => {
-      // Supabase puts the recovery token in the URL hash
+    const handleRecovery = async () => {
+      // Parse hash params from URL
       const hashParams = new URLSearchParams(window.location.hash.substring(1))
       const accessToken = hashParams.get('access_token')
+      const refreshToken = hashParams.get('refresh_token')
       const type = hashParams.get('type')
 
-      if (accessToken && type === 'recovery') {
-        // We have a recovery token - user clicked password reset link
-        // Supabase client will automatically pick up the session from the URL
-        const { data: { session } } = await supabase.auth.getSession()
+      console.log('Recovery page loaded, type:', type, 'has access_token:', !!accessToken)
 
-        if (session) {
-          setSessionReady(true)
-          setEmail(session.user.email || '')
-        } else {
+      // If we have tokens in the hash, manually set the session
+      if (accessToken && refreshToken && type === 'recovery') {
+        const { data, error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        })
+
+        if (error) {
+          console.error('Error setting session:', error)
           setError('Invalid or expired reset link. Please request a new one.')
+          setCheckingSession(false)
+          return
         }
-      } else {
-        // No recovery token - check if there's an existing session from recovery
-        const { data: { session } } = await supabase.auth.getSession()
-        if (session) {
+
+        if (data.session) {
           setSessionReady(true)
-          setEmail(session.user.email || '')
-        } else {
-          setError('Invalid or expired reset link. Please request a new one.')
+          setEmail(data.session.user.email || '')
+          setCheckingSession(false)
+          // Clear the hash from URL for cleaner look
+          window.history.replaceState(null, '', window.location.pathname)
+          return
         }
       }
+
+      // No tokens in hash - check if there's already a session
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        setSessionReady(true)
+        setEmail(session.user.email || '')
+        setCheckingSession(false)
+        return
+      }
+
+      // No valid session found
+      setError('Invalid or expired reset link. Please request a new one.')
       setCheckingSession(false)
     }
 
-    checkRecoveryToken()
+    handleRecovery()
   }, [supabase.auth])
 
   const handleSetPassword = async (e: React.FormEvent) => {
