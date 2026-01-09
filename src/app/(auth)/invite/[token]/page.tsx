@@ -10,7 +10,6 @@ interface InviteData {
   id: string
   email: string
   coach_name: string
-  coach_id: string
   expires_at: string
 }
 
@@ -82,7 +81,6 @@ export default function AcceptInvitePage() {
           id: inviteData.id,
           email: inviteData.email,
           coach_name: coachName,
-          coach_id: inviteData.created_by,
           expires_at: inviteData.expires_at,
         })
       } catch {
@@ -141,34 +139,21 @@ export default function AcceptInvitePage() {
         return
       }
 
-      // Mark invite as accepted
-      await supabase
-        .from('invites')
-        .update({ accepted_at: new Date().toISOString() })
-        .eq('token', token)
+      // Accept invite via server-side API for reliable updates
+      // This handles: marking invite accepted, updating profile with coach link,
+      // triggering welcome message, and migrating pre-configured data (packages, habits, etc.)
+      const acceptRes = await fetch('/api/invites/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inviteId: inviteData!.id,
+          clientType,
+        }),
+      })
 
-      // Update profile with invite info, client type, and coach link
-      // This update triggers the welcome message to be sent
-      const { error: profileUpdateError } = await supabase
-        .from('profiles')
-        .update({
-          invited_by: inviteData!.coach_id,
-          invite_accepted_at: new Date().toISOString(),
-          client_type: clientType,
-        })
-        .eq('id', authData.user.id)
-
-      if (profileUpdateError) {
-        console.error('Failed to update profile with invite info:', profileUpdateError)
-      }
-
-      // Migrate any pre-configured data (packages, habits, programs, conversations, bookings)
-      // from invite_id to the new client_id
-      if (inviteData?.id) {
-        await supabase.rpc('migrate_pending_client_data', {
-          p_invite_id: inviteData.id,
-          p_client_id: authData.user.id,
-        })
+      if (!acceptRes.ok) {
+        const errorData = await acceptRes.json()
+        console.error('Failed to accept invite:', errorData)
       }
 
       router.push('/dashboard')
