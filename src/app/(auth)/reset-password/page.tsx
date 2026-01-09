@@ -92,52 +92,15 @@ export default function ResetPasswordPage() {
         return
       }
 
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        setError('Failed to get user after password update')
-        return
-      }
+      // Call server-side API to set up profile (bypasses RLS)
+      const setupRes = await fetch('/api/auth/setup-profile', {
+        method: 'POST',
+      })
 
-      // Check if profile exists, create one if not
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', user.id)
-        .single()
-
-      if (!existingProfile) {
-        // Get invite data to find coach and client info
-        const { data: invite } = await supabase
-          .from('invites')
-          .select('name, created_by, client_type')
-          .eq('email', user.email)
-          .single()
-
-        // Create profile for this user
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            id: user.id,
-            email: user.email,
-            name: invite?.name || user.email?.split('@')[0] || 'User',
-            role: 'client',
-            coach_id: invite?.created_by || null,
-            client_type: invite?.client_type || 'online',
-          })
-
-        if (profileError) {
-          console.error('Error creating profile:', profileError)
-          // Don't fail the whole flow - profile might already exist or have other issues
-        }
-
-        // Mark invite as accepted if found
-        if (invite) {
-          await supabase
-            .from('invites')
-            .update({ accepted_at: new Date().toISOString() })
-            .eq('email', user.email)
-        }
+      if (!setupRes.ok) {
+        const data = await setupRes.json()
+        console.error('Profile setup failed:', data.error)
+        // Don't fail the whole flow - try to continue anyway
       }
 
       // Password set successfully, redirect to dashboard
