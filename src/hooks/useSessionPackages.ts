@@ -15,6 +15,7 @@ interface UseSessionPackagesReturn {
   refetch: () => Promise<void>
   createPackage: (payload: CreateSessionPackagePayload) => Promise<SessionPackage | null>
   adjustPackage: (payload: AdjustSessionPackagePayload) => Promise<SessionPackage | null>
+  deletePackage: (packageId: string) => Promise<boolean>
 }
 
 export function useSessionPackages(clientId?: string): UseSessionPackagesReturn {
@@ -127,6 +128,26 @@ export function useSessionPackages(clientId?: string): UseSessionPackagesReturn 
     }
   }
 
+  const deletePackage = async (packageId: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/session-packages/${packageId}`, {
+        method: 'DELETE',
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to delete package')
+      }
+
+      await fetchPackages()
+      return true
+    } catch (err) {
+      console.error('Error deleting package:', err)
+      alert(err instanceof Error ? err.message : 'Failed to delete package')
+      return false
+    }
+  }
+
   return {
     packages,
     loading,
@@ -134,5 +155,6 @@ export function useSessionPackages(clientId?: string): UseSessionPackagesReturn 
     refetch: fetchPackages,
     createPackage,
     adjustPackage,
+    deletePackage,
   }
 }

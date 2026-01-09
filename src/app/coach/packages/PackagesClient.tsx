@@ -22,7 +22,7 @@ interface PackagesClientProps {
 }
 
 export function PackagesClient({ clients, completedSessionsByClient, initialSubscriptions = [] }: PackagesClientProps) {
-  const { packages, loading, createPackage, adjustPackage } = useSessionPackages()
+  const { packages, loading, createPackage, adjustPackage, deletePackage } = useSessionPackages()
   const [activeTab, setActiveTab] = useState<'packages' | 'subscriptions'>('packages')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showAdjustModal, setShowAdjustModal] = useState(false)
@@ -211,6 +211,12 @@ export function PackagesClient({ clients, completedSessionsByClient, initialSubs
     // Initialize expiration date - format as YYYY-MM-DD for date input
     setAdjustExpiresAt(pkg.expiresAt ? pkg.expiresAt.split('T')[0] : '')
     setShowAdjustModal(true)
+  }
+
+  const handleDeletePackage = async (pkg: SessionPackage, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!confirm(`Delete this package for ${pkg.client?.name}? This cannot be undone.`)) return
+    await deletePackage(pkg.id)
   }
 
   const openClientDetail = async (client: Client) => {
@@ -622,12 +628,20 @@ export function PackagesClient({ clients, completedSessionsByClient, initialSubs
                         : 'Never'}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={(e) => openAdjustModal(pkg, e)}
-                        className="text-purple-400 hover:text-purple-300 text-sm font-medium"
-                      >
-                        Adjust
-                      </button>
+                      <div className="flex items-center justify-end gap-3">
+                        <button
+                          onClick={(e) => openAdjustModal(pkg, e)}
+                          className="text-purple-400 hover:text-purple-300 text-sm font-medium"
+                        >
+                          Adjust
+                        </button>
+                        <button
+                          onClick={(e) => handleDeletePackage(pkg, e)}
+                          className="text-red-400 hover:text-red-300 text-sm font-medium"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )
